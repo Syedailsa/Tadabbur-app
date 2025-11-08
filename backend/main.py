@@ -78,7 +78,7 @@ from pydantic import BaseModel
 from typing import List
 
 from agents import Runner
-# 🟩 Import tripwire exceptions so we can catch them
+# Import tripwire exceptions so we can catch them
 from agents import InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered  
 
 import agent as agent_module 
@@ -142,7 +142,7 @@ async def chat(req: ChatRequest, authorization: str | None = Header(None)):
         msg = getattr(e.guardrail_result, "output_info", "Sorry, I can only respond within Quranic context.")
         return {"reply": msg}
 
-    # 🟩 Catch any other errors normally
+    # Catch any other errors normally
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

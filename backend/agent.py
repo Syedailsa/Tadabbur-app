@@ -33,7 +33,6 @@ ct2 = "\n".join(df["ayah_ar"].astype(str)[:30])
 ct3 = "\n".join(df["surah_no"].astype(str)[:30])
 ct4= "\n".join(df["surah_name_en"].astype(str)[:30])
 context = [ct1, ct2, ct3, ct4]
-# context_snippet = "\n".join(df["ayah_en"].astype(str)[:30]) 
 
 guardrail_agent = Agent( 
     name="Guardrail check",
