@@ -1,8 +1,110 @@
+# from agents import (
+#     Agent, ModelSettings, OpenAIChatCompletionsModel,
+#     RunConfig, Runner, GuardrailFunctionOutput,
+#     InputGuardrailTripwireTriggered, RunContextWrapper,
+#     TResponseInputItem, input_guardrail
+# )
+# from openai import AsyncOpenAI
+# import pandas as pd
+# from dotenv import load_dotenv
+# import asyncio
+# import os
+
+# # Load environment variables (for FIREWORKS_API_KEY)
+# load_dotenv()
+
+# FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY")
+
+# external_client = AsyncOpenAI(
+#     api_key=FIREWORKS_API_KEY,
+#     base_url="https://api.fireworks.ai/inference/v1"
+# )
+
+# model = OpenAIChatCompletionsModel(
+#     model="accounts/fireworks/models/gpt-oss-20b", 
+#     openai_client=external_client
+# )
+
+# config = RunConfig(
+#     model=model,
+#     model_provider=external_client,
+#     tracing_disabled=True
+# )
+
+# # Load Quran dataset context
+# df = pd.read_csv("QuranDataset.csv", encoding="utf-8-sig")
+
+# ct1 = "\n".join(df["ayah_en"].astype(str)[:50])
+# ct2 = "\n".join(df["ayah_ar"].astype(str)[:50])
+# ct3 = "\n".join(df["surah_no"].astype(str)[:50])
+# ct4 = "\n".join(df["surah_name_en"].astype(str)[:50])
+# context = [ct1, ct2, ct3, ct4]
+
+# # Load example story file
+# with open("story_exmp.txt", "r", encoding="utf-8") as f:
+#     story_example = f.read()
+
+# # Guardrail Agent – only allow storytelling related to the Quranic context
+# guardrail_agent = Agent(
+#     name="StoryGuardrail",
+#     instructions=f"Determine if the users request relates to storytelling inspired by the Quranic dataset {context}. If not, block it politely.",
+#     model=model
+# )
+
+# @input_guardrail
+# async def story_guardrail(
+#     ctx: RunContextWrapper[None], agent: Agent, input: str | list[TResponseInputItem]
+# ) -> GuardrailFunctionOutput:
+#     result = await Runner.run(guardrail_agent, input, context=ctx.context)
+
+#     # Check if guardrail should trip
+#     if "story" not in str(result.final_output).lower() and "quran" not in str(result.final_output).lower():
+#         return GuardrailFunctionOutput(
+#             output_info="This request isn't related to Quranic storytelling.",
+#             tripwire_triggered=True,
+#         )
+
+#     return GuardrailFunctionOutput(
+#         output_info="Storytelling confirmed.",
+#         tripwire_triggered=False
+#     )
+
+# # Storytelling Agent
+# story_agent = Agent(
+#     name="QuranStoryTeller",
+#     instructions=(
+#         "You are Tadabbur, a storytelling assistant inspired by Quranic knowledge. "
+#         f'Using the Quran {context}  provided, craft short, engaging stories '
+#         "that teach moral lessons from Quranic verses. "
+#         "Use narration similar to the example story below.\n\n"
+#         f"--- Example Story ---\n{story_example}\n--- End of Example ---\n\n"
+#         "Follow the same emotional tone, descriptive detail, and storytelling rhythm. "
+#         "Always include Arabic and English Quranic context, and start each new story or ayah on a new line. "
+#         "If the user asks for anything unrelated to Quranic storytelling, politely refuse."
+#     ),
+#     model=model,
+#     model_settings=ModelSettings(temperature=0.7),
+#     input_guardrails=[story_guardrail]
+# )
+
+# # # Runner test
+# # async def main():
+# #     try:
+# #         result = await Runner.run(story_agent, "Tell me a story from surah baqarah in the Quran", run_config=config)
+# #         print("\n✨ Tadabbur Story Output:\n")
+# #         print(result.final_output)
+
+# #     except InputGuardrailTripwireTriggered:
+# #         print("⚠️ Guardrail triggered — unrelated to storytelling.")
+
+# # if __name__ == "__main__":
+# #     asyncio.run(main())
+
+
 from agents import (
     Agent, ModelSettings, OpenAIChatCompletionsModel,
     RunConfig, Runner, GuardrailFunctionOutput,
-    InputGuardrailTripwireTriggered, RunContextWrapper,
-    TResponseInputItem, input_guardrail
+    RunContextWrapper, TResponseInputItem, input_guardrail
 )
 from openai import AsyncOpenAI
 import pandas as pd
@@ -10,84 +112,133 @@ from dotenv import load_dotenv
 import asyncio
 import os
 
-# Load environment variables (for FIREWORKS_API_KEY)
+# Load environment variables
 load_dotenv()
-
 FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY")
 
+# Initialize Fireworks client
 external_client = AsyncOpenAI(
     api_key=FIREWORKS_API_KEY,
     base_url="https://api.fireworks.ai/inference/v1"
 )
 
+# Define model and configuration
 model = OpenAIChatCompletionsModel(
-    model="accounts/fireworks/models/gpt-oss-20b", 
+    model="accounts/fireworks/models/gpt-oss-20b",
     openai_client=external_client
 )
-
-config = RunConfig(
-    model=model,
-    model_provider=external_client,
-    tracing_disabled=True
-)
+config = RunConfig(model=model, model_provider=external_client, tracing_disabled=True)
 
 # Load Quran dataset context
 df = pd.read_csv("QuranDataset.csv", encoding="utf-8-sig")
+context = [
+    "\n".join(df["ayah_en"].astype(str)[:50]),
+    "\n".join(df["ayah_ar"].astype(str)[:50]),
+    "\n".join(df["surah_no"].astype(str)[:50]),
+    "\n".join(df["surah_name_en"].astype(str)[:50]),
+]
 
-ct1 = "\n".join(df["ayah_en"].astype(str)[:50])
-ct2 = "\n".join(df["ayah_ar"].astype(str)[:50])
-ct3 = "\n".join(df["surah_no"].astype(str)[:50])
-ct4 = "\n".join(df["surah_name_en"].astype(str)[:50])
-context = [ct1, ct2, ct3, ct4]
+# Load example story for narrative style
+with open("story_exmp.txt", "r", encoding="utf-8") as f:
+    story_example = f.read()
 
-# Guardrail Agent – only allow storytelling related to the Quranic context
+# 🧠 Guardrail Agent — checks semantic relevance
 guardrail_agent = Agent(
-    name="StoryGuardrail",
-    instructions=f"Determine if the users request relates to storytelling inspired by the Quranic dataset {context}. If not, block it politely.",
+    name="SemanticGuardrail",
+    instructions=(
+        "Determine whether the user's request is semantically related to the provided Quranic dataset "
+        "and its themes (moral lessons, reflection, faith, spirituality, prophets, divine guidance, etc.). "
+        "If it’s unrelated to these themes or doesn’t use the Quranic context meaningfully, respond with 'UNRELATED'. "
+        "Otherwise, respond with 'RELATED'."
+    ),
     model=model
 )
 
+# 💬 Fallback Agent — responds gracefully to off-topic queries
+fallback_agent = Agent(
+    name="FallbackResponder",
+    instructions=(
+        "You are a polite assistant. If the user's question is unrelated to Quranic storytelling, "
+        "gently remind them that you can only create Quran inspired moral stories."
+    ),
+    model=model
+)
+
+# 🛡️ Input Guardrail — uses semantic judgment instead of keyword matching
 @input_guardrail
-async def story_guardrail(
+async def semantic_guardrail(
     ctx: RunContextWrapper[None], agent: Agent, input: str | list[TResponseInputItem]
 ) -> GuardrailFunctionOutput:
     result = await Runner.run(guardrail_agent, input, context=ctx.context)
+    decision = str(result.final_output).strip().upper()
 
-    # Check if guardrail should trip
-    if "story" not in str(result.final_output).lower() and "quran" not in str(result.final_output).lower():
+    if "UNRELATED" in decision:
+        # Graceful fallback: no error, just redirect
+        fallback = await Runner.run(fallback_agent, input, context=ctx.context)
         return GuardrailFunctionOutput(
-            output_info="This request isn't related to Quranic storytelling.",
-            tripwire_triggered=True
+            output_info=fallback.final_output,
+            tripwire_triggered=True  # tripwire signals fallback, not failure
         )
 
     return GuardrailFunctionOutput(
-        output_info="Storytelling confirmed.",
+        output_info="Input is relevant to Quranic storytelling.",
         tripwire_triggered=False
     )
 
-# Storytelling Agent
+from agents import output_guardrail, GuardrailFunctionOutput
+
+output_guard_agent = Agent(
+    name="OutputVerifier",
+    instructions=(
+        f"You are a strict Quranic context verifier. "
+        f"Given the original Quranic context:\n{context}\n\n"
+        "When you receive an assistant's response, determine if it strictly relates "
+        "to Quranic teachings, ayahs, stories, or moral lessons. "
+        "If yes, respond only with 'VALID'. "
+        "If no, respond only with 'INVALID'."
+    ),
+    model=model,
+)
+
+@output_guardrail
+async def story_output_guardrail(
+    ctx: RunContextWrapper[None],
+    agent: Agent,
+    output: str
+) -> GuardrailFunctionOutput:
+    """Ensure the story stays within Quranic moral context"""
+    result = await Runner.run(output_guard_agent, output, context=ctx.context)
+    verdict = str(result.final_output).strip().lower()
+
+    if "invalid" in verdict:
+        fallback = await Runner.run(
+            fallback_agent,
+            "Sorry, this story seems unrelated to the Quranic teachings.",
+            context=ctx.context
+        )
+        return GuardrailFunctionOutput(
+            output_info=fallback.final_output,
+            tripwire_triggered=True,
+        )
+
+    return GuardrailFunctionOutput(
+        output_info="Output verified — relevant story.",
+        tripwire_triggered=False
+    )
+
+# 🌙 Main Quranic Storytelling Agent
 story_agent = Agent(
     name="QuranStoryTeller",
     instructions=(
-        "You are a storytelling assistant inspired by Quranic knowledge. "
-        "Using the provided Quran dataset, craft short, engaging stories "
-        "that teach moral lessons from the verses, mentioning Arabic and English context. "
-        "Always start each new story or verse on a new line, in a poetic and inspiring tone."
+        "You are Tadabbur, a storytelling assistant inspired by the Quran. "
+        "Using the Quranic dataset context provided, craft short, emotionally engaging stories "
+        "that teach moral lessons from Quranic verses. "
+        "Your stories should blend Arabic and English verses, highlight wisdom, and follow this example:\n\n"
+        f"{story_example}\n\n"
+        "Always stay relevant to the Quranic moral and narrative context."
     ),
     model=model,
     model_settings=ModelSettings(temperature=0.7),
-    input_guardrails=[story_guardrail]
+    input_guardrails=[semantic_guardrail],
+    output_guardrails=[story_output_guardrail],
 )
-
-# Runner test
-async def main():
-    try:
-        result = await Runner.run(story_agent, "Tell me a story from surah baqarah in the Quran", run_config=config)
-        print("\n✨ Tadabbur Story Output:\n")
-        print(result.final_output)
-
-    except InputGuardrailTripwireTriggered:
-        print("⚠️ Guardrail triggered — unrelated to storytelling.")
-
-if __name__ == "__main__":
-    asyncio.run(main())
