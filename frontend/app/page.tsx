@@ -5,13 +5,10 @@ import ReactMarkdown from "react-markdown";
 import { ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Send, MessageCircle } from "lucide-react";
 import { div, input, p, tr } from "framer-motion/client";
 import { tree } from "next/dist/build/templates/app-page";
 import OptionsProvider from "./providers/chatbot/OptionsProvider";
-import AttachIcon from "../icons/attach_icon.svg";
-import StoryIcon from "../icons/story_telling_icon.svg";
-import MicIcon from "../icons/mic_icon.svg";
+import BottomOptions from "@/components/ui/chatbot/BottomOption";
 import ImageIcon from "../icons/image_icon.svg";
 import Image from "next/image";
 import FullSizeIcon from "../icons/full_size_icon.svg";
@@ -21,7 +18,6 @@ import NetworkIntelligence from "../icons/network_intelligence_icon.svg";
 import { FC } from "react";
 // import ArrowHead from "../icons/arrow-left-bold.svg";
 // import ArrowLeft from "../icons/arrow-left.svg";
-import PlusIcon from "../icons/plus-icon.svg";
 import {
   motion,
   easeInOut,
@@ -37,7 +33,6 @@ export default function ChatPage() {
   const [question, setQuestion] = useState("");
   const [messages, setMessages] =
     useState<{ role: "user" | "assistant"; content: string }[]>(chatMessages);
-
   const inputRef = useRef<HTMLDivElement | null>(null);
   const [showInputButton, setShowInputButton] = useState(false);
   const [ws, setws] = useState<WebSocket | null>(null);
@@ -231,7 +226,7 @@ export default function ChatPage() {
                 Let's learn about the Quran.
               </span>
             )}
-            <OptionsProvider>
+            <OptionsProvider wsRef={wsRef}>
               <BottomOptions />
               <ExtraOptions />
               <ModelBox modelList={ModelList} />
@@ -242,86 +237,6 @@ export default function ChatPage() {
     </div>
   );
 }
-
-const BottomOptions = () => {
-  const {
-    hideExtraOptions,
-    setHideExtraOptions,
-    selectedModel,
-    setSelectedModel,
-    hideModelBox,
-    setHideModelBox,
-  } = useContext(OptionsContext);
-
-  return (
-    <div
-      id="bottom-options"
-      className="w-full flex gap-x-1 mt-auto items-center"
-    >
-      <motion.div
-        whileTap={{ backgroundColor: "#0000003D" }}
-        whileHover={{ backgroundColor: "#0000000D" }}
-        id="choose-model-box"
-        onClick={(e) => {
-          e.stopPropagation();
-          setHideModelBox((prev) => !prev);
-        }}
-        className="relative flex flex-row-reverse gap-x-1 py-1 pr-3 pl-4 rounded-full cursor-pointer items-center"
-      >
-        <motion.div className="mt-0.2">
-          <DownArrow className="w-5 h-5" />
-        </motion.div>
-        <p className="switzer-500 text-[0.96rem]">{selectedModel}</p>
-      </motion.div>
-      <motion.div className={`ml-auto flex gap-x-1`}>
-        <motion.div
-          onClick={(e) => {
-            e.stopPropagation();
-            setHideExtraOptions((prev) => !prev);
-          }}
-          animate={{
-            backgroundColor: hideExtraOptions ? "#00000000" : "#0000000D",
-          }}
-          whileTap={{ backgroundColor: "#0000003D" }}
-          whileHover={{ backgroundColor: "#0000000D" }}
-          className={`w-9 h-9 rounded-full flex items-center justify-center cursor-pointer
-          }`}
-        >
-          <PlusIcon className="fill-current w-5 h-5 text-black" />
-        </motion.div>
-        <motion.div
-          id="story-telling-box"
-          whileTap={{ backgroundColor: "#0000003D" }}
-          whileHover={{ backgroundColor: "#0000000D" }}
-          className="flex gap-x-1 px-3 py-1 rounded-full cursor-pointer items-center"
-        >
-          <StoryIcon className="fill-current w-5 h-5 text-black" />
-          <span className="w-max switzer-500 text-[0.96rem]">
-            Story telling
-          </span>
-        </motion.div>
-
-        <motion.div
-          id="mic-icon-box"
-          whileTap={{ backgroundColor: "#0000003D" }}
-          whileHover={{ backgroundColor: "#0000000D" }}
-          className="w-9 h-9 rounded-full flex items-center justify-center cursor-pointer"
-        >
-          <MicIcon className="w-5 h-5 fill-current text-black" />
-        </motion.div>
-
-        <motion.div
-          whileTap={{ backgroundColor: "#0000003D" }}
-          whileHover={{ backgroundColor: "#0000000D" }}
-          className="rounded-full w-9 h-9 cursor-pointer flex justify-center items-center"
-          id="attach-files-box"
-        >
-          <AttachIcon className="fill-current text-black w-5 h-5" />
-        </motion.div>
-      </motion.div>
-    </div>
-  );
-};
 
 const ExtraOptions = (): React.ReactElement | null => {
   const { hideExtraOptions, setHideExtraOptions } = useContext(OptionsContext);
