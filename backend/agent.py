@@ -28,10 +28,10 @@ config = RunConfig(
 
 # Quran dataset
 df = pd.read_csv("QuranDataset.csv", encoding="utf-8-sig")
-ct1 = "\n".join(df["ayah_en"].astype(str)[:30])
-ct2 = "\n".join(df["ayah_ar"].astype(str)[:30])
-ct3 = "\n".join(df["surah_no"].astype(str)[:30])
-ct4= "\n".join(df["surah_name_en"].astype(str)[:30])
+ct1 = "\n".join(df["ayah_en"].astype(str))
+ct2 = "\n".join(df["ayah_ar"].astype(str))
+ct3 = "\n".join(df["surah_no"].astype(str))
+ct4= "\n".join(df["surah_name_en"].astype(str))
 context = [ct1, ct2, ct3, ct4]
 
 guardrail_agent = Agent( 
@@ -129,3 +129,13 @@ agent = Agent(
 
 # if __name__ == "__main__":
 #     asyncio.run(main())
+
+# import pandas as pd
+
+# df = pd.read_csv("QuranDataset.csv", encoding="utf-8-sig")
+
+# print(df.columns)
+# print(df.head())
+
+# # Show all distinct surah names to confirm the exact name
+# print(df["surah_name_en"].unique()[:10])  # just first 10

@@ -1,83 +1,51 @@
-Thousands of years ago, in a small village, there lived a very poor but righteous man.  He did not have much in life….a small hut and a good wife.  He earned his living doing manual labor for the people of his village.  This man was honest in all his dealing, even though the villagers around him were mostly greedy and corrupt. 
-
-His dream in life was to buy a goat; a goat is easy to take care of, and it would give him and his family milk to drink, and some to sell.  He needed the extra income because his wife just gave birth to a beautiful baby boy. 
-
-The man took all his savings and went to the town square to buy a goat, but he could not find a goat that he could afford because the merchants did not treat the poor well, and often cheated their customers.  The man was devastated.  
-
-As he left the market, a vendor yelled
-
-‘Hey you, come on back, I have something for you.”  “Why don’t you buy this calf!’
-
-‘A calf” thought the man “I could never afford one.”  
-
-He turned around and saw the calf the vendor was trying to sell him.  He immediately understood why.  It was an odd-looking calf that was very weak and sick. 
-
-He thought to himself, “a calf is much more expensive to raise than a goat; it will not give me any milk for another year or two.  But this is all I can afford…maybe if I work extra hard and take excellent care of it, I can have a small fortune.”  
-
-Sure enough, the man bought the calf and took on a couple of extra evening jobs to raise it.
-
-After a few months of hard work, the man fell ill.  He tried to rest and drink whatever medicine he could afford.  But his health kept deteriorating.  He soon realized that he would not live for much longer. 
-
-‘Who would take care of my family?” He thought. “My wife cannot afford to take care of my son and feed this calf…..I have to do something.”  
-
-The next morning, he took the calf to the town square to look for someone to raise it for his family.
-
-When the merchants saw this dying man with a calf, they rushed to take advantage of him.  He went from merchant to merchant, only to see greed in their eyes.  He could not trust them with his only possession.  Devastated, the man returned home with the calf. 
-
-That night, during his prayers, he turned to God and said, "My Lord, Lord of Abraham and Jacob, I have tried my best, and I cannot find anyone whom I can trust but you.  I entrust my wife, my little boy, and my only possession, this calf, to your care." The next morning he told his wife about his prayers, and then he let the calf loose.  Later that day, this righteous man died.   
-
-After a few years had passed, the mother turned to her grown son and said, “Son, your father left you a small fortune,  A calf that he bought a few months before he died; it should be a grown cow by now."
-
-The son was astonished, “that is great! Where is it?”
-
-She replied, "Your father knew I could not take care of it, so he entrusted it to God and set it free, why don’t you go and look for it?”
-
-‘You are joking, right?! Look for it….You want me to find a cow in the fields years after my dad let it go?! I wouldn’t even know where to start” 
-
-The mother looked at him and said, “Son, you are a good man; have some faith, be like your father and pray for God to guide you.’
-
-That night, the son sat in prayer and said “Dear God, Lord of Abraham and Moses, I put my trust in you just as my father did, please guide me to my father’s cow."
-
-The next morning the young man set on his search.  He aimlessly roamed from field to field, not even sure what he was looking for.  Shortly after noon, a cow came out of the woods, walked towards him, and stopped submissively.  He could barely believe his eyes.  It was exactly as his mom described.  He checked it all around; there were no markings on it; its ears have not been tagged; this cow belonged to no one! 
-
-He peaked under the cow and found its udder overfilled with milk.  Thirsty from his search, he took a drink.  It was the best tasting milk he ever had! 
-
-‘Wow!” the young man thought to himself. 
-
-As he led the cow back to his hut, he started daydreaming, “Our poverty days are over!” “Thank God! Thank you, my Lord! We will have so much milk to drink, and so much leftover to sell.”  
-
-‘I can afford medicine for my mother, and in a month or two, I can fix the leaky roof, and maybe buy a chicken or two!”  
-
-‘If we sell enough of this tasty milk, I can get married next year.”  
-
-The young man was so lost in his daydreams that he did not notice the town’s merchants rushing at him. 
-
-“STOP,” one of them yelled, “STOP!” 
-
-The young man was startled as these men rushed in and started circling his cow.  This went on for almost two minutes until one of them said,
-
-‘This is it…this is the yellow cow Moses has been describing to us!  Here young man, take five gold coins and give us the cow.”  The young man hesitated.  Another merchant said, “Give him more, here take ten gold coins for the cow.”  
-
-‘I…I cannot sell you this cow; it belongs to my family. I have to take it to my mother.”  
-
-The merchants said “We will go with you.”
-
-As they reached the hut, the merchants offered the mother 10 then 25 then 50 gold coins; all they heard from the mother was “I won’t sell for that price.”  
-
-The son got agitated and whispered to his mother “MOM…the cow is worth much less than they are offering…PLEASE take the money!”  
-
-But as the merchants got louder and more aggressive, the son became irritated with them and yelled, “I will not sell this cow without my mother’s approval even if you give me its skin-fill of gold.”  The mother smiled and said, "Let that be the price, The cow’s skin-fill of gold."
-
-The merchants who had endlessly argued with Prophet Moses had no choice.  They had backed themselves into a corner and had to buy this cow at any price. 
-
-Allah punished the merchants for their years of dishonesty and for the hardship they put Prophet Moses through.  Allah rewarded this low-income family because the father and mother were righteous people who took their faith seriously. 
-
-Through the good deeds of the parents, God facilitated the affairs of this child and enriched him beyond the wealthiest people of the town.  Allah teaches us that our good deeds are the best insurance policy for our kids.    
-
-You find many examples of this in the Quran, God says
-
-Let those who would fear for the future of their own helpless children, if they were to die, show the same concern for orphans; let them be mindful of God and speak out for justice. (4,09)
-
-And in aya 82 of Sura Al Kahf (the cave),
-
-The wall belonged to two young orphans in the town, and there was buried treasure beneath it belonging to them. Their father had been a righteous man, so your Lord intended them to reach maturity and then dig up their treasure as a mercy from your Lord.
+[
+  {
+    "id": 1,
+    "query": "Tell me the story of the People of the Cave.",
+    "reference": "Surah Al-Kahf (18:9–26)",
+    "context": "This story highlights the steadfast faith of young believers who fled an oppressive king, seeking refuge in a cave. Allah protected them and made them sleep for centuries as a sign of His power to resurrect.",
+    "story": "Long ago, there was a cruel and arrogant king who forced his people to worship idols. Anyone who believed in Allah was punished in the most terrible ways. One day, a wise religious leader entered the city, secretly spreading the message of Allah’s oneness. Among the listeners were seven young men who truly believed in Allah. When the king discovered them, he demanded that they abandon their faith or face death. Refusing to submit, the young men prayed for protection and escaped the city under the cover of play. A loyal dog followed them, guarding their path. Finally, exhausted, they found a cave in the mountains and took shelter there. With Allah’s mercy, they fell into a deep sleep — not for a night or a day, but for over three hundred years. The entrance of the cave became hidden, and Allah protected them completely from harm. Centuries later, when they awoke, the world had changed — the tyrant was gone, and people no longer worshipped idols. One of the young men went to buy food but was shocked to see unfamiliar buildings and strange coins. When people saw his ancient money and heard their miraculous story, they realized it was a sign from Allah — proof that resurrection is real and that Allah can give life after death. The story of the People of the Cave teaches us that faith in Allah never goes to waste, and His power knows no limits."
+  },
+  {
+    "id": 2,
+    "query": "Tell me the story of Prophet Yusuf (A.S).",
+    "reference": "Surah Yusuf (12:1–111)",
+    "context": "The story of Prophet Yusuf (A.S) teaches patience, forgiveness, and trust in Allah’s plan through trials of jealousy, imprisonment, and triumph.",
+    "story": "Prophet Yusuf (A.S) was the beloved son of Prophet Yaqub (A.S). His father loved him dearly, and this made his brothers jealous. One day, young Yusuf shared a dream — that eleven stars, the sun, and the moon were bowing to him. His father understood it was a sign of greatness from Allah, but warned him not to share it with his brothers. Filled with envy, the brothers plotted to get rid of him. They threw Yusuf into a dark well and returned home pretending he had been devoured by a wolf. But Allah’s plan was greater. A passing caravan found Yusuf and sold him in Egypt, where he grew into a wise and handsome man. When falsely accused, he was imprisoned, yet even there, he spread the message of Allah. Through his wisdom, he interpreted the king’s dream, predicting seven years of prosperity followed by seven years of drought. Impressed, the king freed him and made him a trusted minister. Years later, his brothers came to Egypt seeking food. Yusuf recognized them but they did not know him. Instead of taking revenge, he forgave them and revealed his identity with tears. His dream came true as his family reunited, bowing before him in respect. Yusuf’s journey reminds us that patience and faith always lead to victory, even after deep hardship."
+  },
+  {
+    "id": 3,
+    "query": "Tell me the story of Qarun and his wealth.",
+    "reference": "Surah Al-Qasas (28:76–82)",
+    "context": "Qarun was a wealthy man from the people of Musa (A.S.) whose arrogance and greed led to his destruction.",
+    "story": "Qarun was one of the people of Prophet Musa (A.S.), blessed with immense wealth. His treasures were so vast that even the keys to his chests were heavy for strong men to carry. But instead of being grateful to Allah, Qarun became arrogant. He claimed, 'I was given this wealth because of my knowledge and skill.' He flaunted his riches to make others envy him. When the righteous advised him to give charity and avoid pride, he mocked them and continued to boast. One day, he emerged before the people wearing splendid garments, his wealth shining like the sun. Those who loved the world admired him, but the believers said, 'The reward of Allah is far better for those who believe and do good.' Then Allah caused the earth to open beneath Qarun and swallow him, along with his palace and treasures. Nothing remained but dust. The same people who once envied him now realized that wealth without gratitude is a curse. Qarun’s story teaches us that pride and greed bring ruin, while humility brings the mercy of Allah."
+  },
+  {
+    "id": 4,
+    "query": "Tell me the story of Prophet Musa (A.S) and Pharaoh.",
+    "reference": "Surah Al-Qasas (28), Surah Taha (20), Surah Ash-Shu'ara (26)",
+    "context": "Prophet Musa (A.S) was sent by Allah to guide Pharaoh and his people to truth. His story shows courage, faith, and Allah’s protection of the believers.",
+    "story": "Pharaoh was the mighty ruler of Egypt, proud and unjust. He claimed to be a god and enslaved the children of Israel. To stop the prophecy of a child who would end his reign, he ordered all newborn boys to be killed. But Allah saved baby Musa. His mother, following divine inspiration, placed him in a basket and set it afloat on the Nile. The basket reached Pharaoh’s palace, where his wife Asiya, a kind woman, pleaded to keep the baby. Musa grew up strong and wise. One day, he defended an Israelite and accidentally killed an Egyptian. Fearing Pharaoh’s wrath, he fled to Madyan, where he lived humbly and married. Years later, Allah called to him from the sacred valley of Tuwa, commanding him to return to Egypt as His messenger. Musa and his brother Haroon went to Pharaoh with clear signs — the staff that turned into a serpent, and the glowing hand. Yet Pharaoh’s heart was hardened. He mocked Musa and refused to believe. Finally, Allah commanded Musa to lead his people away. When Pharaoh and his army pursued them, Allah split the sea, allowing Musa and his followers to pass safely. As Pharaoh tried to follow, the waters closed upon him. His empire drowned, and he cried out in vain belief. Musa’s story teaches us that no tyrant can overpower Allah, and those who trust Him will always find a way."
+  },
+  {
+    "id": 5,
+    "query": "Tell me the story of Prophet Ibrahim (A.S) and the idols.",
+    "reference": "Surah Al-Anbiya (21:51–70), Surah As-Saffat (37:83–99)",
+    "context": "Prophet Ibrahim (A.S) courageously confronted his people’s idol worship and proved that only Allah deserves to be worshipped.",
+    "story": "Prophet Ibrahim (A.S) was born into a society filled with idol worship. His people carved gods from stone and wood and bowed to them, but Ibrahim’s heart was pure. He questioned, 'Why do you worship what cannot hear or see?' When they ignored his words, he decided to show them the truth. One day, when everyone left for a festival, Ibrahim entered their temple and smashed all the idols except the biggest one. When the people returned, shocked and angry, they demanded, 'Who destroyed our gods?' Ibrahim calmly said, 'Ask the big one — maybe he did it.' They realized their idols couldn’t speak or act, yet pride blinded them. Furious, they threw Ibrahim into a blazing fire. But Allah commanded, 'O fire, be cool and safe for Ibrahim!' and he emerged unharmed. This miracle amazed the people and proved that only Allah has power. Ibrahim’s courage and faith inspire us to stand for truth, even if we stand alone."
+  },
+  {
+    "id": 6,
+    "query": "Tell me the story of Prophet Nuh (A.S) and the great flood.",
+    "reference": "Surah Hud (11:25–49), Surah Al-Qamar (54:9–16)",
+    "context": "Prophet Nuh (A.S) preached patience and faith while warning his people to repent before the great flood.",
+    "story": "Prophet Nuh (A.S) was sent to guide his people, who had turned to idols and ignored Allah’s commands. For nine hundred and fifty years, he called them to the truth, urging them to seek forgiveness. But they mocked him and covered their ears. Only a few believers followed him. Finally, Allah revealed that no more would believe and instructed Nuh to build an ark. The disbelievers laughed as he built it far from the sea. But when the time came, dark clouds gathered, and water burst from the earth and the sky. The ark floated safely with the believers and pairs of every creature, while the flood drowned the disbelievers. Even Nuh’s own son refused to board, saying he would climb a mountain. Nuh cried, but Allah told him that faith, not blood, determines who is saved. When the waters receded, the ark rested on Mount Judi. Nuh thanked Allah for His mercy. His story reminds us that faith and obedience are our only refuge when Allah’s command arrives."
+  },
+  {
+    "id": 7,
+    "query": "Tell me the story of the Elephant and the Ka'bah.",
+    "reference": "Surah Al-Fil (105:1–5)",
+    "context": "The story of the People of the Elephant shows how Allah protected the Ka'bah from destruction through miraculous means.",
+    "story": "Long ago, there was a powerful ruler named Abraha in Yemen who built a grand church to divert people from the Ka'bah in Makkah. But the Arabs continued to visit Allah’s sacred house. Filled with jealousy and rage, Abraha gathered a massive army with elephants — the largest among them named Mahmood — and marched to destroy the Ka'bah. When the army reached near Makkah, the people fled, for they could not fight such power. But the leader of Quraysh, Abdul Muttalib, prayed with faith, saying, 'This House has a Lord who will protect it.' As Abraha prepared to attack, Allah sent flocks of birds (Ababil) carrying stones of baked clay. Each bird dropped its stone upon the soldiers, and the mighty army fell. Not one elephant could move forward, and Abraha’s plan was crushed completely. The Ka'bah stood unharmed — a sign that Allah protects His house and His believers, no matter how great the enemy seems."
+  }
+]

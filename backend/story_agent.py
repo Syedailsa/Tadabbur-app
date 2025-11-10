@@ -4,9 +4,11 @@ from agents import (
     RunContextWrapper, TResponseInputItem, input_guardrail
 )
 from openai import AsyncOpenAI
+from tf_agent import Tafsir_Agent
 import pandas as pd
 from dotenv import load_dotenv
 import asyncio
+import json
 import os
 
 # Load environment variables
@@ -29,15 +31,15 @@ config = RunConfig(model=model, model_provider=external_client, tracing_disabled
 # Load Quran dataset context
 df = pd.read_csv("QuranDataset.csv", encoding="utf-8-sig")
 context = [
-    "\n".join(df["ayah_en"].astype(str)[:50]),
-    "\n".join(df["ayah_ar"].astype(str)[:50]),
-    "\n".join(df["surah_no"].astype(str)[:50]),
-    "\n".join(df["surah_name_en"].astype(str)[:50]),
+    "\n".join(df["ayah_en"].astype(str)),
+    "\n".join(df["ayah_ar"].astype(str)),
+    "\n".join(df["surah_no"].astype(str)),
+    "\n".join(df["surah_name_en"].astype(str)),
 ]
 
 # Load example story for narrative style
 with open("story_exmp.txt", "r", encoding="utf-8") as f:
-    story_example = f.read()
+    story_example = json.load(f)
 
 # 🧠 Guardrail Agent — checks semantic relevance
 guardrail_agent = Agent(
@@ -139,3 +141,15 @@ story_agent = Agent(
     input_guardrails=[semantic_guardrail],
     output_guardrails=[story_output_guardrail],
 )
+
+# async def main():
+#     result = await Runner.run(
+#         story_agent,
+#         "Create a short story about prophet adam (a.s).",
+#         context=context,
+#         run_config=config
+#     )
+#     print(result.final_output)
+
+# if __name__ == "__main__":
+#     asyncio.run(main())
