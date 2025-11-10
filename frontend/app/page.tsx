@@ -102,6 +102,9 @@ export default function ChatPage() {
           messages: [...messages, { role: "user", content: input }].slice(-10),
         })
       );
+      if (inputRef.current) {
+        inputRef.current.innerText = "";
+      }
     } catch (err: any) {
       setError(err?.message ?? "Something went wrong");
     } finally {
