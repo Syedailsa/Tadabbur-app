@@ -121,8 +121,8 @@ agent = Agent(
 # async def main():
 #     # trip the guardrail
 #     try:
-#         await Runner.run(agent, "Hello, can you tell me the ayah no 17 of surah al baqarah?")
-#         print("Guardrail didn't trip - this is unexpected")
+#         result = await Runner.run(agent, "Hello, can you tell me the ayah no 17 of surah al baqarah?" , run_config=config, context=context)
+#         print(result.final_output)
 
 #     except InputGuardrailTripwireTriggered:
 #         print("Quran guardrail tripped")

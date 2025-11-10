@@ -125,10 +125,10 @@ class ChatRequest(BaseModel):
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest, authorization: str | None = Header(None)):
-    """Fallback HTTP chat route (non-WebSocket)."""
-    if API_KEY:
-        if authorization is None or authorization != f"Bearer {API_KEY}":
-            raise HTTPException(status_code=401, detail="Unauthorized")
+    # """Fallback HTTP chat route (non-WebSocket)."""
+    # if API_KEY:
+    #     if authorization is None or authorization != f"Bearer {API_KEY}":
+    #         raise HTTPException(status_code=401, detail="Unauthorized")
 
     conversation = "\n".join([f"{m.role}: {m.content}" for m in req.messages])
     try:
@@ -168,14 +168,14 @@ async def websocket_chat(websocket: WebSocket):
         init_data = json.loads(init_msg)
         token = init_data.get("authorization")
 
-        # Security check
-        if API_KEY and token != f"Bearer {API_KEY}":
-            await websocket.send_json({
-                "type": "error",
-                "content": "Unauthorized WebSocket connection."
-            })
-            await websocket.close()
-            return
+        # # Security check
+        # if API_KEY and token != f"Bearer {API_KEY}":
+        #     await websocket.send_json({
+        #         "type": "error",
+        #         "content": "Unauthorized WebSocket connection."
+        #     })
+        #     await websocket.close()
+        #     return
 
         # Acknowledge connection
         await websocket.send_json({
@@ -224,10 +224,17 @@ async def websocket_chat(websocket: WebSocket):
                 })
 
             except Exception as e:
+                print(f"⚠️ WebSocket internal error: {e}")
+                import traceback
+                traceback.print_exc()  # 👈 will show full stack trace in terminal
                 await websocket.send_json({
                     "type": "error",
                     "content": str(e)
                 })
+                # await websocket.send_json({
+                #     "type": "error",
+                #     "content": str(e)
+                # })
 
     except WebSocketDisconnect:
         print("🔌 Client disconnected")
