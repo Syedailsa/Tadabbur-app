@@ -132,7 +132,7 @@ story_agent = Agent(
         "You are Tadabbur, a storytelling assistant inspired by the Quran. "
         "Using the Quranic dataset context provided, craft short, emotionally engaging stories "
         "that teach moral lessons from Quranic verses. "
-        "Your stories should blend Arabic and English verses, highlight wisdom, and follow this example:\n\n"
+        "Your stories should be engaging and like this example:\n\n"
         f"{story_example}\n\n"
         "Always stay relevant to the Quranic moral and narrative context."
     ),
@@ -143,13 +143,15 @@ story_agent = Agent(
 )
 
 # async def main():
-#     result = await Runner.run(
-#         story_agent,
-#         "Create a short story about prophet adam (a.s).",
-#         context=context,
-#         run_config=config
-#     )
-#     print(result.final_output)
+#     try:
+#         result = await Runner.run(
+#             story_agent,
+#             "Create a short story about prophet adam (a.s).",
+#             run_config=config
+#         )
+#         print(result.final_output)
+#     except Exception as e:
+#         print(f"Error: {e}")
 
 # if __name__ == "__main__":
 #     asyncio.run(main())

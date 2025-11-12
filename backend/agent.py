@@ -1,12 +1,8 @@
-from agents import Agent, ModelSettings, OpenAIChatCompletionsModel, RunConfig, Runner, AsyncOpenAI, GuardrailFunctionOutput,InputGuardrailTripwireTriggered, RunContextWrapper, TResponseInputItem, input_guardrail
+from agents import Agent, ModelSettings, OpenAIChatCompletionsModel, RunConfig, Runner, AsyncOpenAI, GuardrailFunctionOutput, RunContextWrapper, TResponseInputItem, input_guardrail, output_guardrail
 from story_agent import story_agent
-from context_agent import contextAgent
-from tafseer_agent import Tafsir_Agent
-from application_agent import ApplicationAgent
 import pandas as pd
 from dotenv import load_dotenv
 from pydantic import BaseModel
-from agent_hook import AgentBaseHook
 import asyncio
 import os
 
@@ -38,17 +34,36 @@ ct3 = "\n".join(df["surah_no"].astype(str))
 ct4= "\n".join(df["surah_name_en"].astype(str))
 context = [ct1, ct2, ct3, ct4]
 
+# --- CONTEXT FOR INPUT GUARDRAIL AGENT ---
+quran_topics = """
+The Quran discusses faith, worship, moral values, patience, guidance, repentance,
+justice, stories of prophets, creation, the afterlife, and reflections on life and
+spiritual growth. It does not cover math, technology, or unrelated worldly knowledge.
+"""
+
 guardrail_agent = Agent( 
     name="Guardrail check",
-    instructions=f'Check if the user is asking you about data related to the {context} you are provided with.'
-    f"If its unrelated to the Quranic {context} meaningfully, respond with 'UNRELATED'."
-    "Otherwise, respond with 'RELATED'.",
+    # instructions=f'Check if the user is asking you about data related to the {context} you are provided with.'
+    # f"If its unrelated to the Quranic {context} meaningfully, respond with 'UNRELATED'."
+    # "Otherwise, respond with 'RELATED'.",
+    instructions=(
+        "Your task is to decide whether the user’s question is related to Quranic knowledge. "
+        "If it’s about verses, tafsir, meaning, translation, reflection, or anything spiritually relevant, "
+        "respond only with 'RELATED'. "
+        "If it’s about unrelated topics such as math, science, entertainment, coding, or general trivia, "
+        "respond only with 'UNRELATED'. "
+        f"Context summary:\n{quran_topics}" 
+        ),
     model=model
 )
 
 fallback_agent = Agent(
     name="FallbackResponder",
-    instructions="You are unable to answer the question as it is outside your knowledge base. Politely inform the user that you cannot provide an answer.",
+    instructions=(
+        "You are Tadabbur your friendly Quran companion. "
+        f"If a user says something unrelated to the Quran topics like {quran_topics} reply politely and warmly that you cant reply to topics related to maths, technology etc but if you are greeted then greet back and tell who you are and what can the user ask you, "
+        "'Hi there! Im Tadabbur — I specialize in Quranic insights. What would you like to explore today?'"
+    ),
     model=model
 )
 
@@ -56,11 +71,13 @@ fallback_agent = Agent(
 async def quran_input_guardrail( 
     ctx: RunContextWrapper[None], agent: Agent, input: str | list[TResponseInputItem]
 ) -> GuardrailFunctionOutput:
+    print("Running Quran input guardrail...")
+    """Checks if the input question is Quranic-related"""
     result = await Runner.run(guardrail_agent, input, context=ctx.context)
     output = str(result.final_output).strip().lower()
 
     if "unrelated" in output:
-        fallback = await Runner.run(fallback_agent, input, context=ctx.context)
+        fallback = await Runner.run(fallback_agent, "This question seems unrelated to Quranic context.", context=ctx.context)
         return GuardrailFunctionOutput(
             output_info=fallback.final_output, 
             tripwire_triggered=True,
@@ -70,17 +87,14 @@ async def quran_input_guardrail(
         tripwire_triggered=False
     )
 
-from agents import output_guardrail, GuardrailFunctionOutput
-
 # --- OUTPUT GUARDRAIL AGENT ---
 output_guard_agent = Agent(
     name="OutputVerifier",
     instructions=(
-        f"You are a strict Quranic context verifier. "
-        f"Given the original Quranic context:\n{context}\n\n"
-        f"When you receive an assistant's response, determine if it strictly relates to the {context} provided. "
-        "If yes, respond only with 'VALID'. "
-        "If no, respond only with 'INVALID'."
+        "You are a strict verifier ensuring that Tadabbur’s responses remain Quran-related. "
+        "If the assistant’s reply focuses on Quranic verses, tafsir, themes, moral lessons, or reflections, respond ONLY with 'VALID'. "
+        "If it drifts into unrelated topics (e.g., math, tech, movies, or general knowledge), respond ONLY with 'INVALID'. "
+        f"Context summary:\n{quran_topics}"
     ),
     model=model,
 )
@@ -91,6 +105,7 @@ async def quran_output_guardrail(
     agent: Agent,
     output: str
 ) -> GuardrailFunctionOutput:
+    print("Running Quran output guardrail...")
     """Checks if the generated output is Quranic and valid"""
     result = await Runner.run(output_guard_agent, output, context=ctx.context)
     output = str(result.final_output).strip().lower()
@@ -113,26 +128,32 @@ agent = Agent(
     name="QuranTadabburAgent",
     instructions=f'You are Tadabbur a knowledgeable assistant specializing in Quranic knowledge on {context} data. Provide short detail on the Quranic verses provided in {context} data with its arabic too.'
     "Tell in proper structure by starting each ayah from a new line"
+    "If a user asks for Quranic **stories**, narratives of prophets, or moral lessons, "
+    "you must **handoff** the conversation to the `QuranStoryTeller` agent by calling "
+    "`transfer_to_quranstoryteller`. "
     "talk in english on default unless user asks in other language.",
     model_settings=ModelSettings(
-        temperature=0,
+        temperature=0.2,
     ),
-    hooks=AgentBaseHook(),
-    # input_guardrails=[quran_input_guardrail],
-    # output_guardrails=[quran_output_guardrail],
-    handoffs=[{"QuranStoryTeller": story_agent}, {"Quranic_Context_Agent": contextAgent}, {"Quranic_Tafseer_Agent": Tafsir_Agent}, {"Quranic_Applicatioon_Agent": ApplicationAgent}]
+    input_guardrails=[quran_input_guardrail],
+    output_guardrails=[quran_output_guardrail],
+    handoffs=[{"QuranStoryTeller": story_agent}]
 )
 
-async def main():
-    # trip the guardrail
-    try:
-        result = await Runner.run(agent, "tell me the story of hazrat Adam (a.s)" , run_config=config, context=context)
-        print(result.final_output)
+# async def main():
+#     result = await Runner.run(agent, "Hello, can you story of hazrat adam (a.s)?" , run_config=config, context=context)
+#     print(result.final_output)
+#     print(result)
 
-    except InputGuardrailTripwireTriggered:
-        print("Quran guardrail tripped")
+# if __name__ == "__main__":
+#     asyncio.run(main())
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# import pandas as pd
 
+# df = pd.read_csv("QuranDataset.csv", encoding="utf-8-sig")
 
+# print(df.columns)
+# print(df.head())
+
+# # Show all distinct surah names to confirm the exact name
+# print(df["surah_name_en"].unique()[:10])  # just first 10
