@@ -1,8 +1,12 @@
 from agents import Agent, ModelSettings, OpenAIChatCompletionsModel, RunConfig, Runner, AsyncOpenAI, GuardrailFunctionOutput,InputGuardrailTripwireTriggered, RunContextWrapper, TResponseInputItem, input_guardrail
 from story_agent import story_agent
+from context_agent import contextAgent
+from tafseer_agent import Tafsir_Agent
+from application_agent import ApplicationAgent
 import pandas as pd
 from dotenv import load_dotenv
 from pydantic import BaseModel
+from agent_hook import AgentBaseHook
 import asyncio
 import os
 
@@ -111,31 +115,24 @@ agent = Agent(
     "Tell in proper structure by starting each ayah from a new line"
     "talk in english on default unless user asks in other language.",
     model_settings=ModelSettings(
-        temperature=0.2,
+        temperature=0,
     ),
-    input_guardrails=[quran_input_guardrail],
-    output_guardrails=[quran_output_guardrail],
-    handoffs=[{"QuranStoryTeller": story_agent}]
+    hooks=AgentBaseHook(),
+    # input_guardrails=[quran_input_guardrail],
+    # output_guardrails=[quran_output_guardrail],
+    handoffs=[{"QuranStoryTeller": story_agent}, {"Quranic_Context_Agent": contextAgent}, {"Quranic_Tafseer_Agent": Tafsir_Agent}, {"Quranic_Applicatioon_Agent": ApplicationAgent}]
 )
 
-# async def main():
-#     # trip the guardrail
-#     try:
-#         result = await Runner.run(agent, "Hello, can you tell me the ayah no 17 of surah al baqarah?" , run_config=config, context=context)
-#         print(result.final_output)
+async def main():
+    # trip the guardrail
+    try:
+        result = await Runner.run(agent, "tell me the story of hazrat Adam (a.s)" , run_config=config, context=context)
+        print(result.final_output)
 
-#     except InputGuardrailTripwireTriggered:
-#         print("Quran guardrail tripped")
+    except InputGuardrailTripwireTriggered:
+        print("Quran guardrail tripped")
 
-# if __name__ == "__main__":
-#     asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
 
-# import pandas as pd
 
-# df = pd.read_csv("QuranDataset.csv", encoding="utf-8-sig")
-
-# print(df.columns)
-# print(df.head())
-
-# # Show all distinct surah names to confirm the exact name
-# print(df["surah_name_en"].unique()[:10])  # just first 10

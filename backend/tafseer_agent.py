@@ -75,97 +75,97 @@ class Output_type(BaseModel):
     tafsir_content: str
 
 
-async def main():
-
-    provider = AsyncOpenAI(
-        api_key= FIRE_WORKS_API,
-        base_url= Base_URL
-    )
-
-    fireworkmodel = OpenAIChatCompletionsModel(
-        model= MODEL_NAME,
-        openai_client= provider
-
-    )
-    config = RunConfig(
-        model= fireworkmodel,
-        model_provider=provider,
-        tracing_disabled= True
-       
-    )
 
 
-    input_guardrails_agent = Agent(
-        name = "Quranic Tafseer Guardrail Agent",
-        instructions= """You are Quranic Input Checker Agent that checks if the user query is valid and related to the provided context
-        about Quranic Tafseer. If the query is valid and related, respond with is_query_valid_or_related_to_context as true, provide 
-        reasoning and the answer based on the context. If not, respond with is_query_valid_or_related_to_context as false, provide 
-        reasoning and do not provide an answer.""",
-        output_type= Tafsir_Request
+provider = AsyncOpenAI(
+    api_key= FIRE_WORKS_API,
+    base_url= Base_URL
+)
+
+fireworkmodel = OpenAIChatCompletionsModel(
+    model= MODEL_NAME,
+    openai_client= provider
+
+)
+config = RunConfig(
+    model= fireworkmodel,
+    model_provider=provider,
+    tracing_disabled= True
+    
+)
+
+
+input_guardrails_agent = Agent(
+    name = "Quranic Tafseer Guardrail Agent",
+    instructions= """You are Quranic Input Checker Agent that checks if the user query is valid and related to the provided context
+    about Quranic Tafseer. If the query is valid and related, respond with is_query_valid_or_related_to_context as true, provide 
+    reasoning and the answer based on the context. If not, respond with is_query_valid_or_related_to_context as false, provide 
+    reasoning and do not provide an answer.""",
+    output_type= Tafsir_Request
+
+)
+
+output_guardrail_agent = Agent(
+    name = "Quranic Tafseer Output Guardrail Agent",
+    instructions="""
+    You are Quranic Output Checker Agent that checks if the generated output is valid and related to the provided context
+    about Quranic Tafseer. If the output is valid and related, respond with is_query_valid_or_related_to_context as true, provide 
+    reasoning and the answer based on the context. If not, respond with is_query_valid_or_related_to_context as false, provide 
+    reasoning and do not provide an answer.""",
+    output_type= Tafsir_Request
     
     )
 
-    output_guardrail_agent = Agent(
-        name = "Quranic Tafseer Output Guardrail Agent",
-        instructions="""
-        You are Quranic Output Checker Agent that checks if the generated output is valid and related to the provided context
-        about Quranic Tafseer. If the output is valid and related, respond with is_query_valid_or_related_to_context as true, provide 
-        reasoning and the answer based on the context. If not, respond with is_query_valid_or_related_to_context as false, provide 
-        reasoning and do not provide an answer.""",
-        output_type= Tafsir_Request
-        
-        )
+
+# ------------------------------------------------------------------
+# ---------------------- Input guardrail ---------------------------
+# -------------------------------------------------------------------
+
+@input_guardrail
+async def input_guardrail_agent_fn(
+    ctx: RunContextWrapper[None],
+    agent: Agent,
+    input: str| list[TResponseInputItem]
+)-> GuardrailFunctionOutput:
+    result = await Runner.run(
+        input_guardrails_agent,
+        input,
+        context= ctx.context,
+        run_config= config
+    )
+    return GuardrailFunctionOutput(
+        output_info= result.final_output,
+        tripwire_triggered= not result.final_output.is_query_valid_or_related_to_context
+    )
 
 
-    # ------------------------------------------------------------------
-    # ---------------------- Input guardrail ---------------------------
-    # -------------------------------------------------------------------
 
-    @input_guardrail
-    async def input_guardrail_agent_fn(
-        ctx: RunContextWrapper[None],
-        agent: Agent,
-        input: str| list[TResponseInputItem]
-    )-> GuardrailFunctionOutput:
-        result = await Runner.run(
-            input_guardrails_agent,
-            input,
-            context= ctx.context,
-            run_config= config
-        )
-        return GuardrailFunctionOutput(
-            output_info= result.final_output,
-            tripwire_triggered= not result.final_output.is_query_valid_or_related_to_context
-        )
-    
-    
-    
-    # ---------------------------------------------------------------------------------------
-    # ------------------------------------- Output Guardrail --------------------------------
-    # ---------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------------------
+# ------------------------------------- Output Guardrail --------------------------------
+# ---------------------------------------------------------------------------------------
 
-    @output_guardrail
-    async def output_agent_guard_fn(
-        ctx: RunContextWrapper[None],
-        agent: Agent,
+@output_guardrail
+async def output_agent_guard_fn(
+    ctx: RunContextWrapper[None],
+    agent: Agent,
+    output,
+)-> GuardrailFunctionOutput:
+    result = await Runner.run(
+        output_guardrail_agent,
         output,
-    )-> GuardrailFunctionOutput:
-        result = await Runner.run(
-            output_guardrail_agent,
-            output,
-            context= ctx.context,
-            run_config= config
-        )
-        return GuardrailFunctionOutput(
-            output_info= result.final_output,
-            tripwire_triggered= not result.final_output.is_query_valid_or_related_to_context
-        )
+        context= ctx.context,
+        run_config= config
+    )
+    return GuardrailFunctionOutput(
+        output_info= result.final_output,
+        tripwire_triggered= not result.final_output.is_query_valid_or_related_to_context
+    )
 
 
 
-    Tafsir_Agent: Agent = Agent(
-    name="Quranic Tafsir Agent",
-    instructions=f"""
+Tafsir_Agent: Agent = Agent(
+name="Quranic Tafsir Agent",
+instructions=f"""
 You are a Quranic Tafsir agent. Provide explanations of Quranic verses based ONLY on the following resources:
 
 1. The provided CSV context: {csv_content}
@@ -177,35 +177,20 @@ You MUST NOT use any external knowledge, web resources, or hallucinate.
 - If the answer exists in the context, provide it along with the English translation of the Arabic verse.
 - If the answer does NOT exist in the provided context or JSON data, politely respond: "I’m sorry, this information is not available in the provided data."
 """,
-    model_settings=ModelSettings( 
-        temperature=0.7,
-        tool_choice="required"
-    ),
-    tools=[function_tool(read_json_file)],
-    # input_guardrails=[input_guardrail_agent_fn],
-    # output_guardrails=[output_agent_guard_fn],
+model_settings=ModelSettings( 
+    temperature=0.7,
+    tool_choice="required"
+),
+tools=[function_tool(read_json_file)],
+
 )
 
 
-    
-    try:
-        result = await Runner.run(
-        starting_agent= Tafsir_Agent,
-        input= "tell me the tafseer of surah baqarah ayah 2",
-        run_config= config            
-    )
-        print("Tafsir Agent Result:")
-        print(result.final_output)
-    except InputGuardrailTripwireTriggered as e:
-        print("Input Guardrail Tripwire Triggered:")
-        print(e)
-    except OutputGuardrailTripwireTriggered as e:
-        print("Output Guardrail Tripwire Triggered:")
-        print(e)
-   
 
-if __name__ == "__main__":
-    asyncio.run(main())
+
+
+# if __name__ == "__main__":
+#     asyncio.run(main())
 
 
 
