@@ -12,18 +12,24 @@ import { ModelList } from "@/static/data";
 import BottomOptions from "./components/chatbot/UI/BottomOptions";
 import ExtraOptions from "./components/chatbot/UI/ExtraOptions";
 import ModelBox from "./components/chatbot/UI/ModelBox";
+import Controls from "./components/chatbot/UI/Controls";
 
 export default function ChatPage() {
-  const [messages, setMessages] =
-    useState<{ role: "user" | "assistant"; content: string }[]>();
+  const [messages, setMessages] = useState<
+    { role: "user" | "assistant"; content: string }[] | null
+  >(null);
 
   const inputRef = useRef<HTMLDivElement | null>(null);
   const [showInputButton, setShowInputButton] = useState(false);
-  const [ws, setws] = useState<WebSocket | null>(null);
+  const [greeting, setGreeting] = useState<string | null>(
+    "Assalam O Alaykum, I am Tadabbur, how may I help you today?"
+  );
   const wsRef = useRef<WebSocket | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
-
+  const [placeholder, setPlaceholder] = useState<string | null>(
+    "Let's learn about the Quran"
+  );
   const [error, setError] = useState<string | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -63,8 +69,19 @@ export default function ChatPage() {
             else updated.push({ role: "assistant", content: reply });
             return updated;
           });
-
           setLoading(false);
+          break;
+        case "agent":
+          const agent_type = data.agent;
+          switch (agent_type) {
+            case "story-telling":
+              setPlaceholder("Generate an Islamic story");
+              setMessages(null);
+              setGreeting(
+                "Generate any Islamic story with the finest AI Models."
+              );
+              break;
+          }
           break;
         case "loading_message":
           const message = data.content ?? "Thinking to enhance response";
@@ -124,84 +141,109 @@ export default function ChatPage() {
 
   return (
     <div className="relative w-screen h-screen bg-gray-50  overflow-y-auto">
-      <div className="w-full h-full flex flex-col items-center ">
-        <div className="w-full px-4 mt-12 lg:w-2/3 chat-box flex flex-col gap-y-4">
-          {messages?.map((message, index) =>
-            message.role === "user" ? (
-              <div key={index}>
-                <p className="ml-auto w-max min-w-40 max-w-[20rem] bg-neutral-900 text-white switzer-500 py-2 px-3 rounded-md shadow-md border border-black/5">
-                  {message.content}
+      <div className="w-full h-full flex flex-col items-center justify-between">
+        <div className="absolute top-0 p-2 w-full">
+          <Controls />
+        </div>
+        <div
+          className={`w-full h-full px-4 mt-12 lg:w-2/3 chat-box flex flex-col gap-y-4 ${
+            !messages ? "justify-center items-center" : ""
+          }`}
+        >
+          <AnimatePresence>
+            {!messages && (
+              <motion.div
+                key="greeting"
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.2, ease: easeInOut }}
+              >
+                <p className="switzer-500 text-center tracking-tight text-4xl px-6">
+                  {greeting}
                 </p>
-              </div>
-            ) : (
-              <div key={index}>
-                <AnimatePresence mode="wait">
-                  {loading && !loadingMessage && !message.content ? (
-                    <motion.div
-                      animate={{ scale: [1, 1.2, 1] }}
-                      transition={{
-                        duration: 0.8,
-                        ease: easeInOut,
-                        repeat: Infinity,
-                        repeatType: "loop",
-                      }}
-                      className="w-3 h-3 rounded-full bg-black"
-                    ></motion.div>
-                  ) : loadingMessage && !message.content ? (
-                    <motion.div
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{
-                        duration: 0.1,
-                        ease: easeInOut,
-                        type: "spring",
-                      }}
-                      exit={{ opacity: 0 }}
-                      className="w-max flex gap-x-1"
-                    >
-                      <motion.p
-                        className="space-grotesk-500 text-black/60 bg-linear-to-l from-black-40 via-bg-black/50 to-black/60 bg-size-[200%_100%] bg-clip-text"
-                        animate={{ backgroundPosition: ["200% 0", "-200% 0"] }}
-                        transition={{
-                          duration: 3,
-                          ease: "linear",
-                          repeat: Infinity,
-                        }}
-                      >
-                        {loadingMessage}
-                      </motion.p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <AnimatePresence mode="popLayout">
+            {messages?.map((message, index) =>
+              message.role === "user" ? (
+                <div key={index}>
+                  <p className="ml-auto w-max min-w-40 max-w-[20rem] bg-neutral-900 text-white switzer-500 py-2 px-3 rounded-md shadow-md border border-black/5">
+                    {message.content}
+                  </p>
+                </div>
+              ) : (
+                <div key={index}>
+                  <AnimatePresence mode="wait">
+                    {loading && !loadingMessage && !message.content ? (
                       <motion.div
-                        animate={{ x: [-4, 6] }}
+                        animate={{ scale: [1, 1.2, 1] }}
                         transition={{
-                          duration: 1,
-                          ease: easeIn,
+                          duration: 0.8,
+                          ease: easeInOut,
                           repeat: Infinity,
                           repeatType: "loop",
                         }}
+                        className="w-3 h-3 rounded-full bg-black"
+                      ></motion.div>
+                    ) : loadingMessage && !message.content ? (
+                      <motion.div
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{
+                          duration: 0.1,
+                          ease: easeInOut,
+                          type: "spring",
+                        }}
+                        exit={{ opacity: 0 }}
+                        className="w-max flex gap-x-1"
                       >
-                        <DownArrow className="mt-[0.32rem] w-4 h-4 -rotate-90" />
+                        <motion.p
+                          className="space-grotesk-500 text-black/60 bg-linear-to-l from-black-40 via-bg-black/50 to-black/60 bg-size-[200%_100%] bg-clip-text"
+                          animate={{
+                            backgroundPosition: ["200% 0", "-200% 0"],
+                          }}
+                          transition={{
+                            duration: 3,
+                            ease: "linear",
+                            repeat: Infinity,
+                          }}
+                        >
+                          {loadingMessage}
+                        </motion.p>
+                        <motion.div
+                          animate={{ x: [-4, 6] }}
+                          transition={{
+                            duration: 1,
+                            ease: easeIn,
+                            repeat: Infinity,
+                            repeatType: "loop",
+                          }}
+                        >
+                          <DownArrow className="mt-[0.32rem] w-4 h-4 -rotate-90" />
+                        </motion.div>
                       </motion.div>
-                    </motion.div>
-                  ) : (
-                    <div className="w-max min-w-40 max-w-full  switzer-500 py-2 px-3 rounded-md bg-white shadow-md">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        rehypePlugins={[rehypeRaw]}
-                      >
-                        {message.content}
-                      </ReactMarkdown>
-                    </div>
-                  )}
-                </AnimatePresence>
-              </div>
-            )
-          )}
-
+                    ) : (
+                      <div className="w-max min-w-40 max-w-full  switzer-500 py-2 px-3 rounded-md bg-white shadow-md">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          rehypePlugins={[rehypeRaw]}
+                        >
+                          {message.content}
+                        </ReactMarkdown>
+                      </div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )
+            )}
+          </AnimatePresence>
           <div ref={messagesEndRef}></div>
         </div>
-        <div className="sticky bottom-0 px-4 pb-4 pt-2 w-full lg:w-2/3 bg-gray-50">
+        <div className="sticky bottom-0 bg-gray-50 px-4 pb-4 pt-2 w-full lg:w-2/3 input-box">
           <div
-            className="flex flex-col relative input-box border border-black/10 px-3 py-2 rounded-lg h-40 shadow-md
+            className="flex flex-col relative border border-black/10 px-3 py-2 rounded-lg h-40 shadow-md
         "
           >
             <div
@@ -221,10 +263,10 @@ export default function ChatPage() {
               <span
                 className={`absolute top-2 pointer-events-none placeholder-input-box switzer-500 text-black`}
               >
-                Let's learn about the Quran.
+                {placeholder}
               </span>
             )}
-            <OptionsProvider>
+            <OptionsProvider wsRef={wsRef}>
               <BottomOptions />
               <ExtraOptions />
               <ModelBox modelList={ModelList} />

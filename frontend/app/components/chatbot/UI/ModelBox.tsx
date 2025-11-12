@@ -19,7 +19,7 @@ const ModelBox: FC<ModelBoxProps> = ({
 }): React.ReactElement | null => {
   const [filteredModels, setFilteredModels] =
     useState<ModelBoxProps["modelList"]>(modelList);
-  const { hideModelBox, setHideModelBox, setSelectedModel } =
+  const { hideModelBox, setHideModelBox, setSelectedModel, setActive } =
     useContext(OptionsContext);
   const overlayRef = useRef<HTMLDivElement | null>(null);
 
@@ -31,6 +31,11 @@ const ModelBox: FC<ModelBoxProps> = ({
         !overlayRef.current.contains(e.target as Node)
       ) {
         setHideModelBox(true);
+        setActive((prev: boolean[]) => {
+          const current = [...prev];
+          current[0] = false;
+          return current;
+        });
         setFilteredModels(modelList);
       }
     };

@@ -9,12 +9,15 @@ import MicIcon from "../../../../icons/mic_icon.svg";
 
 const BottomOptions = () => {
   const {
+    wsRef,
     hideExtraOptions,
     setHideExtraOptions,
     selectedModel,
     setSelectedModel,
     hideModelBox,
     setHideModelBox,
+    active,
+    setActive,
   } = useContext(OptionsContext);
 
   return (
@@ -25,10 +28,16 @@ const BottomOptions = () => {
       <motion.div
         whileTap={{ backgroundColor: "#0000003D" }}
         whileHover={{ backgroundColor: "#0000000D" }}
+        animate={{ backgroundColor: active[0] ? "#0000000D" : "" }}
         id="choose-model-box"
         onClick={(e) => {
           e.stopPropagation();
           setHideModelBox((prev: boolean | null) => !prev);
+          setActive((prev: boolean[]) => {
+            const current = [...prev];
+            current[0] = !current[0];
+            return current;
+          });
         }}
         className="relative flex flex-row-reverse gap-x-1 py-1 pr-3 pl-4 rounded-full cursor-pointer items-center"
       >
@@ -55,6 +64,17 @@ const BottomOptions = () => {
         </motion.div>
         <motion.div
           id="story-telling-box"
+          onClick={() => {
+            setActive((prev: boolean[]) => {
+              const current = [...prev];
+              current[1] = !current[1];
+              return current;
+            });
+            wsRef.current?.send(
+              JSON.stringify({ type: "agent", agent: "story-telling" })
+            );
+          }}
+          animate={{ backgroundColor: active[1] ? "#0000000D" : "" }}
           whileTap={{ backgroundColor: "#0000003D" }}
           whileHover={{ backgroundColor: "#0000000D" }}
           className="flex gap-x-1 px-3 py-1 rounded-full cursor-pointer items-center"
@@ -69,6 +89,14 @@ const BottomOptions = () => {
           id="mic-icon-box"
           whileTap={{ backgroundColor: "#0000003D" }}
           whileHover={{ backgroundColor: "#0000000D" }}
+          onClick={() => {
+            setActive((prev: boolean[]) => {
+              const current = [...prev];
+              current[2] = !current[2];
+              return current;
+            });
+          }}
+          animate={{ backgroundColor: active[2] ? "#0000000D" : "" }}
           className="w-9 h-9 rounded-full flex items-center justify-center cursor-pointer"
         >
           <MicIcon className="w-5 h-5 fill-current text-black" />
