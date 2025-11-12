@@ -132,41 +132,42 @@ export default function ChatPage() {
                 <p className="ml-auto w-max min-w-40 max-w-[20rem] bg-neutral-900 text-white switzer-500 py-2 px-3 rounded-md shadow-md border border-black/5">
                   {message.content}
                 </p>
-              </div>
-            ) : (
-              <div key={index}>
-                <AnimatePresence mode="wait">
-                  {loading && !loadingMessage && !message.content ? (
-                    <motion.div
-                      animate={{ scale: [1, 1.2, 1] }}
-                      transition={{
-                        duration: 0.8,
-                        ease: easeInOut,
-                        repeat: Infinity,
-                        repeatType: "loop",
-                      }}
-                      className="w-3 h-3 rounded-full bg-black"
-                    ></motion.div>
-                  ) : loadingMessage && !message.content ? (
-                    <motion.div
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{
-                        duration: 0.1,
-                        ease: easeInOut,
-                        type: "spring",
-                      }}
-                      exit={{ opacity: 0 }}
-                      className="w-max flex gap-x-1"
-                    >
-                      <motion.p
-                        className="space-grotesk-500 text-black/60 bg-linear-to-l from-black-40 via-bg-black/50 to-black/60 bg-size-[200%_100%] bg-clip-text"
-                        animate={{ backgroundPosition: ["200% 0", "-200% 0"] }}
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <AnimatePresence mode="popLayout">
+            {messages?.map((message, index) =>
+              message.role === "user" ? (
+                <div key={index}>
+                  <p className="ml-auto w-max min-w-40 max-w-[20rem] bg-neutral-900 text-white switzer-500 py-2 px-3 rounded-md shadow-md border border-black/5">
+                    {message.content}
+                  </p>
+                </div>
+              ) : (
+                <div key={index}>
+                  <AnimatePresence mode="wait">
+                    {loading && !loadingMessage && !message.content ? (
+                      <motion.div
+                        animate={{ scale: [1, 1.2, 1] }}
                         transition={{
-                          duration: 3,
-                          ease: "linear",
+                          duration: 0.8,
+                          ease: easeInOut,
                           repeat: Infinity,
+                          repeatType: "loop",
                         }}
+                        className="w-3 h-3 rounded-full bg-black"
+                      ></motion.div>
+                    ) : loadingMessage && !message.content ? (
+                      <motion.div
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{
+                          duration: 0.1,
+                          ease: easeInOut,
+                          type: "spring",
+                        }}
+                        exit={{ opacity: 0 }}
+                        className="w-max flex gap-x-1"
                       >
                         {loadingMessage}
                       </motion.p>
@@ -201,7 +202,7 @@ export default function ChatPage() {
         </div>
         <div className="sticky bottom-0 px-4 pb-4 pt-2 w-full lg:w-2/3 bg-gray-50">
           <div
-            className="flex flex-col relative input-box border border-black/10 px-3 py-2 rounded-lg h-40 shadow-md
+            className="flex flex-col relative border border-black/10 px-3 py-2 rounded-lg h-40 shadow-md
         "
           >
             <div
@@ -221,10 +222,10 @@ export default function ChatPage() {
               <span
                 className={`absolute top-2 pointer-events-none placeholder-input-box switzer-500 text-black`}
               >
-                Let's learn about the Quran.
+                {placeholder}
               </span>
             )}
-            <OptionsProvider>
+            <OptionsProvider wsRef={wsRef}>
               <BottomOptions />
               <ExtraOptions />
               <ModelBox modelList={ModelList} />
