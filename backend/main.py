@@ -96,7 +96,10 @@ from typing import List
 from agents import Runner
 from agents import InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered
 import agent as agent_module
+import logging
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # ------------------- APP CONFIG -------------------
 
@@ -132,7 +135,7 @@ async def chat(req: ChatRequest, authorization: str | None = Header(None)):
 
     conversation = "\n".join([f"{m.role}: {m.content}" for m in req.messages])
     try:
-        print("hey")
+        logger.info("hey")
         result = await Runner.run(
             agent_module.agent,
             conversation,
@@ -146,6 +149,18 @@ async def chat(req: ChatRequest, authorization: str | None = Header(None)):
         msg = getattr(e.guardrail_result, "output_info",
                       "Sorry, your question seems unrelated to the Quranic context.")
         return {"reply": msg}
+    # except InputGuardrailTripwireTriggered as e:
+    #     # Use fallback output generated inside the guardrail
+    #     msg = getattr(e.guardrail_result, "output_info", None)
+    #     if not msg:
+    #         # If somehow no fallback output was generated
+    #         msg = await Runner.run(
+    #             agent_module.fallback_agent, 
+    #             conversation, 
+    #             run_config=getattr(agent_module, "config", None)
+    #         )
+    #         msg = getattr(msg, "final_output", "Sorry, I can only respond within Quranic context.")
+    #     return {"reply": msg}
 
     except OutputGuardrailTripwireTriggered as e:
         msg = getattr(e.guardrail_result, "output_info",
@@ -163,7 +178,7 @@ async def chat(req: ChatRequest, authorization: str | None = Header(None)):
 async def websocket_chat(websocket: WebSocket):
     """Handles Quran AI chat via WebSocket."""
     await websocket.accept()
-    print("Connected to websocket successfully!")
+    logger.info("Connected to websocket successfully!")
     try:
         # # Expect the first message to contain API key
         # init_msg = await websocket.receive_text()
@@ -196,28 +211,36 @@ async def websocket_chat(websocket: WebSocket):
                 [f"{m['role']}: {m['content']}" for m in messages]
             )
 
-            print("conversation", conversation)
+            logger.info(f"conversation: {conversation}")
 
             try:
-                print("hey")
                 result =await Runner.run(
                     agent_module.agent,
                     conversation,
                     run_config=getattr(agent_module, "config", None)
                 )
 
-                print("result", result)
+                logger.info(f"result: {result}")
                 reply_text = getattr(result, "final_output", None) or getattr(result, "output_text", None) or str(result)
 
-                print('reply_text', reply_text)
+                logger.info(f"reply_text: {reply_text}")
                 await websocket.send_json({
                     "type": "assistance_response",
                     "content": reply_text
                 })
 
             except InputGuardrailTripwireTriggered as e:
-                msg = getattr(e.guardrail_result, "output_info",
-                              "Sorry, your question seems unrelated to the Quranic context.")
+                # Use the fallback agent's response if it exists
+                msg = getattr(e.guardrail_result, "output_info", None)
+                if not msg:
+                    # If guardrail didn’t produce fallback
+                    fallback_result = await Runner.run(
+                        agent_module.fallback_agent,
+                        conversation,
+                        run_config=getattr(agent_module, "config", None)
+                    )
+                    msg = getattr(fallback_result, "final_output", "Sorry, I can only respond within Quranic context.")
+                
                 await websocket.send_json({
                     "type": "assistance_response",
                     "content": msg
@@ -232,7 +255,7 @@ async def websocket_chat(websocket: WebSocket):
                 })
 
             except Exception as e:
-                print(f"⚠️ WebSocket internal error: {e}")
+                logger.info(f"⚠️ WebSocket internal error: {e}")
                 import traceback
                 traceback.print_exc()  # 👈 will show full stack trace in terminal
                 await websocket.send_json({
@@ -245,10 +268,10 @@ async def websocket_chat(websocket: WebSocket):
                 # })
 
     except WebSocketDisconnect:
-        print("🔌 Client disconnected")
+        logger.info("🔌 Client disconnected")
 
     except Exception as e:
-        print(f"⚠️ WebSocket error: {e}")
+        logger.info(f"⚠️ WebSocket error: {e}")
         try:
             await websocket.close()
         except:
