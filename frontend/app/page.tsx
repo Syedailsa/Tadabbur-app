@@ -13,6 +13,7 @@ import BottomOptions from "./components/chatbot/UI/BottomOptions";
 import ExtraOptions from "./components/chatbot/UI/ExtraOptions";
 import ModelBox from "./components/chatbot/UI/ModelBox";
 import Controls from "./components/chatbot/UI/Controls";
+import { generateNewSessionId } from "./session/session";
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<
@@ -33,6 +34,14 @@ export default function ChatPage() {
   const [error, setError] = useState<string | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const [sessionID, setSessionID] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!wsRef.current) return;
+
+    const session_id = generateNewSessionId();
+    wsRef.current?.send(JSON.stringify({ session_id: session_id }));
+  }, [wsRef.current]);
 
   useEffect(() => {
     const websocket = new WebSocket("ws://localhost:8000/ws/chat");
@@ -56,6 +65,14 @@ export default function ChatPage() {
 
       const type = data.type;
       switch (type) {
+        case "session_id":
+          const session_id = data.session_id;
+          const isNew = session_id != sessionID;
+          if (isNew) {
+            setSessionID(session_id);
+            setMessages(null);
+          }
+          break;
         case "assistance_response":
           const reply = data.content ?? "No reply from server";
 
@@ -79,6 +96,13 @@ export default function ChatPage() {
               setMessages(null);
               setGreeting(
                 "Generate any Islamic story with the finest AI Models."
+              );
+              break;
+            case "tafseer":
+              setPlaceholder("Let's lean about the Quran");
+              setMessages(null);
+              setGreeting(
+                "Assalam O Alaykum, I am Tadabbur, how may I help you today?"
               );
               break;
           }
@@ -141,12 +165,12 @@ export default function ChatPage() {
 
   return (
     <div className="relative w-screen h-screen bg-gray-50  overflow-y-auto">
-      <div className="w-full h-full flex flex-col items-center justify-between">
+      <div className="w-full h-full flex flex-col items-center ">
         <div className="absolute top-0 p-2 w-full">
-          <Controls />
+          <Controls wsRef={wsRef} />
         </div>
         <div
-          className={`w-full h-full px-4 mt-12 lg:w-2/3 chat-box flex flex-col gap-y-4 ${
+          className={`w-full h-full flex-1 px-4 mt-12 lg:w-2/3 chat-box flex flex-col gap-y-4 ${
             !messages ? "justify-center items-center" : ""
           }`}
         >

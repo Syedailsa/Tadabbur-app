@@ -67,12 +67,19 @@ const BottomOptions = () => {
           onClick={() => {
             setActive((prev: boolean[]) => {
               const current = [...prev];
+              if (current[1]) {
+                wsRef.current?.send(
+                  JSON.stringify({ type: "agent", agent: "normal" })
+                );
+              } else {
+                wsRef.current?.send(
+                  JSON.stringify({ type: "agent", agent: "story-telling" })
+                );
+              }
               current[1] = !current[1];
+
               return current;
             });
-            wsRef.current?.send(
-              JSON.stringify({ type: "agent", agent: "story-telling" })
-            );
           }}
           animate={{ backgroundColor: active[1] ? "#0000000D" : "" }}
           whileTap={{ backgroundColor: "#0000003D" }}

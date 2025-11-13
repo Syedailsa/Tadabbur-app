@@ -1,11 +1,16 @@
 import { easeInOut, motion } from "framer-motion";
 import { div } from "framer-motion/m";
-import React, { useEffect, useRef, useState } from "react";
+import React, { FC, useEffect, useRef, useState } from "react";
 import SettingIcon from "../../../../icons/settings_icon.svg";
 import HistoryIcon from "../../../../icons/history_icon.svg";
 import NewChatIcon from "../../../../icons/new_chat_icon.svg";
+import { generateNewSessionId } from "@/app/session/session";
 
-const Controls = (): React.ReactElement | null => {
+interface ControlProps {
+  wsRef: React.RefObject<WebSocket | null>;
+}
+
+const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
   const [active, setActive] = useState<boolean | null>(false);
   const controlRef = useRef<HTMLDivElement | null>(null);
   const [overlayText, setOverlayText] = useState<string | null>(null);
@@ -27,6 +32,11 @@ const Controls = (): React.ReactElement | null => {
     };
   }, [active, setActive]);
 
+  const InitializeNewSession = () => {
+    if (!wsRef.current) return;
+    const session_id = generateNewSessionId();
+    wsRef.current.send(JSON.stringify({ session_id: session_id }));
+  };
   return (
     <div className="w-full flex justify-center-safe">
       <motion.div
@@ -61,6 +71,7 @@ const Controls = (): React.ReactElement | null => {
               <HistoryIcon className="w-5 h-5 fill-current" />
             </div>
             <div
+              onClick={InitializeNewSession}
               onMouseOver={() => {
                 setOverlayText("New Chat");
               }}
