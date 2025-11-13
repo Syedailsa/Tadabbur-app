@@ -35,7 +35,9 @@ const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
   const InitializeNewSession = () => {
     if (!wsRef.current) return;
     const session_id = generateNewSessionId();
-    wsRef.current.send(JSON.stringify({ session_id: session_id }));
+    wsRef.current.send(
+      JSON.stringify({ type: "new-session", session_id: session_id })
+    );
   };
   return (
     <div className="w-full flex justify-center-safe">
@@ -61,6 +63,9 @@ const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
             className="flex gap-x-4"
           >
             <div
+              onClick={() => {
+                wsRef.current?.send(JSON.stringify({ type: "chat-history" }));
+              }}
               onMouseOver={() => {
                 setOverlayText("Chat history");
               }}

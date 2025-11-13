@@ -40,7 +40,9 @@ export default function ChatPage() {
     if (!wsRef.current) return;
 
     const session_id = generateNewSessionId();
-    wsRef.current?.send(JSON.stringify({ session_id: session_id }));
+    wsRef.current?.send(
+      JSON.stringify({ type: "new-session", session_id: session_id })
+    );
   }, [wsRef.current]);
 
   useEffect(() => {
@@ -72,6 +74,10 @@ export default function ChatPage() {
             setSessionID(session_id);
             setMessages(null);
           }
+          break;
+
+        case "chat-history":
+          const chat_history = data.chat_history;
           break;
         case "assistance_response":
           const reply = data.content ?? "No reply from server";
