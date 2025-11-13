@@ -13,6 +13,12 @@ import BottomOptions from "./components/chatbot/UI/BottomOptions";
 import ExtraOptions from "./components/chatbot/UI/ExtraOptions";
 import ModelBox from "./components/chatbot/UI/ModelBox";
 
+declare global {
+  interface Window {
+    wsRef?: React.RefObject<WebSocket>;
+  }
+}
+
 export default function ChatPage() {
   const [messages, setMessages] =
     useState<{ role: "user" | "assistant"; content: string }[]>();
@@ -31,6 +37,9 @@ export default function ChatPage() {
   useEffect(() => {
     const websocket = new WebSocket("ws://localhost:8000/ws/chat");
     wsRef.current = websocket;
+
+    // make it globally accessible
+    window.wsRef = wsRef as React.RefObject<WebSocket>;
 
     wsRef.current.onopen = () => {
       console.log("Connected to websocket successfully!");
@@ -65,6 +74,10 @@ export default function ChatPage() {
           });
 
           setLoading(false);
+          break;
+        case "agent":
+          console.log("✅ Agent switched:", data);
+          alert(data.message || "Agent switched successfully!");
           break;
         case "loading_message":
           const message = data.content ?? "Thinking to enhance response";
@@ -122,83 +135,78 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Define a placeholder text for the input box
+  const placeholder = "Type your message...";
+
   return (
     <div className="relative w-screen h-screen bg-gray-50  overflow-y-auto">
       <div className="w-full h-full flex flex-col items-center ">
         <div className="w-full px-4 mt-12 lg:w-2/3 chat-box flex flex-col gap-y-4">
-          {messages?.map((message, index) =>
-            message.role === "user" ? (
-              <div key={index}>
-                <p className="ml-auto w-max min-w-40 max-w-[20rem] bg-neutral-900 text-white switzer-500 py-2 px-3 rounded-md shadow-md border border-black/5">
-                  {message.content}
-                </p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-          <AnimatePresence mode="popLayout">
-            {messages?.map((message, index) =>
-              message.role === "user" ? (
-                <div key={index}>
-                  <p className="ml-auto w-max min-w-40 max-w-[20rem] bg-neutral-900 text-white switzer-500 py-2 px-3 rounded-md shadow-md border border-black/5">
-                    {message.content}
-                  </p>
-                </div>
-              ) : (
-                <div key={index}>
-                  <AnimatePresence mode="wait">
-                    {loading && !loadingMessage && !message.content ? (
-                      <motion.div
-                        animate={{ scale: [1, 1.2, 1] }}
-                        transition={{
-                          duration: 0.8,
-                          ease: easeInOut,
-                          repeat: Infinity,
-                          repeatType: "loop",
-                        }}
-                        className="w-3 h-3 rounded-full bg-black"
-                      ></motion.div>
-                    ) : loadingMessage && !message.content ? (
-                      <motion.div
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{
-                          duration: 0.1,
-                          ease: easeInOut,
-                          type: "spring",
-                        }}
-                        exit={{ opacity: 0 }}
-                        className="w-max flex gap-x-1"
-                      >
-                        {loadingMessage}
-                      </motion.p>
-                      <motion.div
-                        animate={{ x: [-4, 6] }}
-                        transition={{
-                          duration: 1,
-                          ease: easeIn,
-                          repeat: Infinity,
-                          repeatType: "loop",
-                        }}
-                      >
-                        <DownArrow className="mt-[0.32rem] w-4 h-4 -rotate-90" />
-                      </motion.div>
-                    </motion.div>
-                  ) : (
-                    <div className="w-max min-w-40 max-w-full  switzer-500 py-2 px-3 rounded-md bg-white shadow-md">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        rehypePlugins={[rehypeRaw]}
-                      >
-                        {message.content}
-                      </ReactMarkdown>
-                    </div>
-                  )}
-                </AnimatePresence>
-              </div>
-            )
-          )}
-
-          <div ref={messagesEndRef}></div>
+          <>
+            <AnimatePresence mode="popLayout">
+              {messages?.map((message, index) =>
+                message.role === "user" ? (
+                  <div key={index}>
+                    <p className="ml-auto w-max min-w-40 max-w-[20rem] bg-neutral-900 text-white switzer-500 py-2 px-3 rounded-md shadow-md border border-black/5">
+                      {message.content}
+                    </p>
+                  </div>
+                ) : (
+                  <div key={index}>
+                    <AnimatePresence mode="wait">
+                      {loading && !loadingMessage && !message.content ? (
+                        <motion.div
+                          animate={{ scale: [1, 1.2, 1] }}
+                          transition={{
+                            duration: 0.8,
+                            ease: easeInOut,
+                            repeat: Infinity,
+                            repeatType: "loop",
+                          }}
+                          className="w-3 h-3 rounded-full bg-black"
+                        ></motion.div>
+                      ) : loadingMessage && !message.content ? (
+                        <motion.div
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{
+                            duration: 0.1,
+                            ease: easeInOut,
+                            type: "spring",
+                          }}
+                          exit={{ opacity: 0 }}
+                          className="w-max flex gap-x-1"
+                        >
+                          {loadingMessage}
+                          <motion.div
+                            animate={{ x: [-4, 6] }}
+                            transition={{
+                              duration: 1,
+                              ease: easeIn,
+                              repeat: Infinity,
+                              repeatType: "loop",
+                            }}
+                          >
+                            <DownArrow className="mt-[0.32rem] w-4 h-4 -rotate-90" />
+                          </motion.div>
+                        </motion.div>
+                      ) : (
+                        <div className="w-max min-w-40 max-w-full  switzer-500 py-2 px-3 rounded-md bg-white shadow-md">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            rehypePlugins={[rehypeRaw]}
+                          >
+                            {message.content}
+                          </ReactMarkdown>
+                        </div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )
+              )}
+            </AnimatePresence>
+            <div ref={messagesEndRef}></div>
+          </>
         </div>
         <div className="sticky bottom-0 px-4 pb-4 pt-2 w-full lg:w-2/3 bg-gray-50">
           <div
@@ -236,3 +244,5 @@ export default function ChatPage() {
     </div>
   );
 }
+
+

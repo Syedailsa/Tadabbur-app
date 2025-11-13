@@ -164,7 +164,7 @@ async def output_agent_guard_fn(
 
 
 Tafsir_Agent: Agent = Agent(
-name="Quranic Tafsir Agent",
+name="QuranicTafsirAgent",
 instructions=f"""
 You are a Quranic Tafsir agent. Provide explanations of Quranic verses based ONLY on the following resources:
 

@@ -7,6 +7,12 @@ import PlusIcon from "../../../../icons/plus-icon.svg";
 import StoryIcon from "../../../../icons/story_telling_icon.svg";
 import MicIcon from "../../../../icons/mic_icon.svg";
 
+declare global {
+  interface Window {
+    wsRef?: React.RefObject<WebSocket>;
+  }
+}
+
 const BottomOptions = () => {
   const {
     hideExtraOptions,
@@ -53,11 +59,21 @@ const BottomOptions = () => {
         >
           <PlusIcon className="fill-current w-5 h-5 text-black" />
         </motion.div>
+        {/* Story Mode Button */}
         <motion.div
           id="story-telling-box"
           whileTap={{ backgroundColor: "#0000003D" }}
           whileHover={{ backgroundColor: "#0000000D" }}
           className="flex gap-x-1 px-3 py-1 rounded-full cursor-pointer items-center"
+          onClick={() => {
+            const ws = window.wsRef?.current;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: "agent", agent: "story-telling" }));
+              console.log("Switched to story-telling agent");
+            } else {
+              console.warn("WebSocket not connected or not open!");
+            }
+          }}
         >
           <StoryIcon className="fill-current w-5 h-5 text-black" />
           <span className="w-max switzer-500 text-[0.96rem]">
@@ -88,3 +104,6 @@ const BottomOptions = () => {
 };
 
 export default BottomOptions;
+
+
+   

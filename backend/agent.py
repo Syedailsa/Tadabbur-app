@@ -1,5 +1,7 @@
 from agents import Agent, ModelSettings, OpenAIChatCompletionsModel, RunConfig, Runner, AsyncOpenAI, GuardrailFunctionOutput, RunContextWrapper, TResponseInputItem, input_guardrail, output_guardrail
 from story_agent import story_agent
+from tafseer_agent import Tafsir_Agent
+from context_agent import contextAgent
 import pandas as pd
 from dotenv import load_dotenv
 from pydantic import BaseModel
@@ -37,7 +39,7 @@ context = [ct1, ct2, ct3, ct4]
 # --- CONTEXT FOR INPUT GUARDRAIL AGENT ---
 quran_topics = """
 The Quran discusses faith, worship, moral values, patience, guidance, repentance,
-justice, stories of prophets, creation, the afterlife, and reflections on life and
+justice, stories of prophets, creation, the afterlife, and reflections on life, islamic history and
 spiritual growth. It does not cover math, technology, or unrelated worldly knowledge.
 """
 
@@ -131,17 +133,29 @@ agent = Agent(
     "If a user asks for Quranic **stories**, narratives of prophets, or moral lessons, "
     "you must **handoff** the conversation to the `QuranStoryTeller` agent by calling "
     "`transfer_to_quranstoryteller`. "
+    "If a user asks for Quranic **tafseer** related to ayah/verses, "
+    "you must **handoff** the conversation to the `QuranTafsirAgent` by calling "
+    "`transfer_to_quranictafsiragent`. "
+    "If a user asks for Quranic or Islamic related **history**, "
+    "you must **handoff** the conversation to the `QuranContextAgent` by calling "
+    "`transfer_to_qurancontextagent`. "
     "talk in english on default unless user asks in other language.",
     model_settings=ModelSettings(
         temperature=0.2,
     ),
     input_guardrails=[quran_input_guardrail],
     output_guardrails=[quran_output_guardrail],
-    handoffs=[{"QuranStoryTeller": story_agent}]
+    handoffs=[
+        {
+          "QuranStoryTeller": story_agent,
+          "QuranicTafsirAgent": Tafsir_Agent,
+          "QuranContextAgent": contextAgent
+        }
+    ],
 )
 
 # async def main():
-#     result = await Runner.run(agent, "Hello, can you story of hazrat adam (a.s)?" , run_config=config, context=context)
+#     result = await Runner.run(agent, "tell me the history of qiblah change at the time of early islamic era" , run_config=config)
 #     print(result.final_output)
 #     print(result)
 

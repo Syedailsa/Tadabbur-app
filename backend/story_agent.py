@@ -1,10 +1,10 @@
 from agents import (
-    Agent, ModelSettings, OpenAIChatCompletionsModel,
+    Agent, ModelSettings, OpenAIChatCompletionsModel, 
     RunConfig, Runner, GuardrailFunctionOutput,
-    RunContextWrapper, TResponseInputItem, input_guardrail
+    RunContextWrapper, TResponseInputItem, function_tool, input_guardrail
 )
 from openai import AsyncOpenAI
-from tf_agent import Tafsir_Agent
+from tafseer_agent import Tafsir_Agent
 import pandas as pd
 from dotenv import load_dotenv
 import asyncio
@@ -40,6 +40,26 @@ context = [
 # Load example story for narrative style
 with open("story_exmp.txt", "r", encoding="utf-8") as f:
     story_example = json.load(f)
+
+@function_tool
+async def tafseer(ayah_reference: str) -> str:
+    print(f"Fetching tafseer for ayah reference: {ayah_reference}")
+    """
+    Fetches the tafseer for a given Quranic ayah reference using the Tafsir_Agent.
+
+    Args:
+        ayah_reference (str): The reference of the ayah (e.g., "2:25").
+
+    Returns:
+        str: The tafseer content for the specified ayah.
+    """
+    result = await Runner.run(
+        Tafsir_Agent,
+        ayah_reference,
+        run_config=config
+    )
+    print(f"Tafseer fetched for {ayah_reference}: {result.final_output}")
+    return str(result.final_output)
 
 # 🧠 Guardrail Agent — checks semantic relevance
 guardrail_agent = Agent(
@@ -130,13 +150,16 @@ story_agent = Agent(
     name="QuranStoryTeller",
     instructions=(
         "You are Tadabbur, a storytelling assistant inspired by the Quran. "
-        "Using the Quranic dataset context provided, craft short, emotionally engaging stories "
+        f"Using the Quranic dataset {context} provided, craft short, emotionally engaging stories "
         "that teach moral lessons from Quranic verses. "
+        "take the ayah references by calling the tafseer tool to build the story around them. "
         "Your stories should be engaging and like this example:\n\n"
         f"{story_example}\n\n"
+        "the final answer should be in a story format for users to read and not in json form. "
         "Always stay relevant to the Quranic moral and narrative context."
     ),
     model=model,
+    tools=[tafseer],
     model_settings=ModelSettings(temperature=0.7),
     input_guardrails=[semantic_guardrail],
     output_guardrails=[story_output_guardrail],
@@ -146,10 +169,11 @@ story_agent = Agent(
 #     try:
 #         result = await Runner.run(
 #             story_agent,
-#             "Create a short story about prophet adam (a.s).",
+#             "Create a short story about Prophet Adam (A.S).",
 #             run_config=config
 #         )
-#         print(result.final_output)
+#         print("🧠 Final Output:\n", result.final_output)
+
 #     except Exception as e:
 #         print(f"Error: {e}")
 
