@@ -63,7 +63,7 @@ async def tafseer(ayah_reference: str) -> str:
 
 # 🧠 Guardrail Agent — checks semantic relevance
 guardrail_agent = Agent(
-    name="SemanticGuardrail",
+    name="Guardrail check",
     instructions=(
         "Determine whether the user's request is semantically related to the provided Quranic dataset "
         "and its themes (moral lessons, reflection, faith, spirituality, prophets, divine guidance, etc.). "
@@ -73,11 +73,19 @@ guardrail_agent = Agent(
     model=model
 )
 
+# --- CONTEXT FOR INPUT GUARDRAIL AGENT ---
+quran_topics = """
+The Quran discusses faith, worship, moral values, patience, guidance, repentance,
+justice, stories of prophets, creation, the afterlife, and reflections on life, islamic history and
+spiritual growth. It does not cover math, technology, or unrelated worldly knowledge.
+"""
+
 # 💬 Fallback Agent — responds gracefully to off-topic queries
 fallback_agent = Agent(
     name="FallbackResponder",
     instructions=(
-        "You are a polite assistant. If the user's question is unrelated to Quranic storytelling, "
+        "You are a polite assistant."
+        f"If a user says something unrelated to the Quran topics like {quran_topics} reply politely and warmly that you cant reply to topics related to maths, technology etc but if you are greeted then greet back and tell who you are and what can the user ask you, "
         "gently remind them that you can only create Quran inspired moral stories."
     ),
     model=model
@@ -85,15 +93,18 @@ fallback_agent = Agent(
 
 # 🛡️ Input Guardrail — uses semantic judgment instead of keyword matching
 @input_guardrail
-async def semantic_guardrail(
+async def quran_input_guardrail(
     ctx: RunContextWrapper[None], agent: Agent, input: str | list[TResponseInputItem]
 ) -> GuardrailFunctionOutput:
+    print("Running QuranStory input guardrail...")
+    """Checks if the input question is Quranic-stories"""
     result = await Runner.run(guardrail_agent, input, context=ctx.context)
     decision = str(result.final_output).strip().upper()
+    print(decision)
 
     if "UNRELATED" in decision:
         # Graceful fallback: no error, just redirect
-        fallback = await Runner.run(fallback_agent, input, context=ctx.context)
+        fallback = await Runner.run(fallback_agent, "This seems unrelated to Quranic story telling", context=ctx.context)
         return GuardrailFunctionOutput(
             output_info=fallback.final_output,
             tripwire_triggered=True  # tripwire signals fallback, not failure
@@ -125,6 +136,7 @@ async def story_output_guardrail(
     agent: Agent,
     output: str
 ) -> GuardrailFunctionOutput:
+    print("Running QuranStory output guardrail...")
     """Ensure the story stays within Quranic moral context"""
     result = await Runner.run(output_guard_agent, output, context=ctx.context)
     verdict = str(result.final_output).strip().lower()
@@ -161,7 +173,7 @@ story_agent = Agent(
     model=model,
     tools=[tafseer],
     model_settings=ModelSettings(temperature=0.7),
-    input_guardrails=[semantic_guardrail],
+    input_guardrails=[quran_input_guardrail],
     output_guardrails=[story_output_guardrail],
 )
 
@@ -169,7 +181,7 @@ story_agent = Agent(
 #     try:
 #         result = await Runner.run(
 #             story_agent,
-#             "Create a short story about Prophet Adam (A.S).",
+#             "hi.",
 #             run_config=config
 #         )
 #         print("🧠 Final Output:\n", result.final_output)

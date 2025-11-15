@@ -1,3 +1,4 @@
+
 from agents import Agent, ModelSettings, OpenAIChatCompletionsModel, RunConfig, Runner, AsyncOpenAI, GuardrailFunctionOutput, RunContextWrapper, TResponseInputItem, input_guardrail, output_guardrail
 from story_agent import story_agent
 from tafseer_agent import Tafsir_Agent
@@ -128,29 +129,38 @@ async def quran_output_guardrail(
 
 agent = Agent(
     name="QuranTadabburAgent",
-    instructions=f'You are Tadabbur a knowledgeable assistant specializing in Quranic knowledge on {context} data. Provide short detail on the Quranic verses provided in {context} data with its arabic too.'
-    "Tell in proper structure by starting each ayah from a new line"
-    "If a user asks for Quranic **stories**, narratives of prophets, or moral lessons, "
-    "you must **handoff** the conversation to the `QuranStoryTeller` agent by calling "
-    "`transfer_to_quranstoryteller`. "
-    "If a user asks for Quranic **tafseer** related to ayah/verses, "
-    "you must **handoff** the conversation to the `QuranTafsirAgent` by calling "
-    "`transfer_to_quranictafsiragent`. "
-    "If a user asks for Quranic or Islamic related **history**, "
-    "you must **handoff** the conversation to the `QuranContextAgent` by calling "
-    "`transfer_to_qurancontextagent`. "
-    "talk in english on default unless user asks in other language.",
+    instructions=(
+        "If the user simply greets (for example: 'hi', 'hello', 'assalamu alaikum', 'salam'), "
+        "reply with a short greeting in English (e.g., 'Hi there! I’m Tadabbur — I specialize in Quranic insights. What would you like to explore today?') "
+        "AND DO NOT handoff. Only perform handoffs when the user's intent explicitly requests 'tafseer', 'tafsir', 'tafeer', 'story', 'history', or related phrases asking for deep tafsir/story/context.\n\n"
+
+        f'You are Tadabbur a knowledgeable assistant specializing in Quranic knowledge on {context} data. Provide short detail on the Quranic verses provided in {context} data with its arabic too.'
+
+        "Tell in proper structure by starting each ayah from a new line"
+
+        "If the user asks for Quranic stories, output ONLY:"
+        '{ "tool": "Quran_Story_Teller", "input": "<user request>" }'
+
+        "If the user asks for tafseer, output ONLY:"
+        '{ "tool": "Quranic_Tafsir_Agent", "input": "<user request>" }'
+
+        "ONLY return the correct handoff action."
+        "talk in english on default unless user asks in other language."
+    ),
     model_settings=ModelSettings(
         temperature=0.2,
     ),
     input_guardrails=[quran_input_guardrail],
-    output_guardrails=[quran_output_guardrail],
-    handoffs=[
-        {
-          "QuranStoryTeller": story_agent,
-          "QuranicTafsirAgent": Tafsir_Agent,
-          "QuranContextAgent": contextAgent
-        }
+    # output_guardrails=[quran_output_guardrail],
+    tools=[
+        story_agent.as_tool(
+            tool_name="Quran_Story_Teller",
+            tool_description="Use when the user ask about stories related to Quran, Prophets and islam"
+        ),
+        Tafsir_Agent.as_tool(
+            tool_name="Quranic_Tafsir_Agent",
+            tool_description="Use when the user ask about tafseer related to Quranic ayah or verses"
+        )
     ],
 )
 
@@ -171,3 +181,4 @@ agent = Agent(
 
 # # Show all distinct surah names to confirm the exact name
 # print(df["surah_name_en"].unique()[:10])  # just first 10
+
