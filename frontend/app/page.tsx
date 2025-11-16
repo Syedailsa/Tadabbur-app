@@ -465,7 +465,25 @@ export default function ChatPage() {
 
         case "loading_message": {
           const message = data.content ?? "Thinking...";
+
+          // show the latest loading text
           setLoadingMessage(message);
+
+          // if this chunk is marked as final → store it in chat history
+          if (data.final) {
+            setMessages((prev) => {
+              const updated = [...(prev || [])];
+              const lastIdx = updated.findLastIndex((m) => m.role === "assistant");
+              if (lastIdx !== -1) {
+                updated[lastIdx].content = message;   // replace placeholder
+              } else {
+                updated.push({ role: "assistant", content: message });
+              }
+              return updated;
+            });
+            setLoading(false);
+            setLoadingMessage(null);
+          }
           break;
         }
 
@@ -474,6 +492,27 @@ export default function ChatPage() {
           console.log("✅ Agent switched:", data);
           alert(data.message || "Agent switched successfully!");
           break;
+        
+        case "final_output": {
+          const text = data.content ?? "";
+
+          setMessages((prev) => {
+            const updated = [...(prev || [])];
+            const lastIdx = updated.findLastIndex((m) => m.role === "assistant");
+
+            if (lastIdx !== -1) {
+              updated[lastIdx].content = text;
+            } else {
+              updated.push({ role: "assistant", content: text });
+            }
+
+            return updated;
+          });
+
+          setLoading(false);
+          setLoadingMessage(null);
+          break;
+        }
 
         default:
           console.log("Unhandled stream event:", data);

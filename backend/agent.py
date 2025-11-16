@@ -138,11 +138,11 @@ agent = Agent(
 
         "Tell in proper structure by starting each ayah from a new line"
 
-        "If the user asks for Quranic stories, output ONLY:"
-        '{ "tool": "Quran_Story_Teller", "input": "<user request>" }'
+        "When the user asks for Quranic stories, you MUST use the tool :"
+        '**Quran_Story_Teller**'
 
-        "If the user asks for tafseer, output ONLY:"
-        '{ "tool": "Quranic_Tafsir_Agent", "input": "<user request>" }'
+        "When the user asks for tafseer, you MUST use the tool :"
+        '**Quranic_Tafsir_Agent**'
 
         "ONLY return the correct handoff action."
         "talk in english on default unless user asks in other language."
