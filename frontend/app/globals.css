@@ -26,3 +26,23 @@
   background-clip: content-box;
   min-height: 20px; /* this just ensures it's not too small */
 }
+
+/* .bg-Kaba {
+  background-image: url("../images/Kabah.jpg");
+} */
+
+.bg-Quran-2 {
+  background-image: url("../images/Quran2.jpg");
+}
+
+.bg-roof-top {
+  background-image: url("../images/rooftop.jpg");
+}
+
+.bg-aqsa {
+  background-image: url("../images/Aqsa.jpg");
+}
+
+.bg-tadabbur-icon {
+  background-image: url("../images/Tadabbur_icon.png");
+}

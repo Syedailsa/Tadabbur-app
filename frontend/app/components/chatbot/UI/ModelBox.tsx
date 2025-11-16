@@ -1,18 +1,9 @@
 import { FC } from "react";
 import { useState, useRef, useEffect, useContext } from "react";
-import { OptionsContext } from "@/app/context/chatbot/OptionsContext";
+import { ChatContext } from "@/app/context/chatbot/ChatContext";
 import { motion } from "framer-motion";
 import NetworkIntelligence from "../../../../icons/network_intelligence_icon.svg";
-
-interface ModelBoxProps {
-  modelList: {
-    model_name: string;
-    provider: string;
-    parameters: string;
-    isNew: boolean;
-    background: string;
-  }[];
-}
+import { ModelBoxProps } from "../interfaces/ModelBoxProps";
 
 const ModelBox: FC<ModelBoxProps> = ({
   modelList,
@@ -20,7 +11,7 @@ const ModelBox: FC<ModelBoxProps> = ({
   const [filteredModels, setFilteredModels] =
     useState<ModelBoxProps["modelList"]>(modelList);
   const { hideModelBox, setHideModelBox, setSelectedModel, setActive } =
-    useContext(OptionsContext);
+    useContext(ChatContext);
   const overlayRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {

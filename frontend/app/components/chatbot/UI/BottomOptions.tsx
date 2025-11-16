@@ -1,5 +1,5 @@
 import { useState, useContext } from "react";
-import { OptionsContext } from "@/app/context/chatbot/OptionsContext";
+import { ChatContext } from "@/app/context/chatbot/ChatContext";
 import { motion } from "framer-motion";
 import DownArrow from "../../../../icons/arrow-down-head.svg";
 import AttachIcon from "../../../../icons/attach_icon.svg";
@@ -13,12 +13,10 @@ const BottomOptions = () => {
     hideExtraOptions,
     setHideExtraOptions,
     selectedModel,
-    setSelectedModel,
-    hideModelBox,
     setHideModelBox,
     active,
     setActive,
-  } = useContext(OptionsContext);
+  } = useContext(ChatContext);
 
   return (
     <div
@@ -39,12 +37,14 @@ const BottomOptions = () => {
             return current;
           });
         }}
-        className="relative flex flex-row-reverse gap-x-1 py-1 pr-3 pl-4 rounded-full cursor-pointer items-center"
+        className="relative flex-row-reverse gap-x-1 py-1 pr-3 pl-4 rounded-full cursor-pointer items-center hidden sm:flex"
       >
         <motion.div className="mt-0.2">
           <DownArrow className="w-5 h-5" />
         </motion.div>
-        <p className="switzer-500 text-[0.96rem]">{selectedModel}</p>
+        <p className="switzer-500 text-[0.91rem]  sm:text-[0.96rem]">
+          {selectedModel}
+        </p>
       </motion.div>
       <motion.div className={`ml-auto flex gap-x-1`}>
         <motion.div

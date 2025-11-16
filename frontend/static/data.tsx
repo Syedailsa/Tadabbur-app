@@ -79,4 +79,63 @@ const chatMessages: { role: "user" | "assistant"; content: string }[] = [
   },
 ];
 
-export { ModelList, chatMessages };
+const dummyChatHistory = [
+  {
+    session_id: "a162542",
+    title: "Surah Baqarah Tafseer",
+    description:
+      "Overview of major themes and lessons. Focus on guidance and faith.",
+    date: "Sep, 2002",
+  },
+  {
+    session_id: "k282383",
+    title: "Asbāb al-Nuzūl of Key Verses",
+    description:
+      "Context behind selected revelations. Explains historical background.",
+    date: "Oct, 2002",
+  },
+  {
+    session_id: "u918233",
+    title: "Surah Yaseen Summary",
+    description:
+      "Central message of Surah Yaseen. Covers warnings and glad tidings.",
+    date: "Nov, 2002",
+  },
+  {
+    session_id: "x552781",
+    title: "Stories of the Prophets in the Quran",
+    description:
+      "Short summaries of prophetic stories. Focus on moral lessons.",
+    date: "Dec, 2002",
+  },
+  {
+    session_id: "p712034",
+    title: "Surah Mulk Explanation",
+    description:
+      "Meaning of verses and key reflections. Emphasis on accountability.",
+    date: "Jan, 2003",
+  },
+  {
+    session_id: "m553910",
+    title: "Names & Attributes of Allah",
+    description:
+      "Explanation of selected names from the Quran. Focus on meaning and impact.",
+    date: "Feb, 2003",
+  },
+  {
+    session_id: "z831002",
+    title: "Surah Rahman Tafseer",
+    description:
+      "Theme of divine mercy. Structure and repeated verse significance.",
+    date: "Mar, 2003",
+  },
+  {
+    session_id: "q482299",
+    title: "Makki vs Madani Surahs",
+    description:
+      "Differences in style and themes. How revelation evolved over time.",
+    date: "Apr, 2003",
+  },
+];
+
+export { ModelList, chatMessages, dummyChatHistory };
