@@ -96,7 +96,7 @@ def _map_name_to_agent(name: Optional[str]):
                         return v
     except Exception:
         pass
-    # try common fallback modules
+    # fallback modules
     if _normalize_name(getattr(story_module, "story_agent", None).name if getattr(story_module, "story_agent", None) else None) == normalized:
         return getattr(story_module, "story_agent", None)
     # try Tafsir agent
@@ -116,249 +116,254 @@ def _map_name_to_agent(name: Optional[str]):
 @app.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
     await websocket.accept()
-    logger.info("Connected to websocket successfully!")
+    logger.info("WebSocket connected successfully")
 
-    # default agent
+    session_model_key: str = "gpt-oss-20b"
     active_agent = agent_module.agent
     active_config = getattr(agent_module, "config", None)
     current_agent_name = getattr(active_agent, "name", "QuranTadabburAgent")
     current_agent_normalized = _normalize_name(current_agent_name)
+
+    await websocket.send_json({
+        "type": "session_init",
+        "current_model": session_model_key,
+        "current_agent": current_agent_name
+    })
 
     try:
         while True:
             raw_data = await websocket.receive_text()
             data = json.loads(raw_data)
 
-            # ---------- AGENT SWITCH ----------
+            # === MODEL SELECTION ===
+            if data.get("type") == "model-selection":
+                requested_model = data.get("model")
+                if requested_model in agent_module.SUPPORTED_MODELS:
+                    session_model_key = requested_model
+                    model_info = agent_module.SUPPORTED_MODELS[requested_model]
+                    await websocket.send_json({
+                        "type": "loading_message",
+                        "content": f"Switched to **{model_info['name']}**"
+                    })
+                continue
+
+            # === AGENT SWITCH ===
             if data.get("type") == "agent":
                 agent_name = data.get("agent")
-                logger.info(f"Agent switch request: {agent_name}")
-
                 mapped = _map_name_to_agent(agent_name)
                 if mapped:
                     active_agent = mapped
                     active_config = getattr(mapped, "config", active_config)
                     current_agent_name = getattr(mapped, "name", agent_name)
+                elif agent_name == "story-telling":
+                    active_agent = story_module.story_agent
+                    active_config = getattr(story_module, "config", None)
+                    current_agent_name = "Quran Storyteller"
                 else:
-                    # fallback mapping (story-telling button)
-                    if agent_name == "story-telling":
-                        active_agent = story_module.story_agent
-                        active_config = getattr(story_module, "config", None)
-                        current_agent_name = getattr(story_module.story_agent, "name", "QuranStoryTeller")
-                    else:
-                        active_agent = agent_module.agent
-                        active_config = getattr(agent_module, "config", None)
-                        current_agent_name = getattr(agent_module.agent, "name", "QuranTadabburAgent")
+                    active_agent = agent_module.agent
+                    active_config = getattr(agent_module, "config", None)
+                    current_agent_name = "Quran Tadabbur Agent"
 
                 current_agent_normalized = _normalize_name(current_agent_name)
-
                 await websocket.send_json({
                     "type": "loading_message",
-                    "content": f"Switched to **{current_agent_name}** mode."
+                    "content": f"Switched to **{current_agent_name}** mode"
                 })
                 continue
 
-            # ---------- NORMAL CHAT ----------
+            # === MAIN CHAT MESSAGE ===
             messages = data.get("messages", [])
-            conversation = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
-            logger.info(f"[{current_agent_name}] conversation: {conversation}")
+            if not messages:
+                continue
 
-            run_result = None
+            conversation = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
+            logger.info(f"[{current_agent_name}] Processing with model: {session_model_key}")
+
             try:
+                dynamic_config = agent_module.get_model_config(session_model_key)
+                base_config = getattr(active_agent, "config", None) or agent_module.config
+                if base_config and hasattr(base_config, "model_settings"):
+                    dynamic_config.model_settings = base_config.model_settings
+
+                # Show initial thinking
+                await websocket.send_json({
+                    "type": "loading_message",
+                    "content": "Thinking deeply about your question..."
+                })
+
                 run_result = Runner.run_streamed(
                     active_agent,
                     conversation,
-                    run_config=active_config
+                    run_config=dynamic_config
                 )
 
+                final_text = ""  # Will collect all visible text
+
                 async for event in run_result.stream_events():
-                    # ---- TOKEN BY TOKEN ----
+
+                    # # === LLM TOKEN STREAMING ====
                     if event.type == "raw_response_event":
-                        delta = None
-                        try:
-                            delta = getattr(event.data, "delta", None) or getattr(event.data, "text", None)
-                        except Exception:
-                            pass
-                        if delta:
-                            await websocket.send_json({
-                                "type": "loading_message",
-                                "content": delta
-                            })
+                        delta = getattr(event.data, "delta", None) or getattr(event.data, "text", None)
+                        if delta and delta.strip():
+                            # Block raw tool call JSON
+                            if not (delta.strip().startswith("{") and ("name" in delta or "arguments" in delta)):
+                                await websocket.send_json({
+                                    "type": "assistance_response_chunk",
+                                    "content": delta
+                                })
+                               
+                                final_text += delta
                         continue
 
-                    # ---- AGENT HAND-OFF ----
+                    # === AGENT HAND-OFF ===
                     elif event.type == "agent_updated_stream_event":
                         new_name = None
                         try:
                             obj = getattr(event, "new_agent", None)
-                            new_name = getattr(obj, "name", None) if obj else getattr(event, "new_agent_name", None)
-                        except Exception:
+                            new_name = getattr(obj, "name", None) if obj else getattr(event.data, "new_agent_name", None)
+                        except:
                             pass
-
-                        new_norm = _normalize_name(new_name)
-                        if new_norm and new_norm != current_agent_normalized:
+                        if new_name and _normalize_name(new_name) != current_agent_normalized:
                             mapped = _map_name_to_agent(new_name)
                             if mapped:
                                 active_agent = mapped
                                 active_config = getattr(mapped, "config", active_config)
                                 current_agent_name = getattr(mapped, "name", new_name)
                             else:
-                                current_agent_name = new_name or current_agent_name
-                            current_agent_normalized = new_norm
+                                current_agent_name = new_name
+                            current_agent_normalized = _normalize_name(current_agent_name)
 
                             await websocket.send_json({
                                 "type": "loading_message",
-                                "content": f"Hand-off to **{current_agent_name}**"
+                                "content": f"Handing to expert..**"
                             })
                         continue
 
-                    # ---- RUN ITEM ----
+                    # === TOOL CALL & OUTPUT ===
                     elif event.type == "run_item_stream_event":
                         item = event.item
                         itype = getattr(item, "type", None)
 
-                        # TOOL CALL START
-                        if itype == "tool_call_item":
-                            tool_name = getattr(item, "tool_name", "unknown")
-                            await websocket.send_json({
-                                "type": "loading_message",
-                                "content": f"Fetching story via **{tool_name}**..."
-                            })
-
-                        # TOOL OUTPUT 
-                        elif itype == "tool_call_output_item":
-                            tool_name = getattr(item, "tool_name", "unknown")
-                            out = getattr(item, "output", "")
-                            if not isinstance(out, str):
-                                out = str(out)
-                            await websocket.send_json({
-                                "type": "loading_message",
-                                "content": out,
-                                "final": True
-                            })
-
-                        # FINAL MESSAGE (fallback)
-                        elif itype == "message_output_item":
-                            try:
-                                text = ItemHelpers.text_message_output(item)
-                            except Exception:
-                                text = getattr(item, "output", None) or str(item)
-                            await websocket.send_json({
-                                "type": "loading_message",
-                                "content": text,
-                                "final": True
-                            })
-
-                        # PROGRESS
-                        else:
-                            await websocket.send_json({
-                                "type": "loading_message",
-                                "content": f"[thinking] {itype or 'step'}"
-                            })
-                        continue
-
-                    # ---- UNKNOWN EVENT ----
-                    else:
+                    elif event.type == "tool_call_item":
                         await websocket.send_json({
                             "type": "loading_message",
-                            "content": f"[debug] {event.type}"
+                            "content": "Searching authentic Quranic sources..."
                         })
-                        continue
 
-                # ---- SEND FINAL OUTPUT ----
-                final_text = None
-                try:
-                    final_text = getattr(run_result, "final_output", None) \
-                            or getattr(run_result, "output_text", None)
-                except:
-                    final_text = None
+                    elif event.type == "tool_call_output_item":
+                        output = getattr(event.item, "output", "")
+                        if isinstance(output, str) and output.strip():
+                            await websocket.send_json({
+                                "type": "assistance_response_chunk",
+                                "content": output
+                            })
 
-                if final_text:
+                    elif event.type == "message_output_item":
+                        try:
+                            text = ItemHelpers.text_message_output(event.item)
+                        except:
+                            text = str(event.item)
+                        if text and text.strip():
+                            await websocket.send_json({
+                                "type": "assistance_response_chunk",
+                                "content": text
+                            })
+                        
+                # try:
+                #     final_text = getattr(run_result, "final_output", None) \
+                #             or getattr(run_result, "output_text", None)
+                # except:
+                #     final_text = None
+
+                # print(final_text)
+
+                final_output = (
+                    getattr(run_result, "final_output", None) or
+                    getattr(run_result, "output_text", None) or
+                    getattr(run_result, "assistance_response", None) or
+                    ""
+                )
+
+                if final_output and isinstance(final_output, str) and final_output.strip():
                     await websocket.send_json({
-                        "type": "final_output",
-                        "content": final_text,
+                        "type": "assistance_response",
+                        "content": final_output.strip(),
                         "final": True
                     })
 
-                # End packet
-                await websocket.send_json({
-                    "type": "run_complete"
-                })
+                # === FINAL RESPONSE & CLEANUP ===
+                # await websocket.send_json({
+                #     "type": "assistance_response",
+                #     "content": final_text.strip() if final_text.strip() else "I'm not sure how to respond to that."
+                # })
 
-            # ---------- GUARDRAILS ----------
+                await websocket.send_json({"type": "streaming_end"})
+                await websocket.send_json({"type": "run_complete"}) 
+
             except InputGuardrailTripwireTriggered as e:
-                msg = getattr(e.guardrail_result, "output_info", None)
+                            msg = getattr(e.guardrail_result, "output_info", None)
 
-                if not msg:
-                    # choose fallback based on current agent
-                    if getattr(active_agent, "name", "") == "QuranTadabburAgent":
-                        fallback_agent = getattr(agent_module, "fallback_agent", None)
-                    elif getattr(active_agent, "name", "") == "QuranStoryTeller":
-                        fallback_agent = getattr(story_module, "fallback_agent", None)
-                    else:
-                        fallback_agent = getattr(agent_module, "fallback_agent", None)
+                            # If guardrail didn't provide a message → use fallback agent
+                            if not msg or not msg.strip():
+                                logger.info("Input guardrail triggered → trying fallback agent")
 
-                    fallback_result = await Runner.run(
-                        fallback_agent,
-                        conversation,
-                        run_config=active_config
-                    )
+                                # Choose correct fallback agent based on current active agent
+                                if getattr(active_agent, "name", "").startswith("QuranTadabburAgent"):
+                                    fallback_agent = getattr(agent_module, "fallback_agent", None)
+                                elif "Story" in getattr(active_agent, "name", "") or getattr(active_agent, "name", "") == "QuranStoryTeller":
+                                    fallback_agent = getattr(story_module, "fallback_agent", None)
+                                else:
+                                    fallback_agent = getattr(agent_module, "fallback_agent", None)
 
-                    msg = getattr(fallback_result, "final_output", 
-                        "Sorry, I can only respond within Quranic context.")
+                                if fallback_agent:
+                                    try:
+                                        fallback_result = await Runner.run(
+                                            fallback_agent,
+                                            conversation,
+                                            run_config=active_config or dynamic_config
+                                        )
+                                        msg = getattr(fallback_result, "final_output", None) or \
+                                            getattr(fallback_result, "output_text", None) or \
+                                            "I'm sorry, I can't assist with that topic."
+                                    except Exception as fallback_err:
+                                        logger.error(f"Fallback agent failed: {fallback_err}")
+                                        msg = "I'm sorry, I can't assist with that topic."
+                                else:
+                                    msg = "This question is outside my allowed scope."
 
-                await websocket.send_json({
-                    "type": "message_output",
-                    "stream_event": "message_output",
-                    "text": msg,
-                    "role": "assistant",
-                    "final": True
-                })
-
-                await websocket.send_json({"type": "run_complete"})
-
+                            # Send final response 
+                            await websocket.send_json({
+                                "type": "assistance_response",
+                                "content": msg.strip()
+                            })
+                            await websocket.send_json({"type": "streaming_end"})
+                            await websocket.send_json({"type": "run_complete"})
 
             except OutputGuardrailTripwireTriggered as e:
                 msg = getattr(e.guardrail_result, "output_info",
-                    "Sorry, I can only respond within Quranic context.")
+                              "Sorry, I can only respond within the context of the Quran and authentic Islamic sources.")
 
                 await websocket.send_json({
-                    "type": "message_output",
-                    "stream_event": "message_output",
-                    "text": msg,
-                    "role": "assistant",
-                    "final": True
+                    "type": "assistance_response",
+                    "content": msg.strip()
                 })
-
+                await websocket.send_json({"type": "streaming_end"})
                 await websocket.send_json({"type": "run_complete"})
+
             except WebSocketDisconnect:
-                logger.info("Client disconnected during stream")
+                logger.info("Client disconnected")
                 break
 
             except Exception as e:
                 logger.exception("Streaming error")
-                await websocket.send_json({
-                    "type": "loading_message",
-                    "content": f"Error: {str(e)}",
-                    "final": True
-                })
-
-            finally:
-                try:
-                    if run_result and getattr(run_result, "aclose", None):
-                        await run_result.aclose()
-                except Exception:
-                    pass
+                await websocket.send_json({"type": "assistance_response", "content": "Sorry, something went wrong."})
+                await websocket.send_json({"type": "streaming_end"})
+                await websocket.send_json({"type": "run_complete"})
 
     except WebSocketDisconnect:
-        logger.info("Client disconnected (outer)")
+        logger.info("WebSocket closed")
     except Exception as e:
-        logger.exception("WebSocket outer error")
-        try:
-            await websocket.close()
-        except Exception:
-            pass
-
+        logger.exception("WebSocket error")
 # ------------------- APP RUNNER -------------------
 
 if __name__ == "__main__":
@@ -367,89 +372,3 @@ if __name__ == "__main__":
 
 
 
-#  ------------------- HTTP protocol  -------------------
-
-# import os
-# from dotenv import load_dotenv
-# load_dotenv()
-
-# from fastapi import FastAPI, HTTPException, Header
-# from fastapi.middleware.cors import CORSMiddleware
-# from pydantic import BaseModel
-# from typing import List
-
-# from agents import Runner
-# # Import tripwire exceptions so we can catch them
-# from agents import InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered  
-
-# import agent as agent_module 
-
-# app = FastAPI(title="Tadabbur Agent API")
-
-# # Allow your Next.js origin (dev)
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=["*"],
-#     allow_credentials=True,
-#     allow_methods=["*"],
-#     allow_headers=["*"],
-# )
-
-# class Message(BaseModel):
-#     role: str
-#     content: str
-
-# class ChatRequest(BaseModel):
-#     messages: List[Message]
-
-# # simple API key for the endpoint for security
-# API_KEY = os.getenv("CHAT_API_KEY")
-
-# @app.post("/api/chat")
-# async def chat(req: ChatRequest, authorization: str | None = Header(None)):
-#     if API_KEY:
-#         if authorization is None or authorization != f"Bearer {API_KEY}":
-#             raise HTTPException(status_code=401, detail="Unauthorized")
-
-#     try:
-#         conversation = "\n".join(
-#             [f"{m.role}: {m.content}" for m in req.messages]
-#         )
-
-#         result = await Runner.run(
-#             agent_module.agent,
-#             conversation,
-#             run_config=getattr(agent_module, "config", None)
-#         )
-
-#         # Extracting reply
-#         reply_text = None
-#         if hasattr(result, "final_output") and result.final_output:
-#             reply_text = result.final_output
-#         elif hasattr(result, "output_text") and result.output_text:
-#             reply_text = result.output_text
-#         else:
-#             reply_text = str(result)
-
-#         return {"reply": reply_text}
-
-#     except InputGuardrailTripwireTriggered as e:
-#         # Input was unrelated → return polite fallback message
-#         msg = getattr(e.guardrail_result, "output_info", "Sorry, your question seems unrelated to the Quranic context.")
-#         return {"reply": msg}
-
-#     except OutputGuardrailTripwireTriggered as e:
-#         # Output drifted → return polite fallback message
-#         msg = getattr(e.guardrail_result, "output_info", "Sorry, I can only respond within Quranic context.")
-#         return {"reply": msg}
-
-#     # Catch any other errors normally
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
-
-
-# if __name__ == "__main__":
-#     import uvicorn
-#     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-
-# ------------------------------------------------------------------------------

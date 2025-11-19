@@ -9,6 +9,7 @@ import ChatProvider from "./providers/chatbot/ChatProvider";
 import DownArrow from "../icons/arrow-down-head.svg";
 import { motion, easeInOut, easeIn, AnimatePresence } from "framer-motion";
 import { ModelList } from "@/static/data";
+
 import BottomOptions from "./components/chatbot/UI/BottomOptions";
 import ExtraOptions from "./components/chatbot/UI/ExtraOptions";
 import ModelBox from "./components/chatbot/UI/ModelBox";
@@ -22,7 +23,7 @@ export default function ChatPage() {
   >(null);
 
   const inputRef = useRef<HTMLDivElement | null>(null);
-  const [showInputButton, setShowInputButton] = useState(false);
+  const [showPlaceholder, setShowPlaceholder] = useState<boolean | null>(true);
   const [greeting, setGreeting] = useState<string | null>(
     "Assalam O Alaykum, I am Tadabbur, how may I help you today?"
   );
@@ -38,20 +39,15 @@ export default function ChatPage() {
   const [sessionID, setSessionID] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!wsRef.current) return;
-
-    const session_id = generateNewSessionId();
-    wsRef.current?.send(
-      JSON.stringify({ type: "new-session", session_id: session_id })
-    );
-  }, [wsRef.current]);
-
-  useEffect(() => {
     const websocket = new WebSocket("ws://localhost:8000/ws/chat");
     wsRef.current = websocket;
 
     wsRef.current.onopen = () => {
       console.log("Connected to websocket successfully!");
+      const session_id = generateNewSessionId();
+      wsRef.current?.send(
+        JSON.stringify({ type: "new-session", session_id: session_id })
+      );
     };
 
     wsRef.current.onerror = (error) => {
@@ -83,7 +79,8 @@ export default function ChatPage() {
         case "assistance_response":
           const reply = data.content ?? "No reply from server";
 
-          console.log("reply from Ai", reply);
+          // console.log("reply from Ai", reply);
+          setLoadingMessage(null);
           setMessages((prev) => {
             const updated = [...(prev || [])];
             const lastIdx = updated.findLastIndex(
@@ -146,7 +143,7 @@ export default function ChatPage() {
 
       if (inputRef.current) {
         inputRef.current.innerText = "";
-        setShowInputButton(false);
+        setShowPlaceholder(true);
       }
       // console.log(loading && !loadingMessage);
     } catch (err: any) {
@@ -157,10 +154,12 @@ export default function ChatPage() {
   const handleInput = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (!inputRef.current) return;
     if (e.key === "Enter") {
+      console.log("Enter pressed");
       e.preventDefault();
       const input = inputRef.current?.innerText;
       if (input.trim() != "") {
         ask(input);
+        console.log("Ask input called");
       }
     }
   };
@@ -170,10 +169,10 @@ export default function ChatPage() {
   }, [messages]);
 
   return (
-    <div className="relative w-screen h-screen bg-gray-50 overflow-y-auto flex flex-col">
+    <div className="relative w-screen h-screen bg-gray-50 flex flex-col items-center">
       <ChatProvider wsRef={wsRef}>
         <ChatHisoryDialoguseBox />
-        <div className="w-full h-full flex flex-col items-center justify-between">
+        <div className="w-full h-full flex flex-col items-center  overflow-y-auto">
           <div className="absolute top-0 p-2 w-full">
             <Controls wsRef={wsRef} />
           </div>
@@ -274,37 +273,37 @@ export default function ChatPage() {
             </AnimatePresence>
             <div ref={messagesEndRef}></div>
           </div>
-          <div className="sticky bottom-0 bg-gray-50 px-4 pb-4 pt-2 w-full lg:w-2/3 input-box">
-            <div
-              className="flex flex-col relative border border-black/10 px-3 py-2 rounded-lg h-40 shadow-md
+        </div>
+        <div className="mr-1.5  bg-gray-50 px-4 py-4 w-full lg:w-2/3 input-box">
+          <div
+            className="flex flex-col relative border border-black/10 px-3 py-2 rounded-lg h-40 shadow-md
         "
-            >
-              <div
-                ref={inputRef}
-                onInput={(e) => {
-                  const target = e.target as HTMLDivElement;
-                  const text = target.textContent.trim() ?? "";
-                  setShowInputButton(text !== "");
-                }}
-                onKeyDown={(e) => {
-                  handleInput(e);
-                }}
-                contentEditable
-                className="h-2/3 switzer-500 focus:outline-none overflow-y-auto"
-              ></div>
+          >
+            <div
+              ref={inputRef}
+              onInput={(e) => {
+                const target = e.target as HTMLDivElement;
+                const text = target.textContent.trim() ?? "";
+                setShowPlaceholder(text === "");
+              }}
+              onKeyDown={(e) => {
+                handleInput(e);
+              }}
+              contentEditable
+              className="h-2/3 switzer-500 focus:outline-none overflow-y-auto"
+            ></div>
 
-              {!showInputButton && (
-                <span
-                  className={`absolute top-2 pointer-events-none placeholder-input-box switzer-500 text-black`}
-                >
-                  {placeholder}
-                </span>
-              )}
+            {showPlaceholder && (
+              <span
+                className={`absolute top-2 pointer-events-none placeholder-input-box switzer-500 text-black`}
+              >
+                {placeholder}
+              </span>
+            )}
 
-              <BottomOptions />
-              <ExtraOptions />
-              <ModelBox modelList={ModelList} />
-            </div>
+            <BottomOptions />
+            <ExtraOptions />
+            <ModelBox modelList={ModelList} />
           </div>
         </div>
       </ChatProvider>

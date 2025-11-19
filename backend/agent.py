@@ -1,9 +1,10 @@
 
 from agents import Agent, ModelSettings, OpenAIChatCompletionsModel, RunConfig, Runner, AsyncOpenAI, GuardrailFunctionOutput, RunContextWrapper, TResponseInputItem, input_guardrail, output_guardrail
 from story_agent import story_agent
-from tafseer_agent import Tafsir_Agent
-from context_agent import contextAgent
+# from tafseer_agent import Tafsir_Agent
+# from context_agent import contextAgent
 import pandas as pd
+from typing import Optional
 from dotenv import load_dotenv
 from pydantic import BaseModel
 import asyncio
@@ -18,16 +19,68 @@ external_client = AsyncOpenAI(
     base_url="https://api.fireworks.ai/inference/v1"
 )
 
-model = OpenAIChatCompletionsModel(
-    model="accounts/fireworks/models/gpt-oss-20b", 
-    openai_client=external_client
-)
+SUPPORTED_MODELS = {
+    "kimi-k2-instruct-0905": {
+        "model_id": "accounts/fireworks/models/kimi-k2-instruct-0905",
+        "provider": external_client,
+        "name": "Kimi K2 Instruct 0905"
+    },
+    "deepseek-v3p1-terminus": {
+        "model_id": "accounts/fireworks/models/deepseek-v3p1-terminus",
+        "provider": external_client,
+        "name": "DeepSeek V3.1 Terminus"
+    },
+    "gpt-oss-120b": {
+        "model_id": "accounts/fireworks/models/gpt-oss-120b",
+        "provider": external_client,
+        "name": "OpenAI GPT-OSS 120B"
+    },
+    "gpt-oss-20b": {  # your current default
+        "model_id": "accounts/fireworks/models/gpt-oss-20b",
+        "provider": external_client,
+        "name": "OpenAI GPT-OSS 20B"
+    },
+    "qwen3-235b-a22b-instruct": {  # your current default
+        "model_id": "accounts/fireworks/models/qwen3-235b-a22b-instruct",
+        "provider": external_client,
+        "name": "Qwen3 235B a22B Instruct"
+    }
+}
 
-config = RunConfig(
-    model=model,
-    model_provider=external_client,
-    tracing_disabled=True
-)
+def get_model_config(model_key: Optional[str] = None) -> RunConfig:
+    """
+    Returns a RunConfig with the selected model.
+    Falls back to default 'gpt-oss-20b' if invalid or None.
+    """
+    if not model_key or model_key not in SUPPORTED_MODELS:
+        model_key = "gpt-oss-20b"  # fallback
+
+    info = SUPPORTED_MODELS[model_key]
+
+    selected_model = OpenAIChatCompletionsModel(
+        model=info["model_id"],
+        openai_client=info.get("provider") or external_client
+    )
+
+    return RunConfig(
+        model=selected_model,
+        model_provider=info.get("provider") or external_client,
+        tracing_disabled=True
+    )
+
+# config as default (for backward compatibility)
+config = get_model_config("gpt-oss-20b") 
+
+# model = OpenAIChatCompletionsModel(
+#     model="accounts/fireworks/models/gpt-oss-20b", 
+#     openai_client=external_client
+# )
+
+# config = RunConfig(
+#     model=model,
+#     model_provider=external_client,
+#     tracing_disabled=True
+# )
 
 # Quran dataset
 df = pd.read_csv("QuranDataset.csv", encoding="utf-8-sig")
@@ -56,8 +109,7 @@ guardrail_agent = Agent(
         "If it’s about unrelated topics such as math, science, entertainment, coding, or general trivia, "
         "respond only with 'UNRELATED'. "
         f"Context summary:\n{quran_topics}" 
-        ),
-    model=model
+        )
 )
 
 fallback_agent = Agent(
@@ -66,8 +118,7 @@ fallback_agent = Agent(
         "You are Tadabbur your friendly Quran companion. "
         f"If a user says something unrelated to the Quran topics like {quran_topics} reply politely and warmly that you cant reply to topics related to maths, technology etc but if you are greeted then greet back and tell who you are and what can the user ask you, "
         "'Hi there! Im Tadabbur — I specialize in Quranic insights. What would you like to explore today?'"
-    ),
-    model=model
+    )
 )
 
 @input_guardrail
@@ -76,11 +127,18 @@ async def quran_input_guardrail(
 ) -> GuardrailFunctionOutput:
     print("Running Quran input guardrail...")
     """Checks if the input question is Quranic-related"""
-    result = await Runner.run(guardrail_agent, input, context=ctx.context)
+
+    # Extract the model selected by the user (passed via context from main.py)
+    current_model_key = getattr(ctx.context, "model_key", "gpt-oss-20b")
+
+    # Build a RunConfig with the SAME model the user chose
+    guardrail_config = get_model_config(current_model_key)
+
+    result = await Runner.run(guardrail_agent, input,run_config=guardrail_config, context=ctx.context)
     output = str(result.final_output).strip().lower()
 
     if "unrelated" in output:
-        fallback = await Runner.run(fallback_agent, "This question seems unrelated to Quranic context.", context=ctx.context)
+        fallback = await Runner.run(fallback_agent, "This question seems unrelated to Quranic context.",run_config=guardrail_config, context=ctx.context)
         return GuardrailFunctionOutput(
             output_info=fallback.final_output, 
             tripwire_triggered=True,
@@ -98,8 +156,7 @@ output_guard_agent = Agent(
         "If the assistant’s reply focuses on Quranic verses, tafsir, themes, moral lessons, or reflections, respond ONLY with 'VALID'. "
         "If it drifts into unrelated topics (e.g., math, tech, movies, or general knowledge), respond ONLY with 'INVALID'. "
         f"Context summary:\n{quran_topics}"
-    ),
-    model=model,
+    )
 )
 
 @output_guardrail
@@ -110,12 +167,19 @@ async def quran_output_guardrail(
 ) -> GuardrailFunctionOutput:
     print("Running Quran output guardrail...")
     """Checks if the generated output is Quranic and valid"""
-    result = await Runner.run(output_guard_agent, output, context=ctx.context)
+
+    # Extract the model selected by the user (passed via context from main.py)
+    current_model_key = getattr(ctx.context, "model_key", "gpt-oss-20b")
+
+    # Build a RunConfig with the SAME model the user chose
+    guardrail_config = get_model_config(current_model_key)
+
+    result = await Runner.run(output_guard_agent, output,run_config=guardrail_config, context=ctx.context)
     output = str(result.final_output).strip().lower()
 
     if "invalid" in output:
         # If the model says the response drifted — send fallback
-        fallback = await Runner.run(fallback_agent, "Sorry, I can only provide responses based on Quranic content.", context=ctx.context)
+        fallback = await Runner.run(fallback_agent, "Sorry, I can only provide responses based on Quranic content.",run_config=guardrail_config, context=ctx.context)
         return GuardrailFunctionOutput(
             output_info=fallback.final_output,
             tripwire_triggered=True,
@@ -141,15 +205,17 @@ agent = Agent(
         "When the user asks for Quranic stories, you MUST use the tool :"
         '**Quran_Story_Teller**'
 
-        "When the user asks for tafseer, you MUST use the tool :"
-        '**Quranic_Tafsir_Agent**'
+    
 
         "ONLY return the correct handoff action."
         "talk in english on default unless user asks in other language."
     ),
     model_settings=ModelSettings(
         temperature=0.2,
+        parallel_tool_calls=False,
+        tool_choice="auto"
     ),
+    model=config.model,
     input_guardrails=[quran_input_guardrail],
     # output_guardrails=[quran_output_guardrail],
     tools=[
@@ -157,10 +223,10 @@ agent = Agent(
             tool_name="Quran_Story_Teller",
             tool_description="Use when the user ask about stories related to Quran, Prophets and islam"
         ),
-        Tafsir_Agent.as_tool(
-            tool_name="Quranic_Tafsir_Agent",
-            tool_description="Use when the user ask about tafseer related to Quranic ayah or verses"
-        )
+        # Tafsir_Agent.as_tool(
+        #     tool_name="Quranic_Tafsir_Agent",
+        #     tool_description="Use when the user ask about tafseer related to Quranic ayah or verses"
+        # )
     ],
 )
 

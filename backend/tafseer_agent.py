@@ -15,6 +15,7 @@ from agents import (
     output_guardrail,
     function_tool
 )
+from typing import Optional
 import json
 from typing import Any
 from dotenv import load_dotenv
@@ -75,24 +76,62 @@ class Output_type(BaseModel):
     tafsir_content: str
 
 
-
-
-provider = AsyncOpenAI(
+external_client = AsyncOpenAI(
     api_key= FIRE_WORKS_API,
     base_url= Base_URL
 )
 
-fireworkmodel = OpenAIChatCompletionsModel(
-    model= MODEL_NAME,
-    openai_client= provider
+SUPPORTED_MODELS = {
+    "kimi-k2-instruct-0905": {
+        "model_id": "accounts/fireworks/models/kimi-k2-instruct-0905",
+        "provider": external_client,
+        "name": "Kimi K2 Instruct 0905"
+    },
+    "deepseek-v3p1-terminus": {
+        "model_id": "accounts/fireworks/models/deepseek-v3p1-terminus",
+        "provider": external_client,
+        "name": "DeepSeek V3.1 Terminus"
+    },
+    "gpt-oss-120b": {
+        "model_id": "accounts/fireworks/models/gpt-oss-120b",
+        "provider": external_client,
+        "name": "OpenAI GPT-OSS 120B"
+    },
+    "gpt-oss-20b": {  # your current default
+        "model_id": "accounts/fireworks/models/gpt-oss-20b",
+        "provider": external_client,
+        "name": "OpenAI GPT-OSS 20B"
+    },
+    "qwen3-235b-a22b-instruct": {  # your current default
+        "model_id": "accounts/fireworks/models/qwen3-235b-a22b-instruct",
+        "provider": external_client,
+        "name": "Qwen3 235B a22B Instruct"
+    }
+}
 
-)
-config = RunConfig(
-    model= fireworkmodel,
-    model_provider=provider,
-    tracing_disabled= True
-    
-)
+def get_model_config(model_key: Optional[str] = None) -> RunConfig:
+    """
+    Returns a RunConfig with the selected model.
+    Falls back to default 'gpt-oss-20b' if invalid or None.
+    """
+    if not model_key or model_key not in SUPPORTED_MODELS:
+        model_key = "gpt-oss-20b"  # fallback
+
+    info = SUPPORTED_MODELS[model_key]
+
+    selected_model = OpenAIChatCompletionsModel(
+        model=info["model_id"],
+        openai_client=info.get("provider") or external_client
+    )
+
+    return RunConfig(
+        model=selected_model,
+        model_provider=info.get("provider") or external_client,
+        tracing_disabled=True
+    )
+
+# config as default (for backward compatibility)
+config = get_model_config("gpt-oss-20b") 
 
 
 Tafsir_Agent: Agent = Agent(
