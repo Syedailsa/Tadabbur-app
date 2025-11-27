@@ -10,7 +10,7 @@ const ModelBox: FC<ModelBoxProps> = ({
 }): React.ReactElement | null => {
   const [filteredModels, setFilteredModels] =
     useState<ModelBoxProps["modelList"]>(modelList);
-  const { hideModelBox, setHideModelBox, setSelectedModel, setActive } =
+  const { hideModelBox, setHideModelBox, setSelectedModel, setActive, wsRef } =
     useContext(ChatContext);
   const overlayRef = useRef<HTMLDivElement | null>(null);
 
@@ -71,6 +71,12 @@ const ModelBox: FC<ModelBoxProps> = ({
               key={index}
               onClick={() => {
                 setSelectedModel(model.model_name);
+                wsRef.current?.send(
+                  JSON.stringify({
+                    type: "model-selection",
+                    model: model.model_name,
+                  })
+                );
                 setHideModelBox(true);
                 setFilteredModels(modelList);
               }}

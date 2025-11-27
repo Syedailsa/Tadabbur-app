@@ -138,4 +138,37 @@ const dummyChatHistory = [
   },
 ];
 
-export { ModelList, chatMessages, dummyChatHistory };
+const defaultPrompts = [
+  {
+    title: "Surah Summary",
+    description:
+      "Provide a concise, neutral summary of the selected Surah based only on well-known, non-sectarian scholarly understandings. Do not offer personal opinions, rulings, or new interpretations.",
+  },
+  {
+    title: "Ayah Explanation",
+    description:
+      "Explain the meaning of the selected ayah using widely accepted tafsir principles. Stay neutral across schools of thought, avoid issuing religious rulings, and cite sources when possible.",
+  },
+  {
+    title: "Context of Revelation",
+    description:
+      "Describe the historical context (Asbāb al-Nuzūl) of the selected verse using reliable, established sources. Only share information documented in classical works and avoid speculation.",
+  },
+  {
+    title: "Key Themes",
+    description:
+      "Identify the major themes present in the selected Surah or ayah based on recognized scholarly commentary. Present themes clearly and objectively without independent interpretation.",
+  },
+  {
+    title: "Arabic Vocabulary Help",
+    description:
+      "Explain the meaning of specific Qur’anic Arabic words using standard lexical definitions. Provide root meanings where relevant and avoid theological interpretations or rulings.",
+  },
+  {
+    title: "Reflection Prompt",
+    description:
+      "Offer a gentle, non-prescriptive reflection based on the verse. Keep the reflection general, avoid giving personal religious advice or rulings, and encourage the user to explore established tafsir.",
+  },
+];
+
+export { ModelList, chatMessages, dummyChatHistory, defaultPrompts };

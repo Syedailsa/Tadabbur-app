@@ -36,7 +36,7 @@ const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
     if (!wsRef.current) return;
     const session_id = generateNewSessionId();
     wsRef.current.send(
-      JSON.stringify({ type: "new-session", session_id: session_id })
+      JSON.stringify({ type: "new-chat", session_id: session_id })
     );
   };
   return (
@@ -49,7 +49,7 @@ const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
         whileHover={{ scale: 1.02, backgroundColor: "#000000" }}
         animate={{ width: active ? 140 : 72 }}
         transition={{ duration: 0.3, ease: easeInOut }}
-        className="h-8 w-18 backdrop-blur-md border border-white bg-black/5 rounded-full cursor-pointer flex justify-center items-center px-2 text-black hover:text-white relative"
+        className="h-8 w-18 backdrop-blur-md bg-black/5 rounded-full cursor-pointer flex justify-center items-center px-2 text-black hover:text-white relative"
       >
         {overlayText && active && (
           <motion.div
@@ -67,7 +67,7 @@ const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
           >
             <div
               onClick={() => {
-                wsRef.current?.send(JSON.stringify({ type: "chat-history" }));
+                wsRef.current?.send(JSON.stringify({ type: "chat_history" }));
                 setOpenChatHistoryDialogueBox(true);
               }}
               onMouseOver={() => {
@@ -82,9 +82,7 @@ const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
               <HistoryIcon className="w-5 h-5 fill-current" />
             </div>
             <div
-              onClick={() => {
-                InitializeNewSession;
-              }}
+              onClick={InitializeNewSession}
               onMouseOver={() => {
                 setOverlayText("New Chat");
                 setOverlayTranslate(8);

@@ -11,6 +11,7 @@ const ChatHisoryDialoguseBox = () => {
     setSelectedSessionID,
     openChatHistoryDialogueBox,
     setOpenChatHistoryDialogueBox,
+    wsRef,
   } = useContext(ChatContext);
   const [translatePic, setTranslatePic] = useState<boolean | null>(null);
   const dialogueRef = useRef<HTMLDivElement>(null);
@@ -38,22 +39,7 @@ const ChatHisoryDialoguseBox = () => {
   }, [openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox]);
 
   if (!openChatHistoryDialogueBox) return null;
-  // useEffect(() => {
-  //     if (!active) return;
-  //     const handleOutsideClick = (e: MouseEvent) => {
-  //       if (
-  //         controlRef.current &&
-  //         !controlRef.current.contains(e.target as Node)
-  //       ) {
-  //         setActive(false);
-  //       }
-  //     };
-  //     document.addEventListener("click", handleOutsideClick);
 
-  //     return () => {
-  //       document.removeEventListener("click", handleOutsideClick);
-  //     };
-  //   }, [active, setActive]);
   return (
     <motion.div
       initial={{ backdropFilter: "blur(0px)", opacity: 0 }}
@@ -118,6 +104,12 @@ const ChatHisoryDialoguseBox = () => {
                     onClick={() => {
                       setSelectedSessionID(chat.session_id);
                       setOpenChatHistoryDialogueBox(false);
+                      wsRef.current?.send(
+                        JSON.stringify({
+                          type: "get_chat",
+                          session_id: chat.session_id,
+                        })
+                      );
                     }}
                     whileTap={{ scale: 0.98, transition: { duration: 0.5 } }}
                     transition={{ duration: 0.2 }}
