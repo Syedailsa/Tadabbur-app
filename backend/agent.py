@@ -16,19 +16,20 @@ from openai import OpenAI
 load_dotenv()
 
 # ===================== QDRANT & EMBEDDING SETUP =====================
-# qdrant = QdrantClient(
-#     url=os.getenv("QDRANT_URL_ENDPOINT"),
-#     api_key=os.getenv("QDRANT_API_KEY"),
-#     timeout=60
-# )
 
-# embed_client = OpenAI(
-#     api_key=os.getenv("FIREWORKS_API_KEY"),
-#     base_url="https://api.fireworks.ai/inference/v1"
-# )
+qdrant = QdrantClient(
+    url=os.getenv("QDRANT_URL_ENDPOINT"),
+    api_key=os.getenv("QDRANT_API_KEY"),
+    timeout=60
+)
 
-# COLLECTION_NAME = "Quran-Dataset-Collection"
-# EMBEDDING_MODEL = "fireworks/qwen3-embedding-8b"
+embed_client = OpenAI(
+    api_key=os.getenv("FIREWORKS_API_KEY"),
+    base_url="https://api.fireworks.ai/inference/v1"
+)
+
+COLLECTION_NAME = "Quran-Dataset-Collection"
+EMBEDDING_MODEL = "fireworks/qwen3-embedding-8b"
 
 FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY")
 
@@ -110,207 +111,207 @@ config = get_model_config("gpt-oss-20b")
 
 # # ===================== SEMANTIC SEARCH TOOL =====================
 
-# @function_tool
-# async def Search_Quran(
-#     query: str,
-#     limit: int = 15
-# ) -> str:
-#     """
-#     Universal Quran search tool that intelligently finds relevant verses for ANY query.
+@function_tool
+async def Search_Quran(
+    query: str,
+    limit: int = 15
+) -> str:
+    """
+    Universal Quran search tool that intelligently finds relevant verses for ANY query.
     
-#     Handles all types of requests:
-#     - Specific verses: "verse 2:255", "ayah 5 of Fatihah"
-#     - Full surahs: "Surah Fatihah translation", "complete Baqarah"
-#     - Topics/meanings: "verses about patience", "what Quran says about prayer"
-#     - Questions: "which juz is Baqarah in?", "how many verses in Fatihah?"
+    Handles all types of requests:
+    - Specific verses: "verse 2:255", "ayah 5 of Fatihah"
+    - Full surahs: "Surah Fatihah translation", "complete Baqarah"
+    - Topics/meanings: "verses about patience", "what Quran says about prayer"
+    - Questions: "which juz is Baqarah in?", "how many verses in Fatihah?"
     
-#     Uses semantic similarity (90-92% accuracy threshold) to find the most relevant verses.
+    Uses semantic similarity (90-92% accuracy threshold) to find the most relevant verses.
     
-#     Args:
-#         query: User's question or request (any format)
-#         limit: Maximum verses to return (default: 15)
+    Args:
+        query: User's question or request (any format)
+        limit: Maximum verses to return (default: 15)
     
-#     Returns:
-#         Relevant Quranic verses with Arabic, English translation, and metadata or stories using the verses found if user asks for.
-#     """
-#     try:
-#         print(f"🔍 Searching Quran for: '{query}'")
+    Returns:
+        Relevant Quranic verses with Arabic, English translation, and metadata or stories using the verses found if user asks for.
+    """
+    try:
+        print(f"🔍 Searching Quran for: '{query}'")
         
-#         # Retrieve all verses from database
-#         print(f"🔄 Loading database...")
-#         all_points = []
-#         offset = None
+        # Retrieve all verses from database
+        print(f"🔄 Loading database...")
+        all_points = []
+        offset = None
         
-#         while True:
-#             scroll_result = qdrant.scroll(
-#                 collection_name=COLLECTION_NAME,
-#                 limit=100,
-#                 offset=offset,
-#                 with_payload=True,
-#                 with_vectors=True
-#             )
-#             points, next_offset = scroll_result
-#             all_points.extend(points)
+        while True:
+            scroll_result = qdrant.scroll(
+                collection_name=COLLECTION_NAME,
+                limit=100,
+                offset=offset,
+                with_payload=True,
+                with_vectors=True
+            )
+            points, next_offset = scroll_result
+            all_points.extend(points)
             
-#             if next_offset is None:
-#                 break
-#             offset = next_offset
+            if next_offset is None:
+                break
+            offset = next_offset
         
-#         print(f"📥 Loaded {len(all_points)} verses")
+        print(f"📥 Loaded {len(all_points)} verses")
         
-#         # Build list of available surahs
-#         available_surahs = {}
-#         for point in all_points:
-#             p = point.payload
-#             surah_no = p.get('surah_no')
-#             surah_name = p.get('surah_name_en', 'Unknown')
-#             if surah_no and surah_no not in available_surahs:
-#                 available_surahs[surah_no] = surah_name
+        # Build list of available surahs
+        available_surahs = {}
+        for point in all_points:
+            p = point.payload
+            surah_no = p.get('surah_no')
+            surah_name = p.get('surah_name_en', 'Unknown')
+            if surah_no and surah_no not in available_surahs:
+                available_surahs[surah_no] = surah_name
         
-#         print(f"📚 Available Surahs: {', '.join(available_surahs.values())}")
+        print(f"📚 Available Surahs: {', '.join(available_surahs.values())}")
         
-#         # Check if requesting unavailable surah
-#         import re
-#         query_lower = query.lower()
+        # Check if requesting unavailable surah
+        import re
+        query_lower = query.lower()
         
-#         # Common surah names to check
-#         surah_names_map = {
-#             'yaseen': 36, 'yasin': 36, 'ya-seen': 36,
-#             'kahf': 18, 'al-kahf': 18,
-#             'mulk': 67, 'al-mulk': 67,
-#             'rahman': 55, 'ar-rahman': 55,
-#             'waqiah': 56, 'al-waqiah': 56,
-#             'ikhlas': 112, 'al-ikhlas': 112,
-#             'falaq': 113, 'al-falaq': 113,
-#             'nas': 114, 'an-nas': 114,
-#         }
+        # Common surah names to check
+        surah_names_map = {
+            'yaseen': 36, 'yasin': 36, 'ya-seen': 36,
+            'kahf': 18, 'al-kahf': 18,
+            'mulk': 67, 'al-mulk': 67,
+            'rahman': 55, 'ar-rahman': 55,
+            'waqiah': 56, 'al-waqiah': 56,
+            'ikhlas': 112, 'al-ikhlas': 112,
+            'falaq': 113, 'al-falaq': 113,
+            'nas': 114, 'an-nas': 114,
+        }
         
-#         # Check for unavailable surah by name
-#         for name, number in surah_names_map.items():
-#             if name in query_lower and number not in available_surahs:
-#                 available_list = '\n'.join([f"  • Surah {num}: {sname}" for num, sname in sorted(available_surahs.items())])
-#                 return (
-#                     f"❌ **Surah {name.title()} (#{number}) is not in the database.**\n\n"
-#                     f"📚 **Available Surahs ({len(available_surahs)}):**\n{available_list}\n\n"
-#                     f"💡 The database contains {len(all_points)} verses from these surahs only."
-#                 )
+        # Check for unavailable surah by name
+        for name, number in surah_names_map.items():
+            if name in query_lower and number not in available_surahs:
+                available_list = '\n'.join([f"  • Surah {num}: {sname}" for num, sname in sorted(available_surahs.items())])
+                return (
+                    f"❌ **Surah {name.title()} (#{number}) is not in the database.**\n\n"
+                    f"📚 **Available Surahs ({len(available_surahs)}):**\n{available_list}\n\n"
+                    f"💡 The database contains {len(all_points)} verses from these surahs only."
+                )
         
-#         # Check for unavailable surah by number (e.g., "36:5" or "surah 36")
-#         surah_num_match = re.search(r'\b(\d{1,3}):', query) or re.search(r'surah\s+(\d{1,3})', query_lower)
-#         if surah_num_match:
-#             requested_surah = int(surah_num_match.group(1))
-#             if requested_surah not in available_surahs:
-#                 available_list = '\n'.join([f"  • Surah {num}: {sname}" for num, sname in sorted(available_surahs.items())])
-#                 return (
-#                     f"❌ **Surah #{requested_surah} is not in the database.**\n\n"
-#                     f"📚 **Available Surahs:**\n{available_list}"
-#                 )
+        # Check for unavailable surah by number (e.g., "36:5" or "surah 36")
+        surah_num_match = re.search(r'\b(\d{1,3}):', query) or re.search(r'surah\s+(\d{1,3})', query_lower)
+        if surah_num_match:
+            requested_surah = int(surah_num_match.group(1))
+            if requested_surah not in available_surahs:
+                available_list = '\n'.join([f"  • Surah {num}: {sname}" for num, sname in sorted(available_surahs.items())])
+                return (
+                    f"❌ **Surah #{requested_surah} is not in the database.**\n\n"
+                    f"📚 **Available Surahs:**\n{available_list}"
+                )
         
-#         # Generate embedding for semantic search
-#         print(f"🧮 Generating embedding...")
-#         emb_response = embed_client.embeddings.create(
-#             model=EMBEDDING_MODEL,
-#             input=query
-#         )
-#         query_embedding = emb_response.data[0].embedding
+        # Generate embedding for semantic search
+        print(f"🧮 Generating embedding...")
+        emb_response = embed_client.embeddings.create(
+            model=EMBEDDING_MODEL,
+            input=query
+        )
+        query_embedding = emb_response.data[0].embedding
         
-#         import numpy as np
+        import numpy as np
         
-#         # Calculate cosine similarity for all verses
-#         print(f"🎯 Calculating similarity scores...")
-#         query_vec = np.array(query_embedding)
-#         query_norm = np.linalg.norm(query_vec)
+        # Calculate cosine similarity for all verses
+        print(f"🎯 Calculating similarity scores...")
+        query_vec = np.array(query_embedding)
+        query_norm = np.linalg.norm(query_vec)
         
-#         scored_results = []
-#         for point in all_points:
-#             point_vec = np.array(point.vector)
-#             point_norm = np.linalg.norm(point_vec)
+        scored_results = []
+        for point in all_points:
+            point_vec = np.array(point.vector)
+            point_norm = np.linalg.norm(point_vec)
             
-#             # Cosine similarity (ranges from -1 to 1, we convert to 0-100%)
-#             similarity = np.dot(query_vec, point_vec) / (query_norm * point_norm)
-#             similarity_percent = (similarity + 1) / 2 * 100  # Convert to 0-100%
+            # Cosine similarity (ranges from -1 to 1, we convert to 0-100%)
+            similarity = np.dot(query_vec, point_vec) / (query_norm * point_norm)
+            similarity_percent = (similarity + 1) / 2 * 100  # Convert to 0-100%
             
-#             scored_results.append({
-#                 'payload': point.payload,
-#                 'score': float(similarity),
-#                 'score_percent': float(similarity_percent)
-#             })
+            scored_results.append({
+                'payload': point.payload,
+                'score': float(similarity),
+                'score_percent': float(similarity_percent)
+            })
         
-#         # Sort by similarity (highest first)
-#         scored_results.sort(key=lambda x: x['score'], reverse=True)
+        # Sort by similarity (highest first)
+        scored_results.sort(key=lambda x: x['score'], reverse=True)
         
-#         # Take top results
-#         top_results = scored_results[:limit]
+        # Take top results
+        top_results = scored_results[:limit]
         
-#         # Filter: Keep only results with 45%+ similarity (90%+ when normalized)
-#         # Cosine similarity of 0.45 ≈ 72.5% match, which is good for semantic search
-#         filtered_results = [r for r in top_results if r['score'] >= 0.45]
+        # Filter: Keep only results with 45%+ similarity (90%+ when normalized)
+        # Cosine similarity of 0.45 ≈ 72.5% match, which is good for semantic search
+        filtered_results = [r for r in top_results if r['score'] >= 0.45]
         
-#         if not filtered_results and top_results:
-#             # If strict filter gives nothing, take top 5 with lower threshold
-#             filtered_results = [r for r in top_results[:5] if r['score'] >= 0.20]
+        if not filtered_results and top_results:
+            # If strict filter gives nothing, take top 5 with lower threshold
+            filtered_results = [r for r in top_results[:5] if r['score'] >= 0.20]
         
-#         print(f"✅ Found {len(filtered_results)} high-quality matches (threshold: 45%+ similarity)")
+        print(f"✅ Found {len(filtered_results)} high-quality matches (threshold: 45%+ similarity)")
         
-#         if not filtered_results:
-#             available_list = '\n'.join([f"  • {sname}" for sname in available_surahs.values()])
-#             return (
-#                 f"❌ No relevant verses found for: **'{query}'**\n\n"
-#                 f"💡 **Suggestions:**\n"
-#                 f"  • Try different keywords\n"
-#                 f"  • Be more specific\n"
-#                 f"  • Ask about available surahs\n\n"
-#                 f"📚 **Available Surahs:**\n{available_list}"
-#             )
+        if not filtered_results:
+            available_list = '\n'.join([f"  • {sname}" for sname in available_surahs.values()])
+            return (
+                f"❌ No relevant verses found for: **'{query}'**\n\n"
+                f"💡 **Suggestions:**\n"
+                f"  • Try different keywords\n"
+                f"  • Be more specific\n"
+                f"  • Ask about available surahs\n\n"
+                f"📚 **Available Surahs:**\n{available_list}"
+            )
         
-#         # Format output
-#         verses_output = []
-#         current_surah = None
+        # Format output
+        verses_output = []
+        current_surah = None
         
-#         for idx, hit in enumerate(filtered_results, 1):
-#             p = hit['payload']
-#             surah_no = p.get('surah_no')
-#             verse_key = p.get('verse_key', f"{surah_no}:{p.get('ayah_no_surah')}")
-#             surah_name = p.get('surah_name_en', 'Unknown')
+        for idx, hit in enumerate(filtered_results, 1):
+            p = hit['payload']
+            surah_no = p.get('surah_no')
+            verse_key = p.get('verse_key', f"{surah_no}:{p.get('ayah_no_surah')}")
+            surah_name = p.get('surah_name_en', 'Unknown')
             
-#             # Show surah header when switching to new surah
-#             if surah_no != current_surah:
-#                 if current_surah is not None:
-#                     verses_output.append("")  # Blank line between surahs
+            # Show surah header when switching to new surah
+            if surah_no != current_surah:
+                if current_surah is not None:
+                    verses_output.append("")  # Blank line between surahs
                 
-#                 juz = p.get('juz_no', 'N/A')
-#                 revelation = p.get('place_of_revelation', 'N/A')
-#                 verses_output.append(
-#                     f"** Surah {surah_name} (#{surah_no})**\n"
-#                     f"Juz: {juz} | Revelation: {revelation}"
-#                 )
-#                 current_surah = surah_no
+                juz = p.get('juz_no', 'N/A')
+                revelation = p.get('place_of_revelation', 'N/A')
+                verses_output.append(
+                    f"** Surah {surah_name} (#{surah_no})**\n"
+                    f"Juz: {juz} | Revelation: {revelation}"
+                )
+                current_surah = surah_no
             
-#             # Format individual verse
-#             verse_text = (
-#                 f"\n**{verse_key}** (Match: {hit['score']:.0%})\n"
-#                 f" **Arabic:** {p['ayah_ar']}\n"
-#                 f" **English:** {p['ayah_en']}"
-#             )
+            # Format individual verse
+            verse_text = (
+                f"\n**{verse_key}** (Match: {hit['score']:.0%})\n"
+                f" **Arabic:** {p['ayah_ar']}\n"
+                f" **English:** {p['ayah_en']}"
+            )
             
-#             # Add sajdah indicator if present
-#             if p.get('sajdah'):
-#                 verse_text += "\n *Contains Sajdah (prostration)*"
+            # Add sajdah indicator if present
+            if p.get('sajdah'):
+                verse_text += "\n *Contains Sajdah (prostration)*"
             
-#             verses_output.append(verse_text)
+            verses_output.append(verse_text)
         
-#         # Build final response
-#         result = "\n".join(verses_output)
-#         result += f"\n\n{'─' * 50}\n*Showing {len(filtered_results)} most relevant verses*"
+        # Build final response
+        result = "\n".join(verses_output)
+        result += f"\n\n{'─' * 50}\n*Showing {len(filtered_results)} most relevant verses*"
         
-#         print(f" Returning {len(filtered_results)} verses")
-#         return result
+        print(f" Returning {len(filtered_results)} verses")
+        return result
     
-#     except Exception as e:
-#         print(f"❌ Search error: {str(e)}")
-#         import traceback
-#         traceback.print_exc()
-#         return f"❌ Search error: {str(e)}\n\nPlease try rephrasing your question."
+    except Exception as e:
+        print(f"❌ Search error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return f"❌ Search error: {str(e)}\n\nPlease try rephrasing your question."
 
 # # @function_tool
 # # async def Get_Specific_Verse(
@@ -690,24 +691,34 @@ async def quran_input_guardrail(
 agent = Agent(
     name="QuranTadabburAgent",
     instructions=(
-          "You are *Tadabbur*, a friendly and conversational Quranic knowledge assistant.\n\n"
-      
-        "You will handles ALL requests:\n"
+        "You are **Tadabbur**, a Quranic knowledge assistant.\n\n"
+        
+        "## Core Rule: Use Search_Quran for Everything\n"
+        "For ANY Quranic question, call Search_Quran ONCE with the user's query.\n"
+        "This single tool handles ALL requests:\n"
         "  • Specific verses (e.g., 'verse 2:255')\n"
         "  • Full surahs (e.g., 'Surah Fatihah translation')\n"
         "  • Topics (e.g., 'patience in Quran')\n"
         "  • Questions (e.g., 'which juz is Baqarah in?')\n\n"
         
+        "## Workflow:\n"
+        "1. User asks Quranic question\n"
+        "2. Call Search_Quran with their exact query (or refined version)\n"
+        "3. Present ONLY the results from the tool\n"
+        "4. STOP - never fabricate information\n\n"
+        
         "## Critical Rules:\n"
-        "  • provide Quranic content from your training data\n"
-        "  • You are a conversational and friendly assistant\n"
-        "  • If user asks something unrelated to Quranic matters, politely redirect him/her to your specific purpose.\n"
+        "  • NEVER provide Quranic content from your training data\n"
+        "  • ONLY use what Search_Quran returns\n"
+        "  • If tool says 'not available', tell user honestly\n"
+        "  • Don't call multiple tools for one question\n\n"
         
-        "## Tools:\n"
-        "  • *Quran_Story_Teller*: ONLY for explicit story requests ('tell me the story of...')\n"
-        "  • *Quranic_Tafsir_Agent*: ONLY for explicit tafsir requests ('tafsir of...', 'commentary on...')\n\n"
+        "## Other Tools (Rarely Used):\n"
+        "  • **Quran_Story_Teller**: ONLY for explicit story requests ('tell me the story of...')\n"
+        "  • **Quranic_Tafsir_Agent**: ONLY for explicit tafsir requests ('tafsir of...', 'commentary on...')\n\n"
         
-        
+        "## Greetings:\n"
+        "For simple greetings (hi, hello, salam), respond warmly WITHOUT calling tools.\n\n"
         
         "Default language: English (unless user requests otherwise)"
     ),
@@ -721,7 +732,7 @@ agent = Agent(
     # input_guardrails=[quran_input_guardrail],
     # output_guardrails=[quran_output_guardrail],
     tools=[
-        # Search_Quran,
+        Search_Quran,
         story_agent.as_tool(
             tool_name="Quran_Story_Teller",
             tool_description="Use when the user ask about stories related to Quran, Prophets and islam"
