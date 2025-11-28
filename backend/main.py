@@ -3,7 +3,6 @@ import json
 import re
 from dotenv import load_dotenv
 from pathlib import Path
-import asyncpg
 load_dotenv()
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header
@@ -462,71 +461,6 @@ async def websocket_chat(websocket: WebSocket):
                 continue
             # Handle CHAT HISTORY request
 
-
-            # =======================================================================================
-           #               ==================== FEEDBACK SYSTEM  ====================
-            # =======================================================================================
-
-            if data.get("type") in ["like", "dislike", "report_content"]:
-                feedback_type = data["type"]                    # "like" / "dislike" / "report_content"
-                index = data.get("index")
-                sess_id = data.get("session_id") or session_id  # Use provided session_id or current session_id
-
-                # Validation
-                if not sess_id:
-                    await websocket.send_json({"type": "error", "message": "session_id missing"})
-                    continue
-                if not isinstance(index, int) or index < 0:
-                    await websocket.send_json({"type": "error", "message": "invalid index"})
-                    continue
-
-                # Save to PostgreSQL (Supabase)
-                try:
-                    conn = await asyncpg.connect(os.getenv("DATABASE_URL"))
-                    await conn.execute(
-                        """
-                        INSERT INTO content_feedback (session_id, item_index, feedback_type)
-                        VALUES ($1, $2, $3)
-                        ON CONFLICT (session_id, item_index, feedback_type) DO NOTHING
-                        """,
-                        sess_id, index, feedback_type
-                    )
-                    await conn.close()
-
-                    # Success response
-                    await websocket.send_json({
-                        "type": "feedback_ack",
-                        "status": "success",
-                        "action": feedback_type,
-                        "index": index
-                    })
-
-                    # Optional: 10+ reports pe alert
-                    if feedback_type == "report_content":
-                        conn = await asyncpg.connect(os.getenv("DATABASE_URL"))
-                        reports = await conn.fetchval(
-                            "SELECT COUNT(*) FROM content_feedback WHERE item_index = $1 AND feedback_type = 'report_content'",
-                            index
-                        )
-                        await conn.close()
-                        if reports and reports > 10:
-                            await websocket.send_json({
-                                "type": "content_reported",
-                                "index": index,
-                                "reports": reports
-                            })
-
-                except Exception as e:
-                    logger.error(f"Feedback save failed: {e}")
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": "feedback save failed"
-                    })
-
-                continue  
-
-
-
             if data.get("type") == "chat_history":
                 try:
                     sessions_list = get_all_sessions_from_db()
@@ -748,10 +682,10 @@ async def websocket_chat(websocket: WebSocket):
                         if delta and delta.strip():
                             # Block raw tool call JSON
                             if not (delta.strip().startswith("{") and ("name" in delta or "arguments" in delta)):
-                                await websocket.send_json({
-                                    "type": "assistance_response_chunk",
-                                    "content": delta
-                                })
+                                # await websocket.send_json({
+                                #     "type": "assistance_response_chunk",
+                                #     "content": delta
+                                # })
                                
                                 final_text += delta
                         continue
@@ -810,13 +744,6 @@ async def websocket_chat(websocket: WebSocket):
                                 "content": text
                             })
                         
-                # try:
-                #     final_text = getattr(run_result, "final_output", None) \
-                #             or getattr(run_result, "output_text", None)
-                # except:
-                #     final_text = None
-
-                # print(final_text)
 
                 final_output = (
                     getattr(run_result, "final_output", None) or

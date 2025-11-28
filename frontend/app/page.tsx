@@ -30,9 +30,18 @@ import { PromptExtraOptionsContext } from "./context/chatbot/PromptExtraOptionsC
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<
-    { role: "user" | "assistant"; content: string }[] | null
+    | {
+        role: "user" | "assistant";
+        content: string;
+        feedback: "liked" | "disliked" | null;
+      }[]
+    | null
   >(null);
 
+  [
+    { role: "user", content: "loremipsum34" },
+    { role: "assistant", content: "loremipsum34 " },
+  ];
   const inputRef = useRef<HTMLDivElement | null>(null);
   const [showPlaceholder, setShowPlaceholder] = useState<boolean | null>(true);
   const [greeting, setGreeting] = useState<string | null>(
@@ -65,7 +74,7 @@ export default function ChatPage() {
   }
 
   useEffect(() => {
-    const websocket = new WebSocket("ws://localhost:7000/ws/chat");
+    const websocket = new WebSocket("ws://localhost:8000/ws/chat");
     wsRef.current = websocket;
 
     wsRef.current.onopen = () => {
@@ -156,7 +165,11 @@ export default function ChatPage() {
                   updated[lastIdx].content =
                     (updated[lastIdx].content || "") + " " + chunk;
                 } else {
-                  updated.push({ role: "assistant", content: chunk });
+                  updated.push({
+                    role: "assistant",
+                    content: chunk,
+                    feedback: null,
+                  });
                 }
                 return updated;
               });
@@ -200,18 +213,18 @@ export default function ChatPage() {
     if (streamingMessageIndex !== null) return;
     setError(null);
     messageScrollFlag.current = false;
-    setMessages((prev): { role: "user" | "assistant"; content: string }[] => {
-      const updated: { role: "user" | "assistant"; content: string }[] = [
+    setMessages((prev: any) => {
+      // prev is already typed correctly from useState
+      const updated = [
         ...(prev || []),
-        { role: "user", content: input },
-        { role: "assistant", content: "" }, // placeholder for assistant reply
+        { role: "user", content: input, feedback: null },
+        { role: "assistant", content: "", feedback: null },
       ];
 
-      // Track the index of the new assistant message
       setStreamingMessageIndex(updated.length - 1);
-
       return updated;
     });
+
     setLoading(true);
 
     try {
@@ -269,6 +282,7 @@ export default function ChatPage() {
       <PromptExtraOptionsContext.Provider
         value={{
           messages,
+          setMessages,
           index,
           hidePromptExtraOptionsModelBox,
           setHidePromptExtraOptionsModelBox,
