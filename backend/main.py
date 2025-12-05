@@ -8,6 +8,7 @@ load_dotenv()
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
 from typing import List, Optional
 
@@ -19,6 +20,16 @@ import sqlite3
 import logging
 import secrets
 from agents import ItemHelpers
+from api import (
+    auth_router,
+    notif_router,
+    bookmark_router,
+    profile_router,
+    feedback_router
+)
+from quran_api import quran_router , parah_router, story_router
+from database import init_db_pool, close_db_pool, create_tables
+from fastapi.security import HTTPBearer
 # =========== Title Agent ============
 from title_agent import title_agent
 
@@ -30,7 +41,31 @@ logger = logging.getLogger(__name__)
 
 # ------------------- APP CONFIG -------------------
 
-app = FastAPI(title="Tadabbur Agent API")
+app = FastAPI(title="Tadabbur Agent API",
+              description= "Backend API for Quranic Tadabbur Agent Application",
+              version="1.0.0")
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title="Tadabbur Agent API",
+        version="1.0.0",
+        description="Backend API for Quranic Tadabbur Agent Application",
+        routes=app.routes,
+    )
+    openapi_schema["components"]["securitySchemes"] = {
+        "bearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT"
+        }
+    }
+    openapi_schema["security"] = [{"bearerAuth": []}]
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+app.openapi = custom_openapi
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,6 +74,30 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database pool on startup"""
+    await init_db_pool()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close database pool on shutdown"""
+    await close_db_pool()
+
+
+# ================= Routes =================
+app.include_router(auth_router)
+app.include_router(notif_router)
+app.include_router(bookmark_router)
+app.include_router(profile_router)
+app.include_router(feedback_router)
+app.include_router(quran_router)
+app.include_router(parah_router)
+app.include_router(story_router)
+
+
 
 API_KEY = os.getenv("CHAT_API_KEY")
 
@@ -462,11 +521,6 @@ async def websocket_chat(websocket: WebSocket):
                 continue
             # Handle CHAT HISTORY request
 
-
-            # =======================================================================================
-           #               ==================== FEEDBACK SYSTEM  ====================
-            # =======================================================================================
-
             if data.get("type") in ["like", "dislike", "report_content"]:
                 feedback_type = data["type"]                    # "like" / "dislike" / "report_content"
                 index = data.get("index")
@@ -748,10 +802,10 @@ async def websocket_chat(websocket: WebSocket):
                         if delta and delta.strip():
                             # Block raw tool call JSON
                             if not (delta.strip().startswith("{") and ("name" in delta or "arguments" in delta)):
-                                await websocket.send_json({
-                                    "type": "assistance_response_chunk",
-                                    "content": delta
-                                })
+                                # await websocket.send_json({
+                                #     "type": "assistance_response_chunk",
+                                #     "content": delta
+                                # })
                                
                                 final_text += delta
                         continue
@@ -810,13 +864,6 @@ async def websocket_chat(websocket: WebSocket):
                                 "content": text
                             })
                         
-                # try:
-                #     final_text = getattr(run_result, "final_output", None) \
-                #             or getattr(run_result, "output_text", None)
-                # except:
-                #     final_text = None
-
-                # print(final_text)
 
                 final_output = (
                     getattr(run_result, "final_output", None) or
