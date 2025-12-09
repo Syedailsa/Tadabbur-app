@@ -7,6 +7,7 @@ load_dotenv()
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
 from typing import List, Optional
 
@@ -18,6 +19,16 @@ import sqlite3
 import logging
 import secrets
 from agents import ItemHelpers
+from api import (
+    auth_router,
+    notif_router,
+    bookmark_router,
+    profile_router,
+    feedback_router
+)
+from quran_api import quran_router , parah_router, story_router
+from database import init_db_pool, close_db_pool, create_tables
+from fastapi.security import HTTPBearer
 # =========== Title Agent ============
 from title_agent import title_agent
 
@@ -29,7 +40,31 @@ logger = logging.getLogger(__name__)
 
 # ------------------- APP CONFIG -------------------
 
-app = FastAPI(title="Tadabbur Agent API")
+app = FastAPI(title="Tadabbur Agent API",
+              description= "Backend API for Quranic Tadabbur Agent Application",
+              version="1.0.0")
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title="Tadabbur Agent API",
+        version="1.0.0",
+        description="Backend API for Quranic Tadabbur Agent Application",
+        routes=app.routes,
+    )
+    openapi_schema["components"]["securitySchemes"] = {
+        "bearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT"
+        }
+    }
+    openapi_schema["security"] = [{"bearerAuth": []}]
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+app.openapi = custom_openapi
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -38,6 +73,30 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database pool on startup"""
+    await init_db_pool()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close database pool on shutdown"""
+    await close_db_pool()
+
+
+# ================= Routes =================
+app.include_router(auth_router)
+app.include_router(notif_router)
+app.include_router(bookmark_router)
+app.include_router(profile_router)
+app.include_router(feedback_router)
+app.include_router(quran_router)
+app.include_router(parah_router)
+app.include_router(story_router)
+
+
 
 API_KEY = os.getenv("CHAT_API_KEY")
 
@@ -460,6 +519,66 @@ async def websocket_chat(websocket: WebSocket):
 
                 continue
             # Handle CHAT HISTORY request
+
+            if data.get("type") in ["like", "dislike", "report_content"]:
+                feedback_type = data["type"]                    # "like" / "dislike" / "report_content"
+                index = data.get("index")
+                sess_id = data.get("session_id") or session_id  # Use provided session_id or current session_id
+
+                # Validation
+                if not sess_id:
+                    await websocket.send_json({"type": "error", "message": "session_id missing"})
+                    continue
+                if not isinstance(index, int) or index < 0:
+                    await websocket.send_json({"type": "error", "message": "invalid index"})
+                    continue
+
+                # Save to PostgreSQL (Supabase)
+                try:
+                    conn = await asyncpg.connect(os.getenv("DATABASE_URL"))
+                    await conn.execute(
+                        """
+                        INSERT INTO content_feedback (session_id, item_index, feedback_type)
+                        VALUES ($1, $2, $3)
+                        ON CONFLICT (session_id, item_index, feedback_type) DO NOTHING
+                        """,
+                        sess_id, index, feedback_type
+                    )
+                    await conn.close()
+
+                    # Success response
+                    await websocket.send_json({
+                        "type": "feedback_ack",
+                        "status": "success",
+                        "action": feedback_type,
+                        "index": index
+                    })
+
+                    # Optional: 10+ reports pe alert
+                    if feedback_type == "report_content":
+                        conn = await asyncpg.connect(os.getenv("DATABASE_URL"))
+                        reports = await conn.fetchval(
+                            "SELECT COUNT(*) FROM content_feedback WHERE item_index = $1 AND feedback_type = 'report_content'",
+                            index
+                        )
+                        await conn.close()
+                        if reports and reports > 10:
+                            await websocket.send_json({
+                                "type": "content_reported",
+                                "index": index,
+                                "reports": reports
+                            })
+
+                except Exception as e:
+                    logger.error(f"Feedback save failed: {e}")
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "feedback save failed"
+                    })
+
+                continue  
+
+
 
             if data.get("type") == "chat_history":
                 try:

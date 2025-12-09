@@ -2,3 +2,16 @@ fastapi
 pydantic
 openai-agents
 python-dotenv
+asyncpg
+google-auth
+google-auth-oauthlib
+PyJWT
+passlib
+google-auth-httplib2
+python-multipart
+qdrant-client
+pydantic
+uvicorn[standard]
+google-auth>=2.25.0
+google-auth-oauthlib>=1.2.0
+google-auth-httplib2>=0.2.0
