@@ -30,7 +30,12 @@ import { PromptExtraOptionsContext } from "./context/chatbot/PromptExtraOptionsC
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<
-    { role: "user" | "assistant"; content: string }[] | null
+    | {
+        role: "user" | "assistant";
+        content: string;
+        feedback: "liked" | "disliked" | null;
+      }[]
+    | null
   >(null);
 
   const inputRef = useRef<HTMLDivElement | null>(null);
@@ -52,6 +57,13 @@ export default function ChatPage() {
   >(null);
   const [chatHistory, setChatHistory] = useState<ChatRecord[] | null>(null);
   const messageScrollFlag = useRef<boolean | null>(false);
+
+  // --- ADDED: Track the last speech chunk to handle replacements ---
+  const lastSpeechRef = useRef<string>("");
+
+  // --- CHANGED: Track committed text (Final) vs Streaming text (Chunk) ---
+  const committedTextRef = useRef<string>("");
+
   const controls = useAnimationControls();
 
   function chunkText(text: string, size = 4) {
@@ -63,6 +75,38 @@ export default function ChatPage() {
     }
     return chunks;
   }
+
+  // --- Listen for Mic Start to reset Memory ---
+  useEffect(() => {
+    const handleMicStart = () => {
+      // When mic restarts, assume current input is "committed" manually by user typing
+      if (inputRef.current) {
+        committedTextRef.current = inputRef.current.innerText.trim() + " ";
+      } else {
+        committedTextRef.current = "";
+      }
+    };
+    window.addEventListener("tadabbur-mic-start", handleMicStart);
+    return () =>
+      window.removeEventListener("tadabbur-mic-start", handleMicStart);
+  }, []);
+
+  const updateInputDisplay = (tempText: string) => {
+    if (inputRef.current) {
+      inputRef.current.innerText = committedTextRef.current + tempText;
+
+      // Move cursor to end
+      const range = document.createRange();
+      const sel = window.getSelection();
+      if (inputRef.current.lastChild) {
+        range.selectNodeContents(inputRef.current);
+        range.collapse(false);
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+      }
+      setShowPlaceholder(false);
+    }
+  };
 
   useEffect(() => {
     const websocket = new WebSocket("ws://localhost:8000/ws/chat");
@@ -95,6 +139,17 @@ export default function ChatPage() {
 
       const type = data.type;
       switch (type) {
+        // --- CASE 1: PARTIAL CHUNK (Update only the end) ---
+        case "stt_chunk":
+          updateInputDisplay(data.text);
+          break;
+
+        // --- CASE 2: FINAL SENTENCE (Commit it) ---
+        case "stt_final":
+          committedTextRef.current += data.text + " ";
+          updateInputDisplay("");
+          break;
+
         case "session_id":
           const session_id = data.session_id;
           const isNew = session_id != sessionID;
@@ -136,6 +191,9 @@ export default function ChatPage() {
           const reply: string = data.content ?? "No reply from server";
           setLoadingMessage(null);
 
+          // Clear speech buffer when assistant replies
+          committedTextRef.current = "";
+
           const chunk_array = chunkText(reply, 4); // 4 words per chunk
 
           setLoading(false);
@@ -156,7 +214,11 @@ export default function ChatPage() {
                   updated[lastIdx].content =
                     (updated[lastIdx].content || "") + " " + chunk;
                 } else {
-                  updated.push({ role: "assistant", content: chunk });
+                  updated.push({
+                    role: "assistant",
+                    content: chunk,
+                    feedback: null,
+                  });
                 }
                 return updated;
               });
@@ -200,18 +262,18 @@ export default function ChatPage() {
     if (streamingMessageIndex !== null) return;
     setError(null);
     messageScrollFlag.current = false;
-    setMessages((prev): { role: "user" | "assistant"; content: string }[] => {
-      const updated: { role: "user" | "assistant"; content: string }[] = [
+    setMessages((prev: any) => {
+      // prev is already typed correctly from useState
+      const updated = [
         ...(prev || []),
-        { role: "user", content: input },
-        { role: "assistant", content: "" }, // placeholder for assistant reply
+        { role: "user", content: input, feedback: null },
+        { role: "assistant", content: "", feedback: null },
       ];
 
-      // Track the index of the new assistant message
       setStreamingMessageIndex(updated.length - 1);
-
       return updated;
     });
+
     setLoading(true);
 
     try {
@@ -269,6 +331,7 @@ export default function ChatPage() {
       <PromptExtraOptionsContext.Provider
         value={{
           messages,
+          setMessages,
           index,
           hidePromptExtraOptionsModelBox,
           setHidePromptExtraOptionsModelBox,

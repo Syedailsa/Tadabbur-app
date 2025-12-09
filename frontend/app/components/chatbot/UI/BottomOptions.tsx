@@ -1,4 +1,4 @@
-import { useState, useContext } from "react";
+import { useState, useContext, useEffect, useRef } from "react";
 import { ChatContext } from "@/app/context/chatbot/ChatContext";
 import { motion } from "framer-motion";
 import DownArrow from "../../../../icons/arrow-down-head.svg";
@@ -16,17 +16,92 @@ const BottomOptions = () => {
     setHideModelBox,
     active,
     setActive,
+    setInput,
   } = useContext(ChatContext);
 
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+
+  useEffect(() => {
+    const isMicActive = active[2];
+    if (isMicActive) {
+      startRecording();
+    } else {
+      stopRecording();
+    }
+    return () => stopRecording();
+  }, [active[2]]);
+
+  const startRecording = async () => {
+    try {
+      console.log("🎤 Mic Request...");
+
+      // Notify ChatPage to reset text (Frontend visual reset)
+      window.dispatchEvent(new Event("tadabbur-mic-start"));
+
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        console.error("❌ Main WebSocket not connected!");
+        alert("Please wait for chat connection...");
+        setActive((prev: boolean[]) => {
+          const c = [...prev];
+          c[2] = false;
+          return c;
+        });
+        return;
+      }
+
+      // --- ADDED: Send Start Command to Backend (Resets Backend STT Engine) ---
+      wsRef.current.send(JSON.stringify({ type: "start_mic" }));
+      // ------------------------------------------------------------------------
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (
+          event.data.size > 0 &&
+          wsRef.current?.readyState === WebSocket.OPEN
+        ) {
+          wsRef.current.send(event.data);
+        }
+      };
+
+      mediaRecorder.start(1000);
+      console.log("🎙️ Recording via Main Socket!");
+    } catch (micErr) {
+      console.error("❌ Mic denied:", micErr);
+      setActive((prev: boolean[]) => {
+        const c = [...prev];
+        c[2] = false;
+        return c;
+      });
+    }
+  };
+
+  const stopRecording = () => {
+    if (
+      mediaRecorderRef.current &&
+      mediaRecorderRef.current.state !== "inactive"
+    ) {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream
+        .getTracks()
+        .forEach((track) => track.stop());
+    }
+
+    // --- ADDED: Send Stop Command (Kills Backend Engine to prevent ghost text) ---
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "stop_mic" }));
+    }
+    // ---------------------------------------------------------------------------
+  };
+
   return (
-    <div
-      id="bottom-options"
-      className="w-full flex gap-x-1 mt-auto items-center"
-    >
+    <div className="w-full flex gap-x-1 mt-auto items-center">
       <motion.div
         whileTap={{ backgroundColor: "#0000003D" }}
         whileHover={{ backgroundColor: "#0000000D" }}
-        animate={{ backgroundColor: active[0] ? "#0000000D" : "" }}
+        animate={{ backgroundColor: active[0] ? "#0000000D" : "#00000000" }}
         id="choose-model-box"
         onClick={(e) => {
           e.stopPropagation();
@@ -42,7 +117,7 @@ const BottomOptions = () => {
         <motion.div className="mt-0.2">
           <DownArrow className="w-5 h-5" />
         </motion.div>
-        <p className="switzer-500 text-[0.91rem]  sm:text-[0.96rem]">
+        <p className="switzer-500 text-[0.91rem] sm:text-[0.96rem]">
           {selectedModel}
         </p>
       </motion.div>
@@ -77,11 +152,10 @@ const BottomOptions = () => {
                 );
               }
               current[1] = !current[1];
-
               return current;
             });
           }}
-          animate={{ backgroundColor: active[1] ? "#0000000D" : "" }}
+          animate={{ backgroundColor: active[1] ? "#0000000D" : "#00000000" }}
           whileTap={{ backgroundColor: "#0000003D" }}
           whileHover={{ backgroundColor: "#0000000D" }}
           className="flex gap-x-1 px-3 py-1 rounded-full cursor-pointer items-center"
@@ -92,6 +166,7 @@ const BottomOptions = () => {
           </span>
         </motion.div>
 
+        {/* --- MIC ICON --- */}
         <motion.div
           id="mic-icon-box"
           whileTap={{ backgroundColor: "#0000003D" }}
@@ -103,10 +178,14 @@ const BottomOptions = () => {
               return current;
             });
           }}
-          animate={{ backgroundColor: active[2] ? "#0000000D" : "" }}
+          animate={{ backgroundColor: active[2] ? "#ff000020" : "#00000000" }}
           className="w-9 h-9 rounded-full flex items-center justify-center cursor-pointer"
         >
-          <MicIcon className="w-5 h-5 fill-current text-black" />
+          <MicIcon
+            className={`w-5 h-5 fill-current ${
+              active[2] ? "text-red-600" : "text-black"
+            }`}
+          />
         </motion.div>
 
         <motion.div
