@@ -31,7 +31,7 @@ const PromptExtraOptions = () => {
     console.log("Feedback", feedback);
   }, [feedback]);
   // Added 'read_aloud' as a new option type for audio playback
-  type OptionType = "copy" | "resend" | "like" | "dislike" | "read_aloud";
+  type OptionType = "copy" | "resend" | "like" | "dislike" ;
   const handleOptionClick = ({ type }: { type: OptionType }) => {
     switch (type) {
       case "copy":
@@ -66,21 +66,7 @@ const PromptExtraOptions = () => {
         ask(messages[index - 1].content);
         console.log("Message sent again");
         break;
-      case "read_aloud":
-        // Handles the 'Read Aloud' action: sends an 'audio_request' via WebSocket
-        // The message content is sent as the 'request' which the backend's
-        // `parse_quran_audio_request` function will attempt to interpret.
-        if (messages && index !== null && wsRef.current) {
-            const messageContent = messages[index].content;
-            wsRef.current.send(JSON.stringify({
-                type: "audio_request", // WebSocket message type to request audio from backend
-                request: messageContent, // The text content of the assistant's message
-                reciter: "alafasy" // Default reciter for Quran audio playback
-            }));
-        }
-        break;
-      default:
-        break;
+      
     }
   };
   return (
@@ -157,23 +143,7 @@ const PromptExtraOptions = () => {
       >
         <Refresh className="w-4 h-4" />
       </div>
-      {/* Read Aloud Button: Triggers an audio request to the backend for Quranic recitation */}
-      <div
-        onMouseOver={() => {
-          setOverlayTranslateAmount(132);
-          setOverlayText("Read Aloud");
-          setActive(true);
-        }}
-        onMouseLeave={() => {
-          setActive(false);
-        }}
-        onClick={() => {
-          handleOptionClick({ type: "read_aloud" });
-        }}
-        className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
-      >
-        <ReadAloudIcon className="w-4 h-4" />
-      </div>
+      
       <div
         onMouseOver={() => {
           setOverlayTranslateAmount(166);

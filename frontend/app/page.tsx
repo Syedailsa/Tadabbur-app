@@ -7,7 +7,7 @@ import rehypeRaw from "rehype-raw";
 import { ReactNode, useContext, useEffect, useRef, useState } from "react";
 import ChatProvider from "./providers/chatbot/ChatProvider";
 import DownArrow from "../icons/arrow-down-head.svg";
-import QuranPlayerSidebar from "./components/chatbot/UI/QuranPlayerSideBar";
+
 import {
   motion,
   easeInOut,
@@ -296,7 +296,7 @@ export default function ChatPage() {
         <div className="w-full h-full flex flex-col items-center overflow-y-auto">
           <div className="absolute top-0 p-2 w-full">
             <Controls wsRef={wsRef} />
-            <QuranPlayerSidebar wsRef={wsRef} />
+            
           </div>
           <div
             className={`w-full ${
