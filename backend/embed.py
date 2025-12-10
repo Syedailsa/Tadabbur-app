@@ -166,9 +166,20 @@ asbab_nuzul_dict = []
 #     "asbab_nuzul": asbab_text
 #   })
 
+# pattern = r'\[\s*(\d+)\s*:\s*(\d+)\s*-\s*(\d+)\s*\]'
 
-pattern = r'\[\s*\d+\s*:\s*(\d+)\s*-\s*(\d+)\s*\]'
+
+pattern = r'\[\s*(\d+)\s*:\s*(\d+)\s*\]'
+
 for obj in structured_data:
-  re.match(pattern, obj['heading'])
+  match = re.match(pattern, obj['heading'])
+  if match:
+    surah_number = int(match.group(1))
+    verse_number = int(match.group(2))
+    obj['surah_number'] = surah_number
+    obj['verse_number'] = verse_number
 
 
+
+with open('new_spam.txt', 'w', encoding='utf-8') as f:
+    f.write(str(structured_data))
