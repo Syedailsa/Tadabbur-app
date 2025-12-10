@@ -9,7 +9,8 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 from data.data import comprehensive_surah_metadata
 from dotenv import load_dotenv
-
+from spam import structured_data
+import re
 load_dotenv()
 
 
@@ -35,9 +36,14 @@ class SurahSchema(BaseModel):
         description="Surah number of the verse, must be >=1"
 
     )
-    surah_name: Optional[str] = Field(
+    englishName: Optional[str] = Field(
         default = "Not provided",
-        description = "Surah name of the verse"
+        description = "English Name of the surah"
+    )
+    englishNameTranslation: Optional[str] = Field(
+      default = "Not provided",
+      description = "Surah's english name translation"
+
     )
     surah: List[VerseSchema]
 
@@ -58,11 +64,11 @@ EXAMPLES
 
 **Extract:**
 [2:1-2] 
-(Alif. Lam. Mim. This is the Scripture) [2:1-2]. Abu 'Uthman al-Thaqafi al-Za'farani informed us > Abu 'Amr
-ibn Matar > Ja'far ibn Muhammad ibn al-Layth > Abu Hudhayfah > Shibl > Ibn Abi Najih > Mujahid who said:
-"Four verses from the beginning of this Surah were revealed about the believers, and two verses after these
-four were revealed about the disbelievers and thirteen verses after these last two were revealed about the
-hypocrites."
+(Alif. Lam. Mim. This is the Scripture) [2:1-2]. Abu ‘Uthman al-Thaqafi al-Za‘farani informed us> Abu ‘Amr 
+ibn Matar> Ja‘far ibn Muhammad ibn al-Layth> Abu Hudhayfah> Shibl>Ibn Abi Najih> Mujahid who said: 
+“Four verses from the beginning of this Surah were revealed about the believers, and two verses after these 
+four were revealed about the disbelievers and thirteen verses after these last two were revealed about the 
+hypocrites”.  
 
 ## STRUCTURED_OUTPUT (Example)
 The output must always follow EXACTLY this shape:
@@ -71,15 +77,23 @@ The output must always follow EXACTLY this shape:
   "all_surahs_list": [
     {{{{
       "surah_number": 2,
-      "surah_name": "Al-Baqarah",
+      "surah_name": "Al-Baqara",
       "surah": [
         {{{{
           "verse_number": 1,
-          "asbab_nuzul": "Abu 'Uthman al-Thaqafi ..."
+          "asbab_nuzul": "Abu ‘Uthman al-Thaqafi al-Za‘farani informed us> Abu ‘Amr 
+          ibn Matar> Ja‘far ibn Muhammad ibn al-Layth> Abu Hudhayfah> Shibl>Ibn Abi Najih> Mujahid who said: 
+          “Four verses from the beginning of this Surah were revealed about the believers, and two verses after these 
+          four were revealed about the disbelievers and thirteen verses after these last two were revealed about the 
+          hypocrites"
         }}}},
         {{{{
           "verse_number": 2,
-          "asbab_nuzul": "Abu 'Uthman al-Thaqafi ..."
+          "asbab_nuzul": "Abu ‘Uthman al-Thaqafi al-Za‘farani informed us> Abu ‘Amr 
+          ibn Matar> Ja‘far ibn Muhammad ibn al-Layth> Abu Hudhayfah> Shibl>Ibn Abi Najih> Mujahid who said: 
+          “Four verses from the beginning of this Surah were revealed about the believers, and two verses after these 
+          four were revealed about the disbelievers and thirteen verses after these last two were revealed about the 
+          hypocrites"
         }}}}
       ]
     }}}}
@@ -110,18 +124,51 @@ The output must always follow EXACTLY this shape:
 prompt = ChatPromptTemplate.from_messages([
     ("system", system_instructions), ("user", "{extract}")
 ])
-llm = ChatFireworks(api_key = os.getenv("FIREWORKS_API_KEY"), model = "accounts/fireworks/models/kimi-k2-instruct-0905")
+llm = ChatFireworks(api_key = os.getenv("FIREWORKS_API_KEY"), model = "accounts/fireworks/models/kimi-k2-instruct-0905", temperature = 0.1)
 
-structured_llm = llm.with_structured_output(AllSurahSchema, method="json_mode", )
+structured_llm = llm.with_structured_output(AllSurahSchema, method = "json_mode")
 
 
 chain  = prompt | structured_llm
 
 
-output_file = open("spam.txt", "w", encoding="utf-8")
-for page in reader.pages[15: ]:
-    response = chain.invoke({"extract": page.extract_text()})
-    print(response, file=output_file, flush=True) 
+asbab_nuzul_dict = []
+# total_text = ""
+# for page in reader.pages[15:]:
+#     total_text += page.extract_text()
+
+# pattern = r"\[\d+:\d+(?:-\d+)?\]"
+# matches = list(re.finditer(pattern, total_text))
 
 
-output_file.close()  # Close at end
+# current_heading = None
+# matches = [{'heading': m.group(), 'start': m.start(), 'end': m.end()} for m in matches]
+
+
+# matches = [m for i, m in enumerate(matches) if i==0 or m['heading'] != matches[i-1]['heading']]
+
+
+# for i,match in enumerate(matches):
+#   heading = match['heading']
+#   start = match['end']
+
+#   if i + 1 < len(matches):
+#     end = matches[i+1]['start']
+  
+#   else:
+#     end = len(total_text)
+
+#   asbab_text = total_text[start:end].strip()
+
+#   # append object
+#   asbab_nuzul_dict.append({
+#     "heading": heading, 
+#     "asbab_nuzul": asbab_text
+#   })
+
+
+pattern = r'\[\s*\d+\s*:\s*(\d+)\s*-\s*(\d+)\s*\]'
+for obj in structured_data:
+  re.match(pattern, obj['heading'])
+
+
