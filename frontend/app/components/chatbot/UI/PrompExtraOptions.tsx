@@ -7,6 +7,7 @@ import ThumbsDown from "../../../../icons/thumbs-down.svg";
 import Copy from "../../../../icons/copy.svg";
 import Refresh from "../../../../icons/refresh.svg";
 import MoreOptions from "../../../../icons/more_options.svg";
+import ReadAloudIcon from "../../../../icons/read_aloud.svg"; // Import for the Read Aloud icon
 
 const PromptExtraOptions = () => {
   const {
@@ -29,7 +30,8 @@ const PromptExtraOptions = () => {
   useEffect(() => {
     console.log("Feedback", feedback);
   }, [feedback]);
-  type OptionType = "copy" | "resend" | "like" | "dislike";
+  // Added 'read_aloud' as a new option type for audio playback
+  type OptionType = "copy" | "resend" | "like" | "dislike" | "read_aloud";
   const handleOptionClick = ({ type }: { type: OptionType }) => {
     switch (type) {
       case "copy":
@@ -64,7 +66,19 @@ const PromptExtraOptions = () => {
         ask(messages[index - 1].content);
         console.log("Message sent again");
         break;
-
+      case "read_aloud":
+        // Handles the 'Read Aloud' action: sends an 'audio_request' via WebSocket
+        // The message content is sent as the 'request' which the backend's
+        // `parse_quran_audio_request` function will attempt to interpret.
+        if (messages && index !== null && wsRef.current) {
+            const messageContent = messages[index].content;
+            wsRef.current.send(JSON.stringify({
+                type: "audio_request", // WebSocket message type to request audio from backend
+                request: messageContent, // The text content of the assistant's message
+                reciter: "alafasy" // Default reciter for Quran audio playback
+            }));
+        }
+        break;
       default:
         break;
     }
@@ -143,9 +157,26 @@ const PromptExtraOptions = () => {
       >
         <Refresh className="w-4 h-4" />
       </div>
+      {/* Read Aloud Button: Triggers an audio request to the backend for Quranic recitation */}
       <div
         onMouseOver={() => {
           setOverlayTranslateAmount(132);
+          setOverlayText("Read Aloud");
+          setActive(true);
+        }}
+        onMouseLeave={() => {
+          setActive(false);
+        }}
+        onClick={() => {
+          handleOptionClick({ type: "read_aloud" });
+        }}
+        className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
+      >
+        <ReadAloudIcon className="w-4 h-4" />
+      </div>
+      <div
+        onMouseOver={() => {
+          setOverlayTranslateAmount(166);
         }}
         onClick={() => {
           setHidePromptExtraOptionsModelBox((prev: boolean | null) => !prev);
@@ -169,3 +200,4 @@ const PromptExtraOptions = () => {
 };
 
 export default PromptExtraOptions;
+

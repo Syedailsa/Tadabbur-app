@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
 from typing import List, Optional
-
+from tools.audio_playback import play_quran_audio, parse_quran_audio_request, RECITERS
 from agents import Runner
 from agents import Agent, InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered, SQLiteSession
 import agent as agent_module
@@ -28,6 +28,8 @@ from api import (
     feedback_router
 )
 from quran_api import quran_router , parah_router, story_router
+from reset_password_api import password_reset_router
+from reflection_api import reflection_router
 from database import init_db_pool, close_db_pool, create_tables
 from fastapi.security import HTTPBearer
 # =========== Title Agent ============
@@ -89,6 +91,7 @@ async def shutdown_event():
 
 # ================= Routes =================
 app.include_router(auth_router)
+app.include_router(password_reset_router)
 app.include_router(notif_router)
 app.include_router(bookmark_router)
 app.include_router(profile_router)
@@ -96,6 +99,7 @@ app.include_router(feedback_router)
 app.include_router(quran_router)
 app.include_router(parah_router)
 app.include_router(story_router)
+app.include_router(reflection_router)
 
 
 
@@ -461,6 +465,41 @@ async def websocket_chat(websocket: WebSocket):
             raw_data = await websocket.receive_text()
             data = json.loads(raw_data)
             print(f"received: {data}")
+
+            # ========== AUDIO REQUEST HANDLER ==========
+            if data.get("type") == "audio_request":
+                user_request = data.get("request", "")  # e.g., "play ayatul kursi"
+                reciter = data.get("reciter", "alafasy")
+                
+                # Parse request
+                parsed = parse_quran_audio_request(user_request)
+                
+                if not parsed:
+                    await websocket.send_json({
+                        "type": "audio_response",
+                        "status": "error",
+                        "message": "Could not understand audio request"
+                    })
+                    continue
+                
+                # Get audio
+                audio_result = await play_quran_audio(**parsed, reciter=reciter)
+                
+                if audio_result["success"]:
+                    # Send audio URLs to frontend
+                    await websocket.send_json({
+                        "type": "audio_response",
+                        "status": "success",
+                        "data": audio_result
+                    })
+                else:
+                    await websocket.send_json({
+                        "type": "audio_response",
+                        "status": "error",
+                        "message": audio_result.get("error", "Failed to fetch audio")
+                    })
+                
+                continue
 
             # ========== SESsION CODE START ==========
             # SESSION INIT 

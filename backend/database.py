@@ -178,7 +178,48 @@ async def create_tables():
                 UNIQUE(session_id, item_index, feedback_type)
             )
         """)
-        
+        await conn.execute("""
+        CREATE TABLE IF NOT EXISTS password_reset_otps (
+        id SERIAL PRIMARY KEY,
+        email TEXT NOT NULL,
+        otp TEXT NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        verified BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW()
+    )
+""")
+
+        # Create index for faster queries
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_otp_email 
+            ON password_reset_otps(email, created_at DESC)
+        """)
+
+        # RECENT REFLECTIONS TABLE
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS recent_reflections (
+                id SERIAL PRIMARY KEY,
+                reflection_id TEXT UNIQUE NOT NULL,
+                user_id TEXT NOT NULL,
+                surah_name_eng TEXT NOT NULL,
+                surah_name_arabic TEXT NOT NULL,
+                surah_no INTEGER NOT NULL,
+                total_ayah INTEGER NOT NULL,
+                last_ayah_read INTEGER,
+                last_read_at TIMESTAMP DEFAULT NOW(),
+                created_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(user_id)
+            )
+        """)
+
+        # Create index
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_reflection_user 
+            ON recent_reflections(user_id)
+        """)
+
+        print("✅ All PostgreSQL tables created/verified (including new tables)")
+                
         print("✅ All PostgreSQL tables created/verified")
 
 # Helper functions for quick queries

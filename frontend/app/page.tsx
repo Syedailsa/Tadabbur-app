@@ -7,6 +7,7 @@ import rehypeRaw from "rehype-raw";
 import { ReactNode, useContext, useEffect, useRef, useState } from "react";
 import ChatProvider from "./providers/chatbot/ChatProvider";
 import DownArrow from "../icons/arrow-down-head.svg";
+import QuranPlayerSidebar from "./components/chatbot/UI/QuranPlayerSideBar";
 import {
   motion,
   easeInOut,
@@ -50,6 +51,8 @@ export default function ChatPage() {
   const [streamingMessageIndex, setStreamingMessageIndex] = useState<
     number | null
   >(null);
+  
+  const [showQuranPlayer, setShowQuranPlayer] = useState(false);
   const [chatHistory, setChatHistory] = useState<ChatRecord[] | null>(null);
   const messageScrollFlag = useRef<boolean | null>(false);
   const controls = useAnimationControls();
@@ -65,7 +68,7 @@ export default function ChatPage() {
   }
 
   useEffect(() => {
-    const websocket = new WebSocket("ws://localhost:7000/ws/chat");
+    const websocket = new WebSocket("ws://localhost:8000/ws/chat");
     wsRef.current = websocket;
 
     wsRef.current.onopen = () => {
@@ -293,6 +296,7 @@ export default function ChatPage() {
         <div className="w-full h-full flex flex-col items-center overflow-y-auto">
           <div className="absolute top-0 p-2 w-full">
             <Controls wsRef={wsRef} />
+            <QuranPlayerSidebar wsRef={wsRef} />
           </div>
           <div
             className={`w-full ${
