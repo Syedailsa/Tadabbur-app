@@ -398,7 +398,7 @@ Tafsir_Agent: Agent = Agent(
     name="QuranicTafsirAgent",
     instructions=f"""
     You are a Quranic Tafsir agent. Provide explanations of Quranic verses based ONLY on Quranic tafseer data.
-    Dont tell any other thing accept the tafseer of the ayah or surah asked by user.
+    Dont tell any other thing except the tafseer of the ayah or surah asked by user.
     """,
     model_settings=ModelSettings( 
         temperature=0.4,

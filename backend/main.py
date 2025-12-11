@@ -459,7 +459,7 @@ async def websocket_chat(websocket: WebSocket):
         while True:
             raw_data = await websocket.receive_text()
             data = json.loads(raw_data)
-            print(f"received: {data}")
+
 
             # ========== SESsION CODE START ==========
             # SESSION INIT 
@@ -784,6 +784,7 @@ async def websocket_chat(websocket: WebSocket):
                 #     "content": "Thinking deeply about your question..."
                 # })
 
+                print("Conversation", conversation)
                 run_result = Runner.run_streamed(
                     active_agent,
                     conversation,

@@ -63,6 +63,12 @@ export default function ChatPage() {
   const messageScrollFlag = useRef<boolean | null>(false);
   const controls = useAnimationControls();
 
+  function preprocessContent(content: string) {
+    if (!content) return "";
+    // handles both colons (:) and periods (.)
+    return content.replace(/(\.|:)\s+(\d+\.)/g, "$1\n\n\n$2");
+  }
+
   function chunkText(text: string, size = 4) {
     const words = text.split(/\s+/);
     const chunks = [];
@@ -463,6 +469,98 @@ export default function ChatPage() {
                             <ReactMarkdown
                               remarkPlugins={[remarkGfm]}
                               rehypePlugins={[rehypeRaw]}
+                              components={{
+                                // HEADERS
+                                h1: ({ node, ...props }) => (
+                                  <h1
+                                    className="text-3xl font-bold"
+                                    {...props}
+                                  />
+                                ),
+                                h2: ({ node, ...props }) => (
+                                  <h2
+                                    className="text-2xl font-semibold"
+                                    {...props}
+                                  />
+                                ),
+                                h3: ({ node, ...props }) => (
+                                  <h3
+                                    className="text-xl font-semibold"
+                                    {...props}
+                                  />
+                                ),
+
+                                // PARAGRAPH
+                                p: ({ node, ...props }) => (
+                                  <p
+                                    className="leading-7 my-2 text-gray-800"
+                                    {...props}
+                                  />
+                                ),
+
+                                // STRONG ( **bold** )
+                                strong: ({ node, ...props }) => (
+                                  <strong
+                                    className="font-bold text-black"
+                                    {...props}
+                                  />
+                                ),
+
+                                // EMPHASIS ( *italic* )
+                                em: ({ node, ...props }) => (
+                                  <em
+                                    className="italic text-gray-700"
+                                    {...props}
+                                  />
+                                ),
+
+                                // LINE BREAK
+                                br: ({ node, ...props }) => <br />,
+
+                                // LINKS
+                                a: ({ node, ...props }) => (
+                                  <a
+                                    className="text-blue-600 underline"
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    {...props}
+                                  />
+                                ),
+
+                                // LISTS
+                                ul: ({ node, ...props }) => (
+                                  <ul className="list-disc pl-6" {...props} />
+                                ),
+                                ol: ({ node, ...props }) => (
+                                  <ol
+                                    className="list-decimal pl-6"
+                                    {...props}
+                                  />
+                                ),
+                                li: ({ node, ...props }) => (
+                                  <li className="my-1" {...props} />
+                                ),
+                                blockquote: ({ node, ...props }) => (
+                                  <blockquote
+                                    className="border-l-4 border-gray-400 pl-4 italic my-3"
+                                    {...props}
+                                  />
+                                ),
+
+                                // HORIZONTAL RULE
+                                hr: () => (
+                                  <hr className="my-4 border-gray-300" />
+                                ),
+
+                                // IMAGES
+                                img: ({ node, ...props }) => (
+                                  <img
+                                    className="rounded-md my-2"
+                                    alt=""
+                                    {...props}
+                                  />
+                                ),
+                              }}
                             >
                               {message.content}
                             </ReactMarkdown>
