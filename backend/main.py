@@ -11,7 +11,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
 from typing import List, Optional
-from tools.audio_playback import play_quran_audio, parse_quran_audio_request, RECITERS
+from tools.audio_playback import (
+    play_quran_audio,           
+    parse_quran_audio_request,  
+    get_available_reciters,     
+    InvalidSurahError,          
+    InvalidAyahError,
+    QuranAPIError
+)
 from agents import Runner
 from agents import Agent, InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered, SQLiteSession
 import agent as agent_module
@@ -466,41 +473,69 @@ async def websocket_chat(websocket: WebSocket):
             data = json.loads(raw_data)
             print(f"received: {data}")
 
-            # ========== AUDIO REQUEST HANDLER ==========
             if data.get("type") == "audio_request":
-                user_request = data.get("request", "")  # e.g., "play ayatul kursi"
+                surah = data.get("surah")
+                ayah = data.get("ayah")
                 reciter = data.get("reciter", "alafasy")
                 
-                # Parse request
-                parsed = parse_quran_audio_request(user_request)
+                logger.info(f"🎵 Audio request: Surah {surah}, Ayah {ayah}, Reciter: {reciter}")
                 
-                if not parsed:
+                try:
+                    # Call the main function
+                    audio_result = await play_quran_audio(
+                        surah=surah,
+                        ayah=ayah,
+                        reciter=reciter
+                    )
+                    
+                    if audio_result.get("success"):
+                        # Send success response
+                        await websocket.send_json({
+                            "type": "audio_response",
+                            "status": "success",
+                            "data": audio_result
+                        })
+                        logger.info("✅ Audio data sent successfully")
+                    else:
+                        # Send error response
+                        error_msg = audio_result.get("error", "Failed to fetch audio")
+                        await websocket.send_json({
+                            "type": "audio_response",
+                            "status": "error",
+                            "message": error_msg
+                        })
+                        logger.error(f"❌ Audio fetch failed: {error_msg}")
+                
+                except (InvalidSurahError, InvalidAyahError) as e:
+                    # Validation errors
                     await websocket.send_json({
                         "type": "audio_response",
                         "status": "error",
-                        "message": "Could not understand audio request"
+                        "message": str(e)
                     })
-                    continue
+                    logger.warning(f"⚠️ Validation error: {e}")
                 
-                # Get audio
-                audio_result = await play_quran_audio(**parsed, reciter=reciter)
-                
-                if audio_result["success"]:
-                    # Send audio URLs to frontend
-                    await websocket.send_json({
-                        "type": "audio_response",
-                        "status": "success",
-                        "data": audio_result
-                    })
-                else:
+                except QuranAPIError as e:
+                    # API errors
                     await websocket.send_json({
                         "type": "audio_response",
                         "status": "error",
-                        "message": audio_result.get("error", "Failed to fetch audio")
+                        "message": f"API error: {str(e)}"
+                    })
+                    logger.error(f"❌ API error: {e}")
+                
+                except Exception as e:
+                    # Unexpected errors
+                    logger.exception("Unexpected audio error")
+                    await websocket.send_json({
+                        "type": "audio_response",
+                        "status": "error",
+                        "message": "An unexpected error occurred"
                     })
                 
                 continue
-
+            
+            
             # ========== SESsION CODE START ==========
             # SESSION INIT 
             if data.get("type") == "session-init":
@@ -719,7 +754,7 @@ async def websocket_chat(websocket: WebSocket):
                         "type": "model-selection",
                         "status": "acknowledged",
                         "model": requested_model,
-                        "display_name": model_info["name"]
+                        "display_name": model_info["name"] 
                     })
                     await websocket.send_json({
                         "type": "loading_message",
@@ -764,6 +799,52 @@ async def websocket_chat(websocket: WebSocket):
             messages = data.get("messages", [])
             if messages:
                 latest_message = messages[-1]["content"]
+
+                if latest_message.strip():
+                    latest_message_lower = latest_message.lower()
+                    
+                    # Enhanced audio keyword detection
+                    audio_keywords = [
+                        "listen", "play", "recite", "audio", "hear",
+                        "suno", "sunao", "recitation", "tilawat"
+                    ]
+                    
+                    is_audio_request = any(
+                        keyword in latest_message_lower 
+                        for keyword in audio_keywords
+                    )
+                    
+                    if is_audio_request:
+                        logger.info(f"🎵 Audio keyword detected: '{latest_message[:50]}'")
+                        
+                        # Try to parse the request
+                        parsed = parse_quran_audio_request(latest_message)
+                        
+                        if parsed:
+                            logger.info(f"✅ Parsed request: {parsed}")
+                            
+                            # Send parsed data to frontend
+                            await websocket.send_json({
+                                "type": "open_audio_dialog",
+                                "parsed_request": parsed,
+                                "original_message": latest_message,
+                                "available_reciters": get_available_reciters()
+                            })
+                            
+                            logger.info("⏭️ Audio dialog triggered, skipping normal chat")
+                            continue
+                        else:
+                            # Could not parse, open dialog with defaults
+                            logger.warning("⚠️ Could not parse audio request, using defaults")
+                            await websocket.send_json({
+                                "type": "open_audio_dialog",
+                                "parsed_request": {"surah": 1, "ayah": None},
+                                "original_message": latest_message,
+                                "available_reciters": get_available_reciters(),
+                                "note": "Please specify surah and ayah number"
+                            })
+                            continue
+
 
                 if latest_message.strip() and session_id:
 

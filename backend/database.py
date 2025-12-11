@@ -79,6 +79,7 @@ async def create_tables():
     
     async with get_db_connection() as conn:
         # USERS TABLE (Email/Password authentication)
+               
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
@@ -86,8 +87,15 @@ async def create_tables():
                 username TEXT UNIQUE NOT NULL,
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
+
+                last_name TEXT,
+                date_of_birth DATE,
+                address TEXT,
+                phone_number TEXT,
+                ,
                 profile_picture TEXT,
                 bio TEXT,
+
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
             )

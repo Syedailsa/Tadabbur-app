@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, EmailStr, Field, validator
 from typing import Optional, Literal
-from datetime import datetime
+from datetime import datetime, date
 
 # ==================== AUTH MODELS ====================
 
@@ -65,7 +65,11 @@ class BookmarkItem(BaseModel):
 # ==================== USER PROFILE MODELS ====================
 
 class ProfileUpdate(BaseModel):
-    username: Optional[str] = Field(None, min_length=3, max_length=50)
+    firstname: Optional[str] = Field(None, min_length=3, max_length=50)
+    lastName: Optional[str] = None
+    dateofBirth: Optional[date] = None
+    address: Optional[str] = None
+    phoneNumber: Optional[str] = None
     email: Optional[EmailStr] = None
     profilePicture: Optional[str] = None
     bio: Optional[str] = Field(None, max_length=500)

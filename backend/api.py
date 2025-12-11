@@ -258,10 +258,19 @@ async def get_my_profile(user: dict = Depends(get_current_user)):
     """Get current user's profile"""
     async with get_db_connection() as conn:
         profile = await conn.fetchrow("""
-            SELECT user_id as id, username, email, 
-                   profile_picture as "profilePicture", 
-                   bio, created_at as "createdAt"
-            FROM users WHERE user_id = $1
+             SELECT 
+                user_id as id,
+                username,
+                email,
+                profile_picture as "profilePicture",
+                bio,
+                created_at as "createdAt",
+                last_name as "lastName",
+                date_of_birth as "dateofBirth",
+                address,
+                phone_number as "phoneNumber"
+            FROM users 
+            WHERE user_id = $1
         """, user['user_id'])
         
         if not profile:
@@ -275,9 +284,21 @@ async def update_profile(req: ProfileUpdate, user: dict = Depends(get_current_us
     updates = []
     values = []
     
-    if req.username:
-        updates.append(f"username = ${len(values) + 1}")
-        values.append(req.username)
+    if req.firstname:
+        updates.append(f"firstname = ${len(values) + 1}")
+        values.append(req.firstname)
+    if req.lastName:
+        updates.append(f"lastname = ${len(values) + 1}")
+        values.append(req.lastName)
+    if req.address:
+        updates.append(f"address = ${len(values) + 1}")
+        values.append(req.address)
+    if req.dateofBirth:
+        updates.append(f"dateOfBirth = ${len(values) + 1}")
+        values.append(req.dateofBirth)
+    if req.phoneNumber:
+        updates.append(f"phoneNumber = ${len(values) + 1}")
+        values.append(req.phoneNumber)
     if req.email:
         updates.append(f"email = ${len(values) + 1}")
         values.append(req.email)
