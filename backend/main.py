@@ -26,6 +26,8 @@ from api import (
     profile_router,
     feedback_router
 )
+from reflection_api import reflection_router
+from reset_password_api import password_reset_router
 from quran_api import quran_router , parah_router, story_router
 from database import init_db_pool, close_db_pool, create_tables
 from fastapi.security import HTTPBearer
@@ -95,11 +97,11 @@ app.include_router(feedback_router)
 app.include_router(quran_router)
 app.include_router(parah_router)
 app.include_router(story_router)
-
+app.include_router(reflection_router)
+app.include_router(password_reset_router)
 
 
 API_KEY = os.getenv("CHAT_API_KEY")
-
 
 
 # ------------------- SESSION CODE -------------------
