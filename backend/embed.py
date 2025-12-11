@@ -1,16 +1,15 @@
 # embedding asbab e nuzul for semantic and filter search
+import re
 import os
 import json
 import PyPDF2
 from langchain_fireworks import ChatFireworks
 from langchain_core.prompts import ChatPromptTemplate
-import re
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from data.data import comprehensive_surah_metadata
+from data.asbab_nuzul import structured_data
 from dotenv import load_dotenv
-from spam import structured_data
-import re
 load_dotenv()
 
 
@@ -172,13 +171,7 @@ asbab_nuzul_dict = []
 pattern = r'\[\s*(\d+)\s*:\s*(\d+)\s*\]'
 
 for obj in structured_data:
-  match = re.match(pattern, obj['heading'])
-  if match:
-    surah_number = int(match.group(1))
-    verse_number = int(match.group(2))
-    obj['surah_number'] = surah_number
-    obj['verse_number'] = verse_number
-
+    del obj['heading']
 
 
 with open('new_spam.txt', 'w', encoding='utf-8') as f:
