@@ -5,12 +5,15 @@ import json
 import PyPDF2
 from langchain_fireworks import ChatFireworks
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_fireworks import FireworksEmbeddings
 from pydantic import BaseModel, Field
+from qdrant_client import QdrantClient, models
 from typing import Optional, List
 from data.data import comprehensive_surah_metadata
 from data.asbab_nuzul import structured_data
 from dotenv import load_dotenv
-load_dotenv()
+from qdrant_client.models import PointStruct
+load_dotenv(override=True)
 
 
 pdf_path = r"C:\Users\anas_\Downloads\Asbab Al-Nuzul by Al-Wahidi.pdf"
@@ -131,48 +134,80 @@ structured_llm = llm.with_structured_output(AllSurahSchema, method = "json_mode"
 chain  = prompt | structured_llm
 
 
-asbab_nuzul_dict = []
-# total_text = ""
-# for page in reader.pages[15:]:
-#     total_text += page.extract_text()
-
-# pattern = r"\[\d+:\d+(?:-\d+)?\]"
-# matches = list(re.finditer(pattern, total_text))
-
-
-# current_heading = None
-# matches = [{'heading': m.group(), 'start': m.start(), 'end': m.end()} for m in matches]
-
-
-# matches = [m for i, m in enumerate(matches) if i==0 or m['heading'] != matches[i-1]['heading']]
-
-
-# for i,match in enumerate(matches):
-#   heading = match['heading']
-#   start = match['end']
-
-#   if i + 1 < len(matches):
-#     end = matches[i+1]['start']
-  
-#   else:
-#     end = len(total_text)
-
-#   asbab_text = total_text[start:end].strip()
-
-#   # append object
-#   asbab_nuzul_dict.append({
-#     "heading": heading, 
-#     "asbab_nuzul": asbab_text
-#   })
-
-# pattern = r'\[\s*(\d+)\s*:\s*(\d+)\s*-\s*(\d+)\s*\]'
-
-
 pattern = r'\[\s*(\d+)\s*:\s*(\d+)\s*\]'
+EMBEDDING_MODEL = "fireworks/qwen3-embedding-8b"
+fireworks_api_key = os.getenv('FIREWORKS_API_KEY') 
+QDRANT_URL = os.getenv('QDRANT_URL_ENDPOINT')
+QDRANT_API_KEY = os.getenv('QDRANT_API_KEY')
 
-for obj in structured_data:
-    del obj['heading']
+qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=120)
+vector_embeddings_array = []
+
+embeddings = FireworksEmbeddings(
+  api_key=os.getenv('FIREWORKS_API_KEY'),
+  model = EMBEDDING_MODEL
+)
+
+# asbab_nuzul_array = [verse['asbab_nuzul'] for verse in structured_data]
+# embeddings_array = embeddings.embed_documents(asbab_nuzul_array)
+
+# print("Length of embeddings array", len(embeddings_array))
+
+# points = []
+# for i, verse in enumerate(structured_data):
+
+#   print(f"Appending point {i+1} to points array")
+#   points.append(models.PointStruct(id = i + 1, vector = {"verse-dense-vector": embeddings_array[i]}, payload = {"surah_number": verse['surah_number'], "verse_number": verse['verse_number'], "surah_englishName": verse['surah_englishName'], "surah_englishNameTranslation": verse['surah_englishNameTranslation']}))
+#   print(f"Vector number {i+1} {embeddings_array[i]}")
 
 
-with open('new_spam.txt', 'w', encoding='utf-8') as f:
-    f.write(str(structured_data))
+
+# # upsert the point in the Asbab e nuzul collection
+# operation_info  = qdrant.upsert(
+#   collection_name = "Asbab_Nuzul",
+#   wait = True,
+#   points = points
+# )
+
+# # verify count of points in the collection
+# count = qdrant.count(collection_name="Asbab_Nuzul").count
+
+
+# index_schema = [
+#   {'field_name': "surah_englishName", "field_schema" : "keyword"},
+#   {'field_name': "surah_number", "field_schema" : "integer"},
+#   {'field_name': "verse_number", "field_schema" : "integer"},
+#   {'field_name': "surah_englishNameTranslation", "field_schema" : "keyword"}
+# ]
+
+# for i, schema in enumerate(index_schema):
+#   print(f"Field name {schema['field_name']} with schema {schema['field_schema']}")
+#   qdrant.create_payload_index(
+#     collection_name = "Asbab_Nuzul",
+#     field_name = schema['field_name'],
+#     field_schema = schema['field_schema']
+#   )
+# print('All indexes created successfully!')
+
+qdrant_response = qdrant.query_points(
+  collection_name = "Asbab_Nuzul",
+  query_filter = models.Filter(
+    must=[
+      models.FieldCondition(
+        key = "surah_englishName",
+        match = models.MatchValue(
+          value = "Al-Baqara",
+        )
+      ),
+      models.FieldCondition(
+        key = "verse_number",
+        match = models.MatchValue(
+          value = 284
+        )
+      )
+    ]
+  ),
+  limit = 1
+)
+
+print(qdrant_response)
