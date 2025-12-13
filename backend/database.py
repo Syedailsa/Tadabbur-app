@@ -92,12 +92,13 @@ async def create_tables():
                 date_of_birth DATE,
                 address TEXT,
                 phone_number TEXT,
-                ,
+                gender TEXT,
                 profile_picture TEXT,
                 bio TEXT,
 
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
+            
             )
         """)
         
@@ -152,8 +153,15 @@ async def create_tables():
                 user_id TEXT NOT NULL,
                 item_id TEXT NOT NULL,
                 type TEXT NOT NULL,
+                
+                surah_name TEXT NOT NULL,
+                surah_no INTEGER NOT NULL,
+                ayah_no INTEGER NOT NULL,
+                total_ayah INTEGER NOT NULL,
+                ayah TEXT NOT NULL,
+                
                 created_at TIMESTAMP DEFAULT NOW(),
-                UNIQUE(user_id, item_id)
+                UNIQUE(user_id, surah_no, ayah_no)
             )
         """)
         
@@ -195,7 +203,7 @@ async def create_tables():
         verified BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT NOW()
     )
-""")
+ """)
 
         # Create index for faster queries
         await conn.execute("""
