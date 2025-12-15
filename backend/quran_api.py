@@ -82,7 +82,6 @@ parah_router = APIRouter(prefix="/parah", tags=["Parah"])
 story_router = APIRouter(prefix="/stories", tags=["Stories"])
 audio_router = APIRouter(prefix="/audio", tags=["Quran Audio"])
 
-QURAN_API_BASE = "https://api.alquran.cloud/v1"
 
 # ==================== QURAN APIs ====================
 

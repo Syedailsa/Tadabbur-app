@@ -1,13 +1,16 @@
 import os
 import secrets
 import hashlib
-import secrets
 import jwt
 from datetime import datetime, timedelta
 from fastapi import HTTPException, Header
 from typing import Optional
 from google.oauth2 import id_token
 from google.auth.transport import requests
+import random
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
@@ -54,29 +57,7 @@ def decode_token(token: str) -> dict:
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-# ===== GOOGLE SIGN-IN TEMP MOCK ==============
-
-# async def verify_google_token(token: str) -> dict:
-#     """
-#     TEMP MOCK VERSION — because Sir only wants endpoints,
-#     not actual Google Cloud OAuth integration.
-
-#     Always returns fake user info so API testing works.
-#     """
-#     if not token:
-#         raise HTTPException(status_code=400, detail="Google token missing")
-
-#     # Return mock user data for testing
-     
-#     fake_names = ["Ayesha Khan", "Fatima Ahmed", "Zainab Ali", "Maryam Hussain", "Hafsa Siddiqui"]
-#     fake_emails = ["ayesha@gmail.com", "fatima@yahoo.com", "zainab@outlook.com", "maryam123@gmail.com"]
-
-#     return {
-#         "google_id": f"mock_google_{secrets.token_hex(8)}",
-#         "email": secrets.choice(fake_emails),
-#         "name": secrets.choice(fake_names),
-#         "picture": "https://ui-avatars.com/api/?name=" + secrets.choice(fake_names).replace(" ", "+") + "&background=random"
-#     }
+# ==================== GOOGLE OAUTH ====================
 
 async def verify_google_token(token: str) -> dict:
     """
@@ -90,7 +71,7 @@ async def verify_google_token(token: str) -> dict:
         raise HTTPException(status_code=500, detail="Server error: GOOGLE_CLIENT_ID not configured")
 
     try:
-       
+        # Verify token with Google
         claim = id_token.verify_oauth2_token(
             token,
             requests.Request(),
@@ -119,14 +100,105 @@ async def verify_google_token(token: str) -> dict:
     except Exception as e:
         raise HTTPException(status_code=500, detail="Google authentication failed. Please try again.")
 
-# ========== AUTH DEPENDENCY =========
+# ==================== OTP FUNCTIONS ====================
+
+def generate_otp() -> str:
+    """Generate 6-digit OTP"""
+    return str(random.randint(100000, 999999))
+
+async def send_otp_email(email: str, otp: str, username: str = "User"):
+    """
+    Send OTP via email using SMTP
+    Configure SMTP settings in .env file
+    """
+    # Email configuration from environment
+    SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER = os.getenv("SMTP_USER")
+    SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+    FROM_EMAIL = os.getenv("FROM_EMAIL", SMTP_USER)
+    
+    if not SMTP_USER or not SMTP_PASSWORD:
+        # Development mode - print to console
+        print(f"\n{'='*60}")
+        print(f"🔐 PASSWORD RESET OTP (Development Mode)")
+        print(f"📧 Email: {email}")
+        print(f"👤 Username: {username}")
+        print(f"🔢 OTP Code: {otp}")
+        print(f"⏰ Valid for: 10 minutes")
+        print(f"{'='*60}\n")
+        return True
+    
+    # Create email
+    message = MIMEMultipart("alternative")
+    message["Subject"] = "Password Reset OTP - Tadabbur Agent"
+    message["From"] = FROM_EMAIL
+    message["To"] = email
+    
+    # HTML email template
+    html = f"""
+    <html>
+      <body style="font-family: Arial, sans-serif; padding: 20px; background-color: #f4f4f4;">
+        <div style="max-width: 600px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px;">
+          <h2 style="color: #2c5282;">Password Reset Request</h2>
+          <p>Hello {username},</p>
+          <p>You requested to reset your password for Tadabbur Agent. Use the OTP below:</p>
+          <div style="background-color: #edf2f7; padding: 20px; border-radius: 5px; text-align: center; margin: 20px 0;">
+            <h1 style="color: #2c5282; letter-spacing: 5px; margin: 0;">{otp}</h1>
+          </div>
+          <p style="color: #e53e3e;"><strong>This OTP will expire in 10 minutes.</strong></p>
+          <p>If you didn't request this, please ignore this email.</p>
+          <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+          <p style="color: #718096; font-size: 12px;">Tadabbur Agent - Quranic Reflection Platform</p>
+        </div>
+      </body>
+    </html>
+    """
+    
+    part = MIMEText(html, "html")
+    message.attach(part)
+    
+    # Send email
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.send_message(message)
+        print(f"✅ Email sent to {email}")
+        return True
+    except Exception as e:
+        print(f"❌ Email send failed: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to send OTP email. Please try again later."
+        )
+
+# ==================== ID GENERATORS ====================
+
+def generate_user_id() -> str:
+    return f"user_{secrets.token_hex(8)}"
+
+def generate_notification_id() -> str:
+    return f"notif_{secrets.token_hex(8)}"
+
+def generate_bookmark_id() -> str:
+    return f"bookmark_{secrets.token_hex(8)}"
+
+def generate_feedback_id() -> str:
+    return f"feedback_{secrets.token_hex(8)}"
+
+# ==================== AUTH DEPENDENCY ====================
 
 async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
+    """
+    Verify JWT token from Authorization header
+    Returns user data if valid
+    """
     if not authorization:
         raise HTTPException(status_code=401, detail="Authorization header missing")
     
     if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid authorization format")
+        raise HTTPException(status_code=401, detail="Invalid authorization format. Use 'Bearer <token>'")
     
     token = authorization.replace("Bearer ", "")
     payload = decode_token(token)
