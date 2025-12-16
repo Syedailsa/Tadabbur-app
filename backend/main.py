@@ -10,7 +10,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
 from typing import List, Optional
-
+from tools.audio_playback import (
+    play_quran_audio,
+    parse_quran_audio_request,
+    get_available_reciters,
+    InvalidSurahError,
+    InvalidAyahError,
+    QuranAPIError
+)
+from tools.verse_reader import (
+    fetch_quran_verse,
+    parse_verse_request,
+    get_verse_range,
+    InvalidSurahError,
+    InvalidAyahError,
+    QuranVerseAPIError
+)
 from agents import Runner
 from agents import Agent, InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered, SQLiteSession
 import agent as agent_module
@@ -24,11 +39,14 @@ from api import (
     notif_router,
     bookmark_router,
     profile_router,
-    feedback_router
+    feedback_router,
+    
 )
 from reflection_api import reflection_router
 from reset_password_api import password_reset_router
 from quran_api import quran_router , parah_router, story_router
+from reset_password_api import password_reset_router
+from reflection_api import reflection_router
 from database import init_db_pool, close_db_pool, create_tables
 from fastapi.security import HTTPBearer
 # =========== Title Agent ============
@@ -90,6 +108,7 @@ async def shutdown_event():
 
 # ================= Routes =================
 app.include_router(auth_router)
+app.include_router(password_reset_router)
 app.include_router(notif_router)
 app.include_router(bookmark_router)
 app.include_router(profile_router)
@@ -98,7 +117,7 @@ app.include_router(quran_router)
 app.include_router(parah_router)
 app.include_router(story_router)
 app.include_router(reflection_router)
-app.include_router(password_reset_router)
+
 
 
 API_KEY = os.getenv("CHAT_API_KEY")
@@ -461,8 +480,127 @@ async def websocket_chat(websocket: WebSocket):
         while True:
             raw_data = await websocket.receive_text()
             data = json.loads(raw_data)
+            print(f"received: {data}")
 
+            if data.get("type") == "audio_request":
+                surah = data.get("surah")
+                ayah = data.get("ayah")
+                reciter = data.get("reciter", "alafasy")
+                
+                logger.info(f"🎵 Audio request: Surah {surah}, Ayah {ayah}, Reciter: {reciter}")
+                
+                try:
+                    # Call the main function
+                    audio_result = await play_quran_audio(
+                        surah=surah,
+                        ayah=ayah,
+                        reciter=reciter
+                    )
+                    
+                    if audio_result.get("success"):
+                        # Send success response
+                        await websocket.send_json({
+                            "type": "audio_response",
+                            "status": "success",
+                            "data": audio_result
+                        })
+                        logger.info("✅ Audio data sent successfully")
+                    else:
+                        # Send error response
+                        error_msg = audio_result.get("error", "Failed to fetch audio")
+                        await websocket.send_json({
+                            "type": "audio_response",
+                            "status": "error",
+                            "message": error_msg
+                        })
+                        logger.error(f"❌ Audio fetch failed: {error_msg}")
+                
+                except (InvalidSurahError, InvalidAyahError) as e:
+                    # Validation errors
+                    await websocket.send_json({
+                        "type": "audio_response",
+                        "status": "error",
+                        "message": str(e)
+                    })
+                    logger.warning(f"⚠️ Validation error: {e}")
+                
+                except QuranAPIError as e:
+                    # API errors
+                    await websocket.send_json({
+                        "type": "audio_response",
+                        "status": "error",
+                        "message": f"API error: {str(e)}"
+                    })
+                    logger.error(f"❌ API error: {e}")
+                
+                except Exception as e:
+                    # Unexpected errors
+                    logger.exception("Unexpected audio error")
+                    await websocket.send_json({
+                        "type": "audio_response",
+                        "status": "error",
+                        "message": "An unexpected error occurred"
+                    })
+                
+                continue
+            
 
+            # ============ Verse Reading =============
+
+            if data.get("type") == "verse_request":
+                surah = data.get("surah")
+                ayah = data.get("ayah")
+                include_audio = data.get("include_audio", False)
+                
+                logger.info(f"📖 Verse request: Surah {surah}, Ayah {ayah}, Audio: {include_audio}")
+                
+                try:
+                    verse_result = await fetch_quran_verse(
+                        surah=surah, 
+                        ayah=ayah,
+                        include_audio=include_audio
+                    )
+                    
+                    if verse_result.get("success"):
+                        await websocket.send_json({
+                            "type": "verse_response",
+                            "status": "success",
+                            "data": verse_result
+                        })
+                        logger.info(f"✅ Verse data sent: {surah}:{ayah}")
+                    else:
+                        await websocket.send_json({
+                            "type": "verse_response",
+                            "status": "error",
+                            "message": "Failed to fetch verse"
+                        })
+                
+                except (InvalidSurahError, InvalidAyahError) as e:
+                    await websocket.send_json({
+                        "type": "verse_response",
+                        "status": "error",
+                        "message": str(e)
+                    })
+                    logger.warning(f"⚠️ Validation error: {e}")
+                
+                except QuranVerseAPIError as e:
+                    await websocket.send_json({
+                        "type": "verse_response",
+                        "status": "error",
+                        "message": f"API error: {str(e)}"
+                    })
+                    logger.error(f"❌ API error: {e}")
+                
+                except Exception as e:
+                    logger.exception("Unexpected verse error")
+                    await websocket.send_json({
+                        "type": "verse_response",
+                        "status": "error",
+                        "message": "An unexpected error occurred"
+                    })
+                
+                continue
+            
             # ========== SESsION CODE START ==========
             # SESSION INIT 
             if data.get("type") == "session-init":
@@ -681,7 +819,7 @@ async def websocket_chat(websocket: WebSocket):
                         "type": "model-selection",
                         "status": "acknowledged",
                         "model": requested_model,
-                        "display_name": model_info["name"]
+                        "display_name": model_info["name"] 
                     })
                     await websocket.send_json({
                         "type": "loading_message",
@@ -726,6 +864,92 @@ async def websocket_chat(websocket: WebSocket):
             messages = data.get("messages", [])
             if messages:
                 latest_message = messages[-1]["content"]
+
+                if latest_message.strip():
+                    latest_message_lower = latest_message.lower()
+                    
+                    # Enhanced audio keyword detection
+                    audio_keywords = [
+                        "listen", "play", "recite", "audio", "hear",
+                         "recitation", "tilawat"
+                    ]
+                    
+                    is_audio_request = any(
+                        keyword in latest_message_lower 
+                        for keyword in audio_keywords
+                    )
+                    
+                    if is_audio_request:
+                        logger.info(f"🎵 Audio keyword detected: '{latest_message[:50]}'")
+                        
+                        # Try to parse the request
+                        parsed = parse_quran_audio_request(latest_message)
+                        
+                        if parsed:
+                            logger.info(f"✅ Parsed request: {parsed}")
+                            
+                            # Send parsed data to frontend
+                            await websocket.send_json({
+                                "type": "open_audio_dialog",
+                                "parsed_request": parsed,
+                                "original_message": latest_message,
+                                "available_reciters": get_available_reciters()
+                            })
+                            
+                            logger.info("⏭️ Audio dialog triggered, skipping normal chat")
+                            continue
+                        else:
+                            # Could not parse, open dialog with defaults
+                            logger.warning("⚠️ Could not parse audio request, using defaults")
+                            await websocket.send_json({
+                                "type": "open_audio_dialog",
+                                "parsed_request": {"surah": 1, "ayah": None},
+                                "original_message": latest_message,
+                                "available_reciters": get_available_reciters(),
+                                "note": "Please specify surah and ayah number"
+                            })
+                            continue
+                
+                if latest_message.strip():
+                    latest_message_lower = latest_message.lower()
+                    
+                    # Verse keyword detection
+                    verse_keywords = [
+                        "verse", "ayah", "read verse", "show verse",
+                        "display verse", "surah", "reading verse"
+                    ]
+                    
+                    is_verse_request = any(
+                        keyword in latest_message_lower 
+                        for keyword in verse_keywords
+                    )
+                    
+                    if is_verse_request:
+                        logger.info(f"📖 Verse keyword detected: '{latest_message[:50]}'")
+                        
+                        parsed = parse_verse_request(latest_message)
+                        
+                        if parsed:
+                            logger.info(f"✅ Parsed verse request: {parsed}")
+                            
+                            await websocket.send_json({
+                                "type": "open_verse_dialog",
+                                "parsed_request": parsed,
+                                "original_message": latest_message
+                            })
+                            
+                            logger.info("⏭️ Verse dialog triggered")
+                            continue
+                        else:
+                            logger.warning("⚠️ Could not parse verse request")
+                            await websocket.send_json({
+                                "type": "open_verse_dialog",
+                                "parsed_request": {"surah": 1, "ayah": 1},
+                                "original_message": latest_message,
+                                "note": "Please specify surah and ayah number"
+                            })
+                            continue
+
 
                 if latest_message.strip() and session_id:
 

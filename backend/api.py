@@ -1,5 +1,3 @@
-
-
 from fastapi import APIRouter, Depends, HTTPException
 from datetime import datetime, timedelta
 from typing import List
@@ -184,6 +182,256 @@ async def get_notifications(user: dict = Depends(get_current_user)):
     
     return [dict(row) for row in rows]
 
+# # ==================== BOOKMARKS ROUTER ====================
+
+# bookmark_router = APIRouter(prefix="/bookmarks", tags=["Bookmarks"])
+
+# @bookmark_router.post("", response_model=BookmarkResponse)
+# async def create_bookmark(req: BookmarkCreate, user: dict = Depends(get_current_user)):
+#     """Save bookmark for user"""
+#     bookmark_id = generate_bookmark_id()
+#     created_time = datetime.now()
+    
+#     async with get_db_connection() as conn:
+#         # Check duplicate
+#         existing = await conn.fetchrow("""
+#             SELECT bookmark_id FROM bookmarks 
+#             WHERE user_id = $1 AND surah_no = $2 AND ayah_no = $3
+#         """, user['user_id'], req.surah_no, req.ayah_no)
+        
+#         if existing:
+#             raise HTTPException(status_code=400, detail="Already bookmarked")
+        
+#         # Create bookmark
+#         await conn.execute("""
+#             INSERT INTO bookmarks (
+#                 bookmark_id, user_id, item_id, type, 
+#                 surah_name, surah_no, ayah_no, total_ayah, ayah, 
+#                 created_at)
+#             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+#         """, bookmark_id, user['user_id'], req.itemId, req.type,
+#             req.surah_name, req.surah_no, req.ayah_no, req.total_ayah, req.ayah,
+#             created_time)
+#         # Auto notification
+#         notif_id = generate_notification_id()
+#         await conn.execute("""
+#             INSERT INTO notifications (notification_id, user_id, title, message, created_at)
+#             VALUES ($1, $2, $3, $4, $5)
+#         """, notif_id, user['user_id'], "Bookmark Saved",
+#             f"You saved {req.surah_name}, Ayah {req.ayah_no} to your bookmarks", created_time)
+    
+#     return BookmarkResponse(
+#         message="Bookmark saved successfully",
+#         bookmarkId=bookmark_id,
+#         time=created_time
+#     )
+
+# @bookmark_router.get("", response_model=List[BookmarkItem])
+# async def get_bookmarks(user: dict = Depends(get_current_user)):
+#     """Get all bookmarks for current user"""
+#     async with get_db_connection() as conn:
+#         rows = await conn.fetch("""
+#             SELECT 
+#                 bookmark_id as "bookmarkId", 
+#                 item_id as "itemId", 
+#                 type,
+#                 surah_name as "surahName",
+#                 surah_no as "surahNo",
+#                 ayah_no as "ayahNo",
+#                 total_ayah as "totalAyah",
+#                 ayah,
+#                 created_at as time
+#             FROM bookmarks 
+#             WHERE user_id = $1
+#             ORDER BY created_at DESC
+#         """, user['user_id'])
+    
+#     return [dict(row) for row in rows]
+
+# @bookmark_router.delete("", response_model=SuccessResponse)
+# async def delete_bookmark(req: BookmarkDeleteRequest, user: dict = Depends(get_current_user)):
+#     """Delete a bookmark"""
+#     async with get_db_connection() as conn:
+#         result = await conn.execute("""
+#             DELETE FROM bookmarks 
+#             WHERE bookmark_id = $1 AND user_id = $2
+#         """, req.bookmarkId, user['user_id'])
+        
+#         if result == "DELETE 0":
+#             raise HTTPException(status_code=404, detail="Bookmark not found")
+    
+#     return SuccessResponse(message="Bookmark deleted", timestamp=datetime.utcnow())
+
+# # ==================== PROFILE ROUTER ====================
+
+# profile_router = APIRouter(prefix="/users", tags=["User Profile"])
+
+# @profile_router.get("/me", response_model=UserProfile)
+# async def get_my_profile(user: dict = Depends(get_current_user)):
+#     """Get current user's profile"""
+#     async with get_db_connection() as conn:
+#         profile = await conn.fetchrow("""
+#              SELECT 
+#                 user_id as id,
+#                 username,
+#                 email,
+#                 profile_picture as "profilePicture",
+#                 bio,
+#                 created_at as "createdAt",
+#                 last_name as "lastName",
+#                 date_of_birth as "dateofBirth",
+#                 address,
+#                 phone_number as "phoneNumber"
+#             FROM users 
+#             WHERE user_id = $1
+#         """, user['user_id'])
+        
+#         if not profile:
+#             raise HTTPException(status_code=404, detail="Profile not found")
+    
+#     return dict(profile)
+
+# @profile_router.put("/profile", response_model=SuccessResponse)
+# async def update_profile(req: ProfileUpdate, user: dict = Depends(get_current_user)):
+#     """Update user profile"""
+#     updates = []
+#     values = []
+    
+#     if req.username:
+#         updates.append(f"username = ${len(values) + 1}")
+#         values.append(req.username)
+#     if req.lastName:
+#         updates.append(f"lastname = ${len(values) + 1}")
+#         values.append(req.lastName)
+#     if req.address:
+#         updates.append(f"address = ${len(values) + 1}")
+#         values.append(req.address)
+#     if req.dateofBirth:
+#         updates.append(f"date_of_birth = ${len(values) + 1}")
+#         values.append(req.dateofBirth)
+#     if req.phoneNumber:
+#         updates.append(f"phone_number = ${len(values) + 1}")
+#         values.append(req.phoneNumber)
+#     if req.email:
+#         updates.append(f"email = ${len(values) + 1}")
+#         values.append(req.email)
+#     if req.profilePicture:
+#         updates.append(f"profile_picture = ${len(values) + 1}")
+#         values.append(req.profilePicture)
+#     if req.bio is not None:
+#         updates.append(f"bio = ${len(values) + 1}")
+#         values.append(req.bio)
+#     if req.gender:
+#         updates.append(f"gender = ${len(values) + 1}")
+#         values.append(req.gender)
+    
+#     if not updates:
+#         raise HTTPException(status_code=400, detail="No fields to update")
+    
+#     updates.append("updated_at = NOW()")
+#     values.append(user['user_id'])
+    
+#     query = f"UPDATE users SET {', '.join(updates)} WHERE user_id = ${len(values)}"
+    
+#     async with get_db_connection() as conn:
+#         await conn.execute(query, *values)
+    
+#     return SuccessResponse(message="Profile updated successfully")
+
+# # ==================== EDIT PROFILE ROUTER ====================
+
+# profile_router = APIRouter(prefix="/users", tags=["User Profile"])
+
+# @profile_router.put("/edit-profile", response_model=EditProfileResponse)
+# async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current_user)):
+#     """
+#     Edit Profile API - Only 6 fields can be updated:
+#     1. email
+#     2. image (profile_picture)
+#     3. username
+#     4. contact (phone_number)
+#     5. dateOfBirth (date_of_birth)
+#     6. gender
+#     """
+    
+#     updates = []
+#     values = []
+#     updated_fields = []
+    
+#     async with get_db_connection() as conn:
+        
+#         # 1. EMAIL
+#         if req.email:
+#             # Check duplicate email
+#             existing = await conn.fetchrow(
+#                 "SELECT user_id FROM users WHERE email = $1 AND user_id != $2",
+#                 req.email, user['user_id']
+#             )
+#             if existing:
+#                 raise HTTPException(status_code=400, detail="Email already in use")
+            
+#             updates.append(f"email = ${len(values) + 1}")
+#             values.append(req.email)
+#             updated_fields.append("email")
+        
+#         # 2. USERNAME
+#         if req.username:
+#             # Check duplicate username
+#             existing = await conn.fetchrow(
+#                 "SELECT user_id FROM users WHERE username = $1 AND user_id != $2",
+#                 req.username, user['user_id']
+#             )
+#             if existing:
+#                 raise HTTPException(status_code=400, detail="Username already taken")
+            
+#             updates.append(f"username = ${len(values) + 1}")
+#             values.append(req.username)
+#             updated_fields.append("username")
+        
+#         # 3. IMAGE (Profile Picture)
+#         if req.image:
+#             updates.append(f"profile_picture = ${len(values) + 1}")
+#             values.append(req.image)
+#             updated_fields.append("image")
+        
+#         # 4. CONTACT (Phone Number)
+#         if req.contact:
+#             updates.append(f"phone_number = ${len(values) + 1}")
+#             values.append(req.contact)
+#             updated_fields.append("contact")
+        
+#         # 5. DATE OF BIRTH
+#         if req.dateOfBirth:
+#             updates.append(f"date_of_birth = ${len(values) + 1}")
+#             values.append(req.dateOfBirth)
+#             updated_fields.append("dateOfBirth")
+        
+#         # 6. GENDER
+#         if req.gender:
+#             updates.append(f"gender = ${len(values) + 1}")
+#             values.append(req.gender)
+#             updated_fields.append("gender")
+        
+#         # Check if at least one field to update
+#         if not updates:
+#             raise HTTPException(status_code=400, detail="No fields to update")
+        
+#         # Add updated_at timestamp
+#         updates.append("updated_at = NOW()")
+#         values.append(user['user_id'])
+        
+#         # Build and execute UPDATE query
+#         query = f"UPDATE users SET {', '.join(updates)} WHERE user_id = ${len(values)}"
+        
+#         await conn.execute(query, *values)
+    
+#     return EditProfileResponse(
+#         message="Profile updated successfully",
+#         updatedFields=updated_fields,
+#         timestamp=datetime.utcnow()
+#     )
+
+
 # ==================== BOOKMARKS ROUTER ====================
 
 bookmark_router = APIRouter(prefix="/bookmarks", tags=["Bookmarks"])
@@ -192,23 +440,28 @@ bookmark_router = APIRouter(prefix="/bookmarks", tags=["Bookmarks"])
 async def create_bookmark(req: BookmarkCreate, user: dict = Depends(get_current_user)):
     """Save bookmark for user"""
     bookmark_id = generate_bookmark_id()
-    created_time = datetime.now()
+    created_time = datetime.utcnow()  
     
     async with get_db_connection() as conn:
         # Check duplicate
         existing = await conn.fetchrow("""
             SELECT bookmark_id FROM bookmarks 
-            WHERE user_id = $1 AND item_id = $2
-        """, user['user_id'], req.itemId)
+            WHERE user_id = $1 AND surah_no = $2 AND ayah_no = $3
+        """, user['user_id'], req.surah_no, req.ayah_no)
         
         if existing:
-            raise HTTPException(status_code=400, detail="Already bookmarked")
+            raise HTTPException(status_code=400, detail="This verse is already bookmarked")
         
         # Create bookmark
         await conn.execute("""
-            INSERT INTO bookmarks (bookmark_id, user_id, item_id, type, created_at)
-            VALUES ($1, $2, $3, $4, $5)
-        """, bookmark_id, user['user_id'], req.itemId, req.type, created_time)
+            INSERT INTO bookmarks (
+                bookmark_id, user_id, item_id, type, 
+                surah_name, surah_no, ayah_no, total_ayah, ayah, 
+                created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        """, bookmark_id, user['user_id'], req.itemId, req.type,
+            req.surah_name, req.surah_no, req.ayah_no, req.total_ayah, req.ayah,
+            created_time)
         
         # Auto notification
         notif_id = generate_notification_id()
@@ -216,7 +469,7 @@ async def create_bookmark(req: BookmarkCreate, user: dict = Depends(get_current_
             INSERT INTO notifications (notification_id, user_id, title, message, created_at)
             VALUES ($1, $2, $3, $4, $5)
         """, notif_id, user['user_id'], "Bookmark Saved",
-            "You saved an item to your bookmarks", created_time)
+            f"You saved {req.surah_name}, Ayah {req.ayah_no} to your bookmarks", created_time)
     
     return BookmarkResponse(
         message="Bookmark saved successfully",
@@ -229,17 +482,70 @@ async def get_bookmarks(user: dict = Depends(get_current_user)):
     """Get all bookmarks for current user"""
     async with get_db_connection() as conn:
         rows = await conn.fetch("""
-            SELECT bookmark_id as "bookmarkId", item_id as "itemId", 
-                   type, created_at as time
-            FROM bookmarks WHERE user_id = $1
+            SELECT 
+                bookmark_id as "bookmarkId", 
+                item_id as "itemId", 
+                type,
+                surah_name as "surahName",
+                surah_no as "surahNo",
+                ayah_no as "ayahNo",
+                total_ayah as "totalAyah",
+                ayah,
+                created_at as time
+            FROM bookmarks 
+            WHERE user_id = $1
             ORDER BY created_at DESC
         """, user['user_id'])
     
+    if not rows:
+        return []
+    
     return [dict(row) for row in rows]
+
+@bookmark_router.get("/{bookmark_id}", response_model=BookmarkItem)
+async def get_bookmark_by_id(bookmark_id: str, user: dict = Depends(get_current_user)):
+    """Get specific bookmark by ID"""
+    async with get_db_connection() as conn:
+        row = await conn.fetchrow("""
+            SELECT 
+                bookmark_id as "bookmarkId", 
+                item_id as "itemId", 
+                type,
+                surah_name as "surahName",
+                surah_no as "surahNo",
+                ayah_no as "ayahNo",
+                total_ayah as "totalAyah",
+                ayah,
+                created_at as time
+            FROM bookmarks 
+            WHERE bookmark_id = $1 AND user_id = $2
+        """, bookmark_id, user['user_id'])
+        
+        if not row:
+            raise HTTPException(status_code=404, detail="Bookmark not found")
+        
+        return dict(row)
+
+@bookmark_router.delete("/{bookmark_id}", response_model=SuccessResponse)
+async def delete_bookmark_by_id(bookmark_id: str, user: dict = Depends(get_current_user)):
+    """Delete a bookmark by ID (path parameter)"""
+    async with get_db_connection() as conn:
+        result = await conn.execute("""
+            DELETE FROM bookmarks 
+            WHERE bookmark_id = $1 AND user_id = $2
+        """, bookmark_id, user['user_id'])
+        
+        if result == "DELETE 0":
+            raise HTTPException(status_code=404, detail="Bookmark not found")
+    
+    return SuccessResponse(
+        message="Bookmark deleted successfully", 
+        timestamp=datetime.utcnow()
+    )
 
 @bookmark_router.delete("", response_model=SuccessResponse)
 async def delete_bookmark(req: BookmarkDeleteRequest, user: dict = Depends(get_current_user)):
-    """Delete a bookmark"""
+    """Delete a bookmark (body parameter - backward compatibility)"""
     async with get_db_connection() as conn:
         result = await conn.execute("""
             DELETE FROM bookmarks 
@@ -249,7 +555,10 @@ async def delete_bookmark(req: BookmarkDeleteRequest, user: dict = Depends(get_c
         if result == "DELETE 0":
             raise HTTPException(status_code=404, detail="Bookmark not found")
     
-    return SuccessResponse(message="Bookmark deleted", timestamp=datetime.utcnow())
+    return SuccessResponse(
+        message="Bookmark deleted successfully", 
+        timestamp=datetime.utcnow()
+    )
 
 # ==================== PROFILE ROUTER ====================
 
@@ -260,10 +569,20 @@ async def get_my_profile(user: dict = Depends(get_current_user)):
     """Get current user's profile"""
     async with get_db_connection() as conn:
         profile = await conn.fetchrow("""
-            SELECT user_id as id, username, email, 
-                   profile_picture as "profilePicture", 
-                   bio, created_at as "createdAt"
-            FROM users WHERE user_id = $1
+             SELECT 
+                user_id as id,
+                username,
+                email,
+                profile_picture as "profilePicture",
+                bio,
+                created_at as "createdAt",
+                last_name as "lastName",
+                date_of_birth as "dateOfBirth",
+                address,
+                phone_number as "phoneNumber",
+                gender
+            FROM users 
+            WHERE user_id = $1
         """, user['user_id'])
         
         if not profile:
@@ -273,35 +592,161 @@ async def get_my_profile(user: dict = Depends(get_current_user)):
 
 @profile_router.put("/profile", response_model=SuccessResponse)
 async def update_profile(req: ProfileUpdate, user: dict = Depends(get_current_user)):
-    """Update user profile"""
+    """Update user profile - General update endpoint"""
     updates = []
     values = []
     
-    if req.username:
-        updates.append(f"username = ${len(values) + 1}")
-        values.append(req.username)
-    if req.email:
-        updates.append(f"email = ${len(values) + 1}")
-        values.append(req.email)
-    if req.profilePicture:
-        updates.append(f"profile_picture = ${len(values) + 1}")
-        values.append(req.profilePicture)
-    if req.bio is not None:
-        updates.append(f"bio = ${len(values) + 1}")
-        values.append(req.bio)
-    
-    if not updates:
-        raise HTTPException(status_code=400, detail="No fields to update")
-    
-    updates.append("updated_at = NOW()")
-    values.append(user['user_id'])
-    
-    query = f"UPDATE users SET {', '.join(updates)} WHERE user_id = ${len(values)}"
-    
     async with get_db_connection() as conn:
+        # Check for duplicate email (if changing email)
+        if req.email:
+            existing = await conn.fetchrow(
+                "SELECT user_id FROM users WHERE email = $1 AND user_id != $2",
+                req.email, user['user_id']
+            )
+            if existing:
+                raise HTTPException(status_code=400, detail="Email already in use")
+            updates.append(f"email = ${len(values) + 1}")
+            values.append(req.email)
+        
+        # Check for duplicate username (if changing username)
+        if req.username:
+            existing = await conn.fetchrow(
+                "SELECT user_id FROM users WHERE username = $1 AND user_id != $2",
+                req.username, user['user_id']
+            )
+            if existing:
+                raise HTTPException(status_code=400, detail="Username already taken")
+            updates.append(f"username = ${len(values) + 1}")
+            values.append(req.username)
+        
+        if req.lastName:
+            updates.append(f"last_name = ${len(values) + 1}") 
+            values.append(req.lastName)
+        
+        if req.address:
+            updates.append(f"address = ${len(values) + 1}")
+            values.append(req.address)
+        
+        if req.dateofBirth:
+            updates.append(f"date_of_birth = ${len(values) + 1}")
+            values.append(req.dateofBirth)
+        
+        if req.phoneNumber:
+            updates.append(f"phone_number = ${len(values) + 1}")
+            values.append(req.phoneNumber)
+        
+        if req.profilePicture:
+            updates.append(f"profile_picture = ${len(values) + 1}")
+            values.append(req.profilePicture)
+        
+        if req.bio is not None:  # Allow empty string
+            updates.append(f"bio = ${len(values) + 1}")
+            values.append(req.bio)
+        
+        if req.gender:
+            updates.append(f"gender = ${len(values) + 1}")
+            values.append(req.gender)
+        
+        if not updates:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        
+        updates.append("updated_at = NOW()")
+        values.append(user['user_id'])
+        
+        query = f"UPDATE users SET {', '.join(updates)} WHERE user_id = ${len(values)}"
+        
         await conn.execute(query, *values)
     
     return SuccessResponse(message="Profile updated successfully")
+
+@profile_router.put("/edit-profile", response_model=EditProfileResponse)
+async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current_user)):
+    """
+    Edit Profile API - Restricted fields update (6 fields only):
+    1. email
+    2. image (profile_picture)
+    3. username
+    4. contact (phone_number)
+    5. dateOfBirth (date_of_birth)
+    6. gender
+    """
+    
+    updates = []
+    values = []
+    updated_fields = []
+    
+    async with get_db_connection() as conn:
+        
+        # 1. EMAIL
+        if req.email:
+            # Check duplicate email
+            existing = await conn.fetchrow(
+                "SELECT user_id FROM users WHERE email = $1 AND user_id != $2",
+                req.email, user['user_id']
+            )
+            if existing:
+                raise HTTPException(status_code=400, detail="Email already in use")
+            
+            updates.append(f"email = ${len(values) + 1}")
+            values.append(req.email)
+            updated_fields.append("email")
+        
+        # 2. USERNAME
+        if req.username:
+            # Check duplicate username
+            existing = await conn.fetchrow(
+                "SELECT user_id FROM users WHERE username = $1 AND user_id != $2",
+                req.username, user['user_id']
+            )
+            if existing:
+                raise HTTPException(status_code=400, detail="Username already taken")
+            
+            updates.append(f"username = ${len(values) + 1}")
+            values.append(req.username)
+            updated_fields.append("username")
+        
+        # 3. IMAGE (Profile Picture)
+        if req.image:
+            updates.append(f"profile_picture = ${len(values) + 1}")
+            values.append(req.image)
+            updated_fields.append("image")
+        
+        # 4. CONTACT (Phone Number)
+        if req.contact:
+            updates.append(f"phone_number = ${len(values) + 1}")
+            values.append(req.contact)
+            updated_fields.append("contact")
+        
+        # 5. DATE OF BIRTH
+        if req.dateOfBirth:
+            updates.append(f"date_of_birth = ${len(values) + 1}")
+            values.append(req.dateOfBirth)
+            updated_fields.append("dateOfBirth")
+        
+        # 6. GENDER
+        if req.gender:
+            updates.append(f"gender = ${len(values) + 1}")
+            values.append(req.gender)
+            updated_fields.append("gender")
+        
+        # Check if at least one field to update
+        if not updates:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        
+        # Add updated_at timestamp
+        updates.append("updated_at = NOW()")
+        values.append(user['user_id'])
+        
+        # Build and execute UPDATE query
+        query = f"UPDATE users SET {', '.join(updates)} WHERE user_id = ${len(values)}"
+        
+        await conn.execute(query, *values)
+    
+    return EditProfileResponse(
+        message="Profile updated successfully",
+        updatedFields=updated_fields,
+        timestamp=datetime.utcnow()
+    )
 
 # ==================== FEEDBACK ROUTER ====================
 

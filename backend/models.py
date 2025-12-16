@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, EmailStr, Field, validator
 from typing import Optional, Literal
-from datetime import datetime
+from datetime import datetime, date
 
 # ==================== AUTH MODELS ====================
 
@@ -50,6 +50,11 @@ class NotificationResponse(BaseModel):
 class BookmarkCreate(BaseModel):
     itemId: str
     type: str = Field(..., description="e.g., 'ayah', 'story', 'tafsir'")
+    surah_name: str = Field(..., description="Surah name in English")
+    surah_no: int = Field(..., ge=1, le=114, description="Surah number (1-114)")
+    ayah_no: int = Field(..., ge=1, description="Ayah number")
+    total_ayah: int = Field(..., ge=1, description="Total ayahs in surah")
+    ayah: str = Field(..., description="Arabic text of the ayah")
 
 class BookmarkResponse(BaseModel):
     message: str
@@ -60,23 +65,56 @@ class BookmarkItem(BaseModel):
     bookmarkId: str
     itemId: str
     type: str
+    surahName: str
+    surahNo: int
+    ayahNo: int
+    totalAyah: int
+    ayah: str
     time: datetime
     
 # ==================== USER PROFILE MODELS ====================
 
 class ProfileUpdate(BaseModel):
+    """Update profile with specific fields only"""
     username: Optional[str] = Field(None, min_length=3, max_length=50)
     email: Optional[EmailStr] = None
-    profilePicture: Optional[str] = None
-    bio: Optional[str] = Field(None, max_length=500)
+    profilePicture: Optional[str] = Field(None, alias="image")  # Accept 'image' in request
+    phoneNumber: Optional[str] = Field(None, alias="contact")   # Accept 'contact' in request
+    dateofBirth: Optional[date] = None
+    gender: Optional[Literal["Male", "Female", "Other"]] = None
+    
+    class Config:
+        populate_by_name = True
 
 class UserProfile(BaseModel):
     id: str
     username: str
     email: str
-    profilePicture: Optional[str]
-    bio: Optional[str]
+    profilePicture: Optional[str] = None
+    bio: Optional[str] = None
+    lastName: Optional[str] = None
+    dateofBirth: Optional[date] = None
+    address: Optional[str] = None
+    phoneNumber: Optional[str] = None
+    gender: Optional[str] = None
     createdAt: datetime
+
+class EditProfileRequest(BaseModel):
+    """Edit Profile - Only these 6 fields"""
+    email: Optional[EmailStr] = None
+    image: Optional[str] = Field(None, description="Profile picture URL")
+    username: Optional[str] = Field(None, min_length=3, max_length=50)
+    contact: Optional[str] = Field(None, description="Phone number")
+    dateOfBirth: Optional[date] = None
+    gender: Optional[Literal["Male", "Female", "Other"]] = None
+
+class EditProfileResponse(BaseModel):
+    message: str
+    status: str = "success"
+    updatedFields: list
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
 
 # ==================== FEEDBACK MODELS ====================
 

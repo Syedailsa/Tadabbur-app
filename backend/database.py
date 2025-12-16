@@ -80,6 +80,7 @@ async def create_tables():
     
     async with get_db_connection() as conn:
         # USERS TABLE (Email/Password authentication)
+               
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
@@ -87,10 +88,18 @@ async def create_tables():
                 username TEXT UNIQUE NOT NULL,
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
+
+                last_name TEXT,
+                date_of_birth DATE,
+                address TEXT,
+                phone_number TEXT,
+                gender TEXT,
                 profile_picture TEXT,
                 bio TEXT,
+
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
+            
             )
         """)
         
@@ -145,8 +154,15 @@ async def create_tables():
                 user_id TEXT NOT NULL,
                 item_id TEXT NOT NULL,
                 type TEXT NOT NULL,
+                
+                surah_name TEXT NOT NULL,
+                surah_no INTEGER NOT NULL,
+                ayah_no INTEGER NOT NULL,
+                total_ayah INTEGER NOT NULL,
+                ayah TEXT NOT NULL,
+                
                 created_at TIMESTAMP DEFAULT NOW(),
-                UNIQUE(user_id, item_id)
+                UNIQUE(user_id, surah_no, ayah_no)
             )
         """)
         
@@ -179,7 +195,48 @@ async def create_tables():
                 UNIQUE(session_id, item_index, feedback_type)
             )
         """)
-        
+        await conn.execute("""
+        CREATE TABLE IF NOT EXISTS password_reset_otps (
+        id SERIAL PRIMARY KEY,
+        email TEXT NOT NULL,
+        otp TEXT NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        verified BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW()
+    )
+ """)
+
+        # Create index for faster queries
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_otp_email 
+            ON password_reset_otps(email, created_at DESC)
+        """)
+
+        # RECENT REFLECTIONS TABLE
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS recent_reflections (
+                id SERIAL PRIMARY KEY,
+                reflection_id TEXT UNIQUE NOT NULL,
+                user_id TEXT NOT NULL,
+                surah_name_eng TEXT NOT NULL,
+                surah_name_arabic TEXT NOT NULL,
+                surah_no INTEGER NOT NULL,
+                total_ayah INTEGER NOT NULL,
+                last_ayah_read INTEGER,
+                last_read_at TIMESTAMP DEFAULT NOW(),
+                created_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(user_id)
+            )
+        """)
+
+        # Create index
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_reflection_user 
+            ON recent_reflections(user_id)
+        """)
+
+        print("✅ All PostgreSQL tables created/verified (including new tables)")
+                
         print("✅ All PostgreSQL tables created/verified")
 
 # Helper functions for quick queries

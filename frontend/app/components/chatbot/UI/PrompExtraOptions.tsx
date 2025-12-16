@@ -7,6 +7,7 @@ import ThumbsDown from "../../../../icons/thumbs-down.svg";
 import Copy from "../../../../icons/copy.svg";
 import Refresh from "../../../../icons/refresh.svg";
 import MoreOptions from "../../../../icons/more_options.svg";
+import ReadAloudIcon from "../../../../icons/read_aloud.svg"; // Import for the Read Aloud icon
 
 const PromptExtraOptions = () => {
   const {
@@ -26,7 +27,15 @@ const PromptExtraOptions = () => {
   const [overlayText, setOverlayText] = useState<string | null>(null);
   const [active, setActive] = useState<boolean | null>(false);
 
+<<<<<<< HEAD
   type OptionType = "copy" | "resend" | "like" | "dislike";
+=======
+  useEffect(() => {
+    console.log("Feedback", feedback);
+  }, [feedback]);
+  // Added 'read_aloud' as a new option type for audio playback
+  type OptionType = "copy" | "resend" | "like" | "dislike" ;
+>>>>>>> 56705ce6bb48954371d1629a452dbfaff052b019
   const handleOptionClick = ({ type }: { type: OptionType }) => {
     switch (type) {
       case "copy":
@@ -82,9 +91,7 @@ const PromptExtraOptions = () => {
         ask(messages[index - 1].content);
         console.log("Message sent again");
         break;
-
-      default:
-        break;
+      
     }
   };
   return (
@@ -163,9 +170,10 @@ const PromptExtraOptions = () => {
       >
         <Refresh className="w-4 h-4" />
       </div>
+      
       <div
         onMouseOver={() => {
-          setOverlayTranslateAmount(132);
+          setOverlayTranslateAmount(166);
         }}
         onClick={() => {
           setHidePromptExtraOptionsModelBox((prev: boolean | null) => !prev);
@@ -189,3 +197,4 @@ const PromptExtraOptions = () => {
 };
 
 export default PromptExtraOptions;
+

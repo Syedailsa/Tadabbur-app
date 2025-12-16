@@ -49,11 +49,39 @@ class Story(BaseModel):
     category: Optional[str] = None
     created_at: str
 
+class ReciterInfo(BaseModel):
+    """Reciter information"""
+    identifier: str
+    name: str
+    englishName: str
+    language: str
+    format: str
+
+class AudioAyah(BaseModel):
+    """Ayah with audio"""
+    number: int
+    numberInSurah: int
+    text: str
+    audio: str
+    audioSecondary: Optional[List[str]] = []
+
+class SurahWithAudio(BaseModel):
+    """Surah with audio for all ayahs"""
+    number: int
+    name: str
+    englishName: str
+    englishNameTranslation: str
+    numberOfAyahs: int
+    revelationType: str
+    ayahs: List[AudioAyah]
+
 # ==================== ROUTERS ====================
 
 quran_router = APIRouter(prefix="/surah", tags=["Quran Content"])
 parah_router = APIRouter(prefix="/parah", tags=["Parah"])
 story_router = APIRouter(prefix="/stories", tags=["Stories"])
+audio_router = APIRouter(prefix="/audio", tags=["Quran Audio"])
+
 
 # ==================== QURAN APIs ====================
 
@@ -320,272 +348,245 @@ async def get_story_by_id(story_id: str):
     return story
 
 
+POPULAR_RECITERS = [
+    {"identifier": "ar.alafasy", "name": "Mishary Rashid Alafasy", "language": "Arabic"},
+    {"identifier": "ar.abdulbasitmurattal", "name": "Abdul Basit (Murattal)", "language": "Arabic"},
+    {"identifier": "ar.abdurrahmaansudais", "name": "Abdur-Rahman As-Sudais", "language": "Arabic"},
+    {"identifier": "ar.shaatree", "name": "Abu Bakr Ash-Shaatree", "language": "Arabic"},
+    {"identifier": "ar.husary", "name": "Mahmoud Khalil Al-Husary", "language": "Arabic"},
+    {"identifier": "ar.minshawi", "name": "Mohamed Siddiq Al-Minshawi", "language": "Arabic"},
+]
 
 
-
-
-
-
-
-
-
-# from fastapi import APIRouter, HTTPException
-# from typing import List
-# from pydantic import BaseModel
-# from database import get_db_connection
-
-# # ==================== MODELS ====================
-
-# class SurahBasic(BaseModel):
-#     number: int
-#     name: str
-#     englishName: str
-#     englishNameTranslation: str
-#     numberOfAyahs: int
-#     revelationType: str
-
-# class AyahDetail(BaseModel):
-#     number: int
-#     text_arabic: str
-#     text_english: str
-#     numberInSurah: int
-#     surah_number: int
-#     surah_name: str
-
-# # ==================== ROUTER ====================
-
-# quran_local_router = APIRouter(prefix="/surah", tags=["Quran Content - Local DB"])
-
-# # ==================== STEP 1: DATABASE TABLES ====================
-
-# async def create_quran_tables():
-#     """
-#     Yeh tables database mein banane honge
-#     """
-#     async with get_db_connection() as conn:
-#         # SURAHS TABLE
-#         await conn.execute("""
-#             CREATE TABLE IF NOT EXISTS surahs (
-#                 number INTEGER PRIMARY KEY,
-#                 name_arabic TEXT NOT NULL,
-#                 name_english TEXT NOT NULL,
-#                 name_translation TEXT NOT NULL,
-#                 total_ayahs INTEGER NOT NULL,
-#                 revelation_type TEXT NOT NULL CHECK(revelation_type IN ('Meccan', 'Medinan')),
-#                 created_at TIMESTAMP DEFAULT NOW()
-#             )
-#         """)
-        
-#         # AYAHS TABLE
-#         await conn.execute("""
-#             CREATE TABLE IF NOT EXISTS ayahs (
-#                 id SERIAL PRIMARY KEY,
-#                 ayah_number INTEGER NOT NULL,
-#                 surah_number INTEGER NOT NULL,
-#                 number_in_surah INTEGER NOT NULL,
-#                 text_arabic TEXT NOT NULL,
-#                 text_english TEXT NOT NULL,
-#                 text_urdu TEXT,
-#                 created_at TIMESTAMP DEFAULT NOW(),
-#                 FOREIGN KEY (surah_number) REFERENCES surahs(number),
-#                 UNIQUE(surah_number, number_in_surah)
-#             )
-#         """)
-        
-#         # INDEXES for faster queries
-#         await conn.execute("""
-#             CREATE INDEX IF NOT EXISTS idx_ayahs_surah 
-#             ON ayahs(surah_number, number_in_surah)
-#         """)
-        
-#         print("✅ Quran tables created")
-
-# # ==================== ENDPOINTS ====================
-
-# @quran_local_router.get("", response_model=List[SurahBasic])
-# async def get_all_surahs_local():
-#     """
-#     Get all Surahs from LOCAL database
+@audio_router.get("/reciters", response_model=List[dict])
+async def get_available_reciters():
+    """
+    Get list of available Quran reciters
     
-#     Returns:
-#         List of 114 Surahs
-#     """
-#     async with get_db_connection() as conn:
-#         rows = await conn.fetch("""
-#             SELECT 
-#                 number,
-#                 name_arabic as name,
-#                 name_english as "englishName",
-#                 name_translation as "englishNameTranslation",
-#                 total_ayahs as "numberOfAyahs",
-#                 revelation_type as "revelationType"
-#             FROM surahs
-#             ORDER BY number
-#         """)
-        
-#         if not rows:
-#             raise HTTPException(
-#                 status_code=404, 
-#                 detail="No surahs found. Database needs to be populated."
-#             )
-        
-#         return [dict(row) for row in rows]
+    Returns:
+        List of reciters with their identifiers
+    """
+    return POPULAR_RECITERS
 
 
-# @quran_local_router.get("/{surahId}")
-# async def get_surah_by_id_local(surahId: int):
-#     """
-#     Get specific Surah with all ayahs from LOCAL database
+@audio_router.get("/surah/{surahId}")
+async def get_surah_audio(
+    surahId: int,
+    reciter: str = "ar.alafasy"
+):
+    """
+    Get Surah with audio for all ayahs
     
-#     Args:
-#         surahId: Surah number (1-114)
-#     """
-#     if surahId < 1 or surahId > 114:
-#         raise HTTPException(status_code=400, detail="Invalid Surah ID (1-114)")
+    Args:
+        surahId: Surah number (1-114)
+        reciter: Reciter identifier (default: ar.alafasy - Mishary Alafasy)
     
-#     async with get_db_connection() as conn:
-#         # Get Surah info
-#         surah = await conn.fetchrow("""
-#             SELECT 
-#                 number,
-#                 name_arabic as name,
-#                 name_english as "englishName",
-#                 name_translation as "englishNameTranslation",
-#                 total_ayahs as "numberOfAyahs",
-#                 revelation_type as "revelationType"
-#             FROM surahs
-#             WHERE number = $1
-#         """, surahId)
-        
-#         if not surah:
-#             raise HTTPException(status_code=404, detail="Surah not found")
-        
-#         # Get all ayahs
-#         ayahs = await conn.fetch("""
-#             SELECT 
-#                 ayah_number as number,
-#                 number_in_surah as "numberInSurah",
-#                 text_arabic,
-#                 text_english
-#             FROM ayahs
-#             WHERE surah_number = $1
-#             ORDER BY number_in_surah
-#         """, surahId)
-        
-#         return {
-#             **dict(surah),
-#             "ayahs": [dict(a) for a in ayahs]
-#         }
-
-
-# @quran_local_router.get("/{surahId}/ayah/{ayahNumber}")
-# async def get_specific_ayah_local(surahId: int, ayahNumber: int):
-#     """
-#     Get specific Ayah from LOCAL database
+    Available reciters:
+        - ar.alafasy (Mishary Rashid Alafasy)
+        - ar.abdulbasitmurattal (Abdul Basit)
+        - ar.abdurrahmaansudais (Abdur-Rahman As-Sudais)
+        - ar.shaatree (Abu Bakr Ash-Shaatree)
+        - ar.husary (Mahmoud Khalil Al-Husary)
+        - ar.minshawi (Mohamed Siddiq Al-Minshawi)
     
-#     Args:
-#         surahId: Surah number (1-114)
-#         ayahNumber: Ayah number within surah
-#     """
-#     if surahId < 1 or surahId > 114:
-#         raise HTTPException(status_code=400, detail="Invalid Surah ID")
+    Returns:
+        Surah with audio URLs for each ayah
+    """
+    if surahId < 1 or surahId > 114:
+        raise HTTPException(status_code=400, detail="Invalid Surah ID. Must be 1-114")
     
-#     async with get_db_connection() as conn:
-#         ayah = await conn.fetchrow("""
-#             SELECT 
-#                 a.ayah_number as number,
-#                 a.number_in_surah as "numberInSurah",
-#                 a.text_arabic,
-#                 a.text_english,
-#                 s.number as surah_number,
-#                 s.name_arabic as surah_name,
-#                 s.name_english as surah_name_english
-#             FROM ayahs a
-#             JOIN surahs s ON a.surah_number = s.number
-#             WHERE a.surah_number = $1 AND a.number_in_surah = $2
-#         """, surahId, ayahNumber)
-        
-#         if not ayah:
-#             raise HTTPException(status_code=404, detail="Ayah not found")
-        
-#         return {
-#             "number": ayah["number"],
-#             "numberInSurah": ayah["numberInSurah"],
-#             "text_arabic": ayah["text_arabic"],
-#             "text_english": ayah["text_english"],
-#             "surah": {
-#                 "number": ayah["surah_number"],
-#                 "name": ayah["surah_name"],
-#                 "englishName": ayah["surah_name_english"]
-#             }
-#         }
+    try:
+        async with httpx.AsyncClient() as client:
+            # Get surah with audio
+            response = await client.get(
+                f"{QURAN_API_BASE}/surah/{surahId}/{reciter}",
+                timeout=15.0
+            )
+            
+            if response.status_code == 200:
+                data = response.json()["data"]
+                
+                return {
+                    "number": data["number"],
+                    "name": data["name"],
+                    "englishName": data["englishName"],
+                    "englishNameTranslation": data["englishNameTranslation"],
+                    "numberOfAyahs": data["numberOfAyahs"],
+                    "revelationType": data["revelationType"],
+                    "reciter": reciter,
+                    "ayahs": [
+                        {
+                            "number": ayah["number"],
+                            "numberInSurah": ayah["numberInSurah"],
+                            "text": ayah["text"],
+                            "audio": ayah.get("audio", ""),
+                            "audioSecondary": ayah.get("audioSecondary", [])
+                        }
+                        for ayah in data["ayahs"]
+                    ]
+                }
+            else:
+                raise HTTPException(status_code=500, detail="Failed to fetch audio")
+                
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Quran API timeout")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
-# # ==================== DATA POPULATION (One-time setup) ====================
-
-# async def populate_quran_data():
-#     """
-#     YEH FUNCTION ek baar run karna hoga database populate karne ke liye
+@audio_router.get("/ayah/{surahId}/{ayahNumber}")
+async def get_ayah_audio(
+    surahId: int,
+    ayahNumber: int,
+    reciter: str = "ar.alafasy"
+):
+    """
+    Get specific Ayah with audio
     
-#     Data source options:
-#     1. Download from: https://github.com/islamic-network/quran.com-api
-#     2. Use CSV file
-#     3. Manually insert
+    Args:
+        surahId: Surah number (1-114)
+        ayahNumber: Ayah number within surah
+        reciter: Reciter identifier (default: ar.alafasy)
     
-#     Example: Insert sample data
-#     """
-#     async with get_db_connection() as conn:
-#         # Check if already populated
-#         count = await conn.fetchval("SELECT COUNT(*) FROM surahs")
-#         if count > 0:
-#             print("⚠️ Database already populated")
-#             return
-        
-#         # Sample: Insert first few Surahs (you need to add all 114)
-#         sample_surahs = [
-#             (1, "الفاتحة", "Al-Fatihah", "The Opening", 7, "Meccan"),
-#             (2, "البقرة", "Al-Baqarah", "The Cow", 286, "Medinan"),
-#             (3, "آل عمران", "Aal-E-Imran", "The Family of Imran", 200, "Medinan"),
-#             # ... Add all 114 surahs
-#         ]
-        
-#         for surah in sample_surahs:
-#             await conn.execute("""
-#                 INSERT INTO surahs (number, name_arabic, name_english, name_translation, total_ayahs, revelation_type)
-#                 VALUES ($1, $2, $3, $4, $5, $6)
-#                 ON CONFLICT (number) DO NOTHING
-#             """, *surah)
-        
-#         # Sample: Insert ayahs for Surah Al-Fatihah
-#         sample_ayahs = [
-#             (1, 1, 1, "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ", "In the name of Allah, the Entirely Merciful, the Especially Merciful."),
-#             (2, 1, 2, "الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ", "All praise is due to Allah, Lord of the worlds."),
-#             # ... Add remaining ayahs
-#         ]
-        
-#         for ayah in sample_ayahs:
-#             await conn.execute("""
-#                 INSERT INTO ayahs (ayah_number, surah_number, number_in_surah, text_arabic, text_english)
-#                 VALUES ($1, $2, $3, $4, $5)
-#                 ON CONFLICT (surah_number, number_in_surah) DO NOTHING
-#             """, *ayah)
-        
-#         print("✅ Sample Quran data inserted")
+    Returns:
+        Single ayah with audio URL
+    """
+    if surahId < 1 or surahId > 114:
+        raise HTTPException(status_code=400, detail="Invalid Surah ID")
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            # Get specific ayah with audio
+            response = await client.get(
+                f"{QURAN_API_BASE}/ayah/{surahId}:{ayahNumber}/{reciter}",
+                timeout=10.0
+            )
+            
+            if response.status_code == 200:
+                data = response.json()["data"]
+                
+                return {
+                    "number": data["number"],
+                    "numberInSurah": data["numberInSurah"],
+                    "text": data["text"],
+                    "audio": data.get("audio", ""),
+                    "audioSecondary": data.get("audioSecondary", []),
+                    "surah": {
+                        "number": data["surah"]["number"],
+                        "name": data["surah"]["name"],
+                        "englishName": data["surah"]["englishName"]
+                    },
+                    "reciter": reciter
+                }
+            else:
+                raise HTTPException(status_code=404, detail="Ayah not found")
+                
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Quran API timeout")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
-# # ==================== HOW TO USE ====================
-# """
-# USAGE IN MAIN.PY:
+@audio_router.get("/full-surah-audio/{surahId}")
+async def get_full_surah_single_audio(
+    surahId: int,
+    reciter: str = "ar.alafasy"
+):
+    """
+    Get complete Surah as single audio file (if available)
+    
+    Args:
+        surahId: Surah number (1-114)
+        reciter: Reciter identifier
+    
+    Returns:
+        Surah info with single audio URL for complete recitation
+    """
+    if surahId < 1 or surahId > 114:
+        raise HTTPException(status_code=400, detail="Invalid Surah ID. Must be 1-114")
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{QURAN_API_BASE}/surah/{surahId}/{reciter}",
+                timeout=15.0
+            )
+            
+            if response.status_code == 200:
+                data = response.json()["data"]
+                
+                # Get first ayah's audio as reference
+                first_audio = data["ayahs"][0].get("audio", "") if data["ayahs"] else ""
+                
+                return {
+                    "number": data["number"],
+                    "name": data["name"],
+                    "englishName": data["englishName"],
+                    "englishNameTranslation": data["englishNameTranslation"],
+                    "numberOfAyahs": data["numberOfAyahs"],
+                    "reciter": reciter,
+                    "audioUrl": first_audio,
+                    "note": "This is ayah-by-ayah audio. For full surah audio, play ayahs sequentially."
+                }
+            else:
+                raise HTTPException(status_code=500, detail="Failed to fetch audio")
+                
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Quran API timeout")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
-# 1. Import router:
-#    from quran_api_local import quran_local_router, create_quran_tables, populate_quran_data
 
-# 2. Register router:
-#    app.include_router(quran_local_router)
+@audio_router.get("/juz/{juzNumber}")
+async def get_juz_audio(
+    juzNumber: int,
+    reciter: str = "ar.alafasy"
+):
+    """
+    Get Juz/Para with audio
+    
+    Args:
+        juzNumber: Juz number (1-30)
+        reciter: Reciter identifier
+    
+    Returns:
+        All ayahs in the Juz with audio URLs
+    """
+    if juzNumber < 1 or juzNumber > 30:
+        raise HTTPException(status_code=400, detail="Invalid Juz number. Must be 1-30")
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{QURAN_API_BASE}/juz/{juzNumber}/{reciter}",
+                timeout=20.0
+            )
+            
+            if response.status_code == 200:
+                data = response.json()["data"]
+                
+                return {
+                    "juzNumber": data["number"],
+                    "reciter": reciter,
+                    "ayahs": [
+                        {
+                            "number": ayah["number"],
+                            "text": ayah["text"],
+                            "audio": ayah.get("audio", ""),
+                            "surah": {
+                                "number": ayah["surah"]["number"],
+                                "name": ayah["surah"]["name"],
+                                "englishName": ayah["surah"]["englishName"]
+                            }
+                        }
+                        for ayah in data["ayahs"]
+                    ]
+                }
+            else:
+                raise HTTPException(status_code=500, detail="Failed to fetch Juz audio")
+                
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Quran API timeout")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
-# 3. In lifespan startup:
-#    await create_quran_tables()
-#    await populate_quran_data()  # One-time only
-
-# 4. Ready to use!
-# """

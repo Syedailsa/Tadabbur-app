@@ -7,6 +7,7 @@ import rehypeRaw from "rehype-raw";
 import { ReactNode, useContext, useEffect, useRef, useState } from "react";
 import ChatProvider from "./providers/chatbot/ChatProvider";
 import DownArrow from "../icons/arrow-down-head.svg";
+
 import {
   motion,
   easeInOut,
@@ -18,6 +19,8 @@ import { ModelList } from "@/static/data";
 import BottomOptions from "./components/chatbot/UI/BottomOptions";
 import ExtraOptions from "./components/chatbot/UI/ExtraOptions";
 import PromptSuggestion from "../icons/prompt_suggestion.svg";
+import QuranAudioDialog from "./components/chatbot/UI/AudioDialogBox";
+import QuranVerseDialog from "./components/chatbot/UI/QuranVerseDialog";
 import { defaultPrompts } from "@/static/data";
 import ModelBox from "./components/chatbot/UI/ModelBox";
 import Controls from "./components/chatbot/UI/Controls";
@@ -59,6 +62,14 @@ export default function ChatPage() {
   const [streamingMessageIndex, setStreamingMessageIndex] = useState<
     number | null
   >(null);
+
+  const [showAudioDialog, setShowAudioDialog] = useState(false);
+  const [audioRequest, setAudioRequest] = useState<any>(null);
+
+  const [showQuranVerseDialog, setShowQuranVerseDialog] = useState(false);
+  const [verseRequest, setVerseRequest] = useState<any>(null);
+
+  const [showQuranPlayer, setShowQuranPlayer] = useState(false);
   const [chatHistory, setChatHistory] = useState<ChatRecord[] | null>(null);
   const messageScrollFlag = useRef<boolean | null>(false);
   const controls = useAnimationControls();
@@ -80,7 +91,7 @@ export default function ChatPage() {
   }
 
   useEffect(() => {
-    const websocket = new WebSocket("ws://localhost:8000/ws/chat");
+    const websocket = new WebSocket("ws://localhost:9000/ws/chat");
     wsRef.current = websocket;
 
     wsRef.current.onopen = () => {
@@ -105,11 +116,33 @@ export default function ChatPage() {
 
     wsRef.current.onmessage = (event) => {
       const data = JSON.parse(event.data);
-
       console.log("Data from websocket", event.data);
 
       const type = data.type;
       switch (type) {
+        case "open_audio_dialog":
+          // This is triggered when user asks to listen to Quran
+          setAudioRequest({
+            parsed_request: data.parsed_request,
+            original_message: data.original_message,
+            available_reciters: data.available_reciters,
+            note: data.note || null,
+          });
+          setShowAudioDialog(true);
+          break;
+
+        case "open_verse_dialog":
+          setVerseRequest({
+            parsed_request: data.parsed_request,
+            original_message: data.original_message,
+            note: data.note || null,
+          });
+          setShowQuranVerseDialog(true);
+          break;
+
+        case "audio_response":
+          break;
+
         case "session_id":
           const session_id = data.session_id;
           const isNew = session_id != sessionID;
@@ -313,6 +346,34 @@ export default function ChatPage() {
         <div className="w-full h-full flex flex-col items-center overflow-y-auto">
           <div className="absolute top-0 p-2 w-full">
             <Controls wsRef={wsRef} />
+
+            {audioRequest && (
+              <QuranAudioDialog
+                isOpen={showAudioDialog}
+                onClose={() => {
+                  setShowAudioDialog(false);
+                  setAudioRequest(null);
+                }}
+                parsedRequest={audioRequest.parsed_request}
+                originalMessage={audioRequest.original_message}
+                availableReciters={audioRequest.available_reciters || []}
+                wsRef={wsRef}
+              />
+            )}
+
+            {verseRequest && (
+              <QuranVerseDialog
+                isOpen={showQuranVerseDialog}
+                onClose={() => {
+                  setShowQuranVerseDialog(false);
+                  setVerseRequest(null);
+                }}
+                parsedRequest={verseRequest.parsed_request}
+                originalMessage={verseRequest.original_message}
+                wsRef={wsRef}
+                note={verseRequest.note}
+              />
+            )}
           </div>
           <div
             className={`w-full ${
