@@ -1,13 +1,12 @@
 import operator
 import os
 import requests
-from rapidfuzz import process, fuzz
 from data.data import surah_name_english_translation_array, surah_name_english_array
 from agents import function_tool
 from pydantic import BaseModel
 from typing import Optional
-from qdrant_client import QdrantClient, models
-
+from qdrant_client import QdrantClient
+from tools.utils import normalize_surah
 # ===================== QDRANT & EMBEDDING SETUP =====================
 
 qdrant = QdrantClient(
@@ -20,28 +19,6 @@ COLLECTION_NAME = "Quran-Dataset-Collection"
 EMBEDDING_MODEL = "fireworks/qwen3-embedding-8b"
 
 # {'number': 1, 'text': 'In the name of God, The Most Gracious, The Dispenser of Grace:', 'numberInSurah': 1, 'juz': 1, 'manzil': 1, 'page': 1, 'ruku': 1, 'hizbQuarter': 1, 'sajda': False}, {'number': 2, 'text': 'All praise is due to God alone, the Sustainer of all the worlds,', 'numberInSurah': 2, 'juz': 1, 'manzil': 1, 'page': 1, 'ruku': 1, 'hizbQuarter': 1, 'sajda': False
-
-def normalize_surah(name:str, array:list) -> str | None:
-    """
-    Converts user-provided surah name → canonical surah name using fuzzy match.
-    Returns None if input is empty or extremely unclear.
-    """
-
-    if not name:
-        return None
-
-    name = name.strip().lower()
-    best, score,_ = process.extractOne(
-        name,
-        array,
-        scorer = fuzz.WRatio
-    )
-
-    if score < 65:
-        
-        return None
-    
-    return best
 
 
 class SurahFilter(BaseModel):

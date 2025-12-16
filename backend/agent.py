@@ -5,6 +5,7 @@ from tafseer_agent import Tafsir_Agent
 from tools.search_Quran_By_Filters import Search_Quran_By_filters
 from tools.search_Quran_By_Semantics import Quran_Search_By_Semantics
 from data.data import QuranMetaData, surah_name_english_array,surah_name_english_translation_array
+from tools.searchAsbabNuzul import searchAsbabNuzul 
 import pandas as pd
 from typing import Optional
 from dotenv import load_dotenv
@@ -221,6 +222,41 @@ agent = Agent(
 
         ## Tools
         
+        ### • searchAsbabNuzul
+        1. Use searchAsbabNuzul when user asks for queries related to Asbab_Nuzul/Shan_Nuzul (Circumstances of revelation)
+
+        ## Example Queries
+        1. What is the asbab e nuzul of surah Kafiroun?
+        2. What is the asbab e nuzul of Surah Fatiha verse 1?
+        3. What is the shan e nuzul of the surah which was revealed when the Prophet A.S was inflicted by magic?
+
+        ### Important Guidelines
+        1. When calling `searchAsbabNuzul`, pass **only the arguments explicitly mentioned by the user**. Leave all others as `None`.  
+        2. Do **not** infer metadata such as surah_number, verse_number, surahEnglishName, surahEnglishNameTranslation.  
+        3. If the user provides only surah and ayah numbers → pass **only those fields**.  
+
+        ### Examples of Tool Calls
+
+        - **User:** `"What is Asbab Nuzul of verse 5 of Surah Fatiha?"`  
+        **Tool call:**
+        ```json
+        {{
+            "args": {{
+                "surahEnglishName": "Al-Faatiha"
+                "verse_number": 5
+    
+        }},
+        User: "Shan e nuzul of verse in Surah Falaq which mentions harm caused by created things?"
+        Tool call:
+
+        {{
+            "args": {{
+                "englishName": "Al-Falaq"
+                "query": "Harm caused by created things",
+            }}
+        }},
+
+
         ### • Quran_Search_By_Semantics
         Use ONLY when the user asks queries related to Asbab Nuzul (circumstances of the revelation) and Tafseer*  
         (e.g., “give me tafsir of Surah Ikhlas”, "what was the Shan e Nuzul of Surah Ikhlas").
@@ -315,6 +351,7 @@ agent = Agent(
     # input_guardrails=[quran_input_guardrail],
     # output_guardrails=[quran_output_guardrail],
     tools=[
+        searchAsbabNuzul,
         Search_Quran_By_filters,
         Quran_Search_By_Semantics,
         story_agent.as_tool(

@@ -1,4 +1,5 @@
 # embedding asbab e nuzul for semantic and filter search
+from math import e
 import re
 import os
 import json
@@ -16,6 +17,16 @@ from qdrant_client.models import PointStruct
 load_dotenv(override=True)
 
 
+EMBEDDING_MODEL = "fireworks/qwen3-embedding-8b"
+fireworks_api_key = os.getenv('FIREWORKS_API_KEY') 
+QDRANT_API_KEY = os.getenv('QDRANT_API_KEY')
+QDRANT_URL = os.getenv('QDRANT_URL_ENDPOINT')
+
+print("QDRANT_API_KEY", QDRANT_API_KEY)
+print("QDRANT_URL", QDRANT_URL)
+# breakpoint()
+
+qdrant = QdrantClient(url=QDRANT_URL, api_key = QDRANT_API_KEY, timeout=120)
 pdf_path = r"C:\Users\anas_\Downloads\Asbab Al-Nuzul by Al-Wahidi.pdf"
 
 reader = PyPDF2.PdfReader(pdf_path)
@@ -133,64 +144,107 @@ structured_llm = llm.with_structured_output(AllSurahSchema, method = "json_mode"
 
 chain  = prompt | structured_llm
 
-
-pattern = r'\[\s*(\d+)\s*:\s*(\d+)\s*\]'
-EMBEDDING_MODEL = "fireworks/qwen3-embedding-8b"
-fireworks_api_key = os.getenv('FIREWORKS_API_KEY') 
-QDRANT_URL = os.getenv('QDRANT_URL_ENDPOINT')
-QDRANT_API_KEY = os.getenv('QDRANT_API_KEY')
-
-qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=120)
+pattern = r'\[\s*(\d+)\s*:\s*(\d+(?:-\d+)?)\s*\]\s*$'
 vector_embeddings_array = []
-
 embeddings = FireworksEmbeddings(
   api_key=os.getenv('FIREWORKS_API_KEY'),
   model = EMBEDDING_MODEL
 )
 
-# asbab_nuzul_array = [verse['asbab_nuzul'] for verse in structured_data]
-# embeddings_array = embeddings.embed_documents(asbab_nuzul_array)
+# full_text = ""
+# for i, page in enumerate(reader.pages[15:], start = 15):
+#   page_text = page.extract_text()
+#   full_text += page_text
 
-# print("Length of embeddings array", len(embeddings_array))
 
-# points = []
+# tracker = None
+# new_match_array = []
+# matches = list(re.finditer(pattern, full_text, flags=re.MULTILINE))
+# for i,match in enumerate(matches):
+
+#   if match.group() != tracker:
+#     start = match.start()
+#     end = match.end()
+#     tracker = match.group()
+#     new_match_array.append({'heading': tracker, 'start': start, 'end': end})
+#   tracker = match.group()
+  
+# for i, match in enumerate(new_match_array):
+#   if i != (len(new_match_array) - 1):
+#     match['asbab_nuzul'] = full_text[match['end']: new_match_array[i+1]['start']]
+#   else:
+#     match['asbab_nuzul'] = full_text[match['end']: ]
+# print("matches", new_match_array)
+
+# count = 0
+# pattern = r'\[\s*(\d+)\s*:\s*(\d+)\s*\]\s*'
+# data = []
 # for i, verse in enumerate(structured_data):
+#   match = re.fullmatch(pattern, verse['heading'])
+#   if match:
+#     surah_number = int(match.group(1))
+#     verse_number = int(match.group(2))
+#     data.append({"surah_number": surah_number, "verse_number": verse_number, "asbab_nuzul": verse['asbab_nuzul']})    
+#   else:
+#     pass
+#   #   data.append({"surah_number" : surah_number, "asbab_nuzul": verse['asbab_nuzul'], "verse_number": i})
+# for i,verse in enumerate(structured_data):
+#   verse['reference'] = "Asbāb al-Nuzūl"
+#   verse["book_author"] = "Alī ibn Ahmad al-Wāhidī"
 
-#   print(f"Appending point {i+1} to points array")
-#   points.append(models.PointStruct(id = i + 1, vector = {"verse-dense-vector": embeddings_array[i]}, payload = {"surah_number": verse['surah_number'], "verse_number": verse['verse_number'], "surah_englishName": verse['surah_englishName'], "surah_englishNameTranslation": verse['surah_englishNameTranslation']}))
-#   print(f"Vector number {i+1} {embeddings_array[i]}")
+# with open("extra.txt", "w", encoding = 'utf-8') as f:
+#   f.write(json.dumps(structured_data, indent = 2, ensure_ascii = False))
+
+asbab_nuzul_array = [verse['asbab_nuzul'] for verse in structured_data]
+embeddings_array = embeddings.embed_documents(asbab_nuzul_array)
+
+print("Length of embeddings array", len(embeddings_array))
+
+points = []
+for i, verse in enumerate(structured_data):
+
+  print(f"Appending point {i+1} to points array")
+  points.append(models.PointStruct(id = i + 1, vector = {"verse-dense-vector": embeddings_array[i]}, payload = {"surah_number": verse['surah_number'], "verse_number": verse['verse_number'], "asbab_nuzul" :verse['asbab_nuzul'], "surah_englishName": verse['surah_englishName'], "surah_englishNameTranslation": verse['surah_englishNameTranslation'], "reference": verse['reference'], "book_author": verse['book_author']}))
 
 
+# upsert the point in the Asbab e nuzul collection
+operation_info  = qdrant.upsert(
+  collection_name = "Asbab_Nuzul",
+  wait = True,
+  points = points
+)
 
-# # upsert the point in the Asbab e nuzul collection
-# operation_info  = qdrant.upsert(
-#   collection_name = "Asbab_Nuzul",
-#   wait = True,
-#   points = points
-# )
-
-# # verify count of points in the collection
-# count = qdrant.count(collection_name="Asbab_Nuzul").count
+print('All points upserted successfully!')
+# verify count of points in the collection
+count = qdrant.count(collection_name="Asbab_Nuzul").count
 
 
-# index_schema = [
-#   {'field_name': "surah_englishName", "field_schema" : "keyword"},
-#   {'field_name': "surah_number", "field_schema" : "integer"},
-#   {'field_name': "verse_number", "field_schema" : "integer"},
-#   {'field_name': "surah_englishNameTranslation", "field_schema" : "keyword"}
-# ]
+index_schema = [
+  {'field_name': "surah_englishName", "field_schema" : "keyword"},
+  {'field_name': "surah_number", "field_schema" : "integer"},
+  {'field_name': "verse_number", "field_schema" : "integer"},
+  {'field_name': "asbab_nuzul", "field_schema" : "keyword"},
+  {'field_name': "surah_englishNameTranslation", "field_schema" : "keyword"},
+  {'field_name': "reference", "field_schema" : "keyword"},
+  {'field_name': "book_author", "field_schema" : "keyword"}
+]
 
-# for i, schema in enumerate(index_schema):
-#   print(f"Field name {schema['field_name']} with schema {schema['field_schema']}")
-#   qdrant.create_payload_index(
-#     collection_name = "Asbab_Nuzul",
-#     field_name = schema['field_name'],
-#     field_schema = schema['field_schema']
-#   )
-# print('All indexes created successfully!')
+for i, schema in enumerate(index_schema):
+  print(f"Field name {schema['field_name']} with schema {schema['field_schema']}")
+  qdrant.create_payload_index(
+    collection_name = "Asbab_Nuzul",
+    field_name = schema['field_name'],
+    field_schema = schema['field_schema']
+  )
+print('All indexes created successfully!')
+
+
+embedding_query = embeddings.embed_query("Patience, Preservance and Honesty")
 
 qdrant_response = qdrant.query_points(
   collection_name = "Asbab_Nuzul",
+  query = embedding_query,
+  using = 'verse-dense-vector',
   query_filter = models.Filter(
     must=[
       models.FieldCondition(

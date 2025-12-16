@@ -578,11 +578,7 @@ async def websocket_chat(websocket: WebSocket):
 
             logger.info(f"[{current_agent_name}] Session: {session_id} | Message: {latest_message[:50]} ...")
 
-
             run_result = None
-
-
-
 
             conversation = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
             logger.info(f"[{current_agent_name}] Processing with model: {session_model_key}")
@@ -601,14 +597,13 @@ async def websocket_chat(websocket: WebSocket):
                 #     "content": "Thinking deeply about your question..."
                 # })
 
-
+                print("Conversation", conversation)
                 run_result = Runner.run_streamed(
                     active_agent,
                     conversation,
                     run_config=dynamic_config,
                     session= current_session
                 )
-
 
                 final_text = ""  # Will collect all visible text
 
