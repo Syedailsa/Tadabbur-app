@@ -12,9 +12,9 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Print for debugging (remove in production)
 if DATABASE_URL:
-    print(f"✅ DATABASE_URL loaded: {DATABASE_URL[:30]}...")
+    print(f"DATABASE_URL loaded: {DATABASE_URL[:30]}...")
 else:
-    print("❌ DATABASE_URL not found!")
+    print("DATABASE_URL not found!")
 
 
 # Global connection pool
@@ -28,7 +28,7 @@ async def init_db_pool():
     global db_pool
     
     if not DATABASE_URL:
-        print("⚠️ WARNING: DATABASE_URL not found in .env file!")
+        print("WARNING: DATABASE_URL not found in .env file!")
         print("PostgreSQL features will be disabled.")
         return
     print(f"Attempting to connect to: {DATABASE_URL.replace(DATABASE_URL.split('@')[0].split(':')[-1], '****')}")  # Debug
@@ -41,13 +41,13 @@ async def init_db_pool():
             max_size=20,
             command_timeout=60
         )
-        print("✅ SUPABASE CONNECTED SUCCESSFULLY!" )
+        print("SUPABASE CONNECTED SUCCESSFULLY!" )
         
         # Create tables automatically
         await create_tables()
         
     except Exception as e:
-        print(f"❌❌ FAILED TO CONNECT SUPABASE: {e}")
+        print(f"FAILED TO CONNECT SUPABASE: {e}")
         print("Check your DATABASE_URL and internet connection")
         db_pool = None
 
@@ -56,7 +56,7 @@ async def close_db_pool():
     global db_pool
     if db_pool:
         await db_pool.close()
-        print("❌ Database pool closed")
+        print("Database pool closed")
 
 @asynccontextmanager
 async def get_db_connection():
@@ -84,7 +84,7 @@ async def create_tables():
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 user_id TEXT UNIQUE NOT NULL,
-                username TEXT UNIQUE NOT NULL,
+                firstname TEXT UNIQUE NOT NULL,
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
 
@@ -98,9 +98,20 @@ async def create_tables():
 
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
-            
+
             )
         """)
+
+        # Add missing columns if they don't exist
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS firstname TEXT UNIQUE;")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name TEXT;")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth DATE;")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT;")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_number TEXT;")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT;")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_picture TEXT;")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();")
         
         # GOOGLE USERS TABLE (OAuth authentication)
         await conn.execute("""
@@ -109,11 +120,14 @@ async def create_tables():
                 user_id TEXT UNIQUE NOT NULL,
                 google_id TEXT UNIQUE NOT NULL,
                 email TEXT UNIQUE NOT NULL,
-                username TEXT,
+                firstname TEXT,
                 profile_picture TEXT,
                 created_at TIMESTAMP DEFAULT NOW()
             )
         """)
+
+        # Add missing columns if they don't exist for google_users
+        await conn.execute("ALTER TABLE google_users ADD COLUMN IF NOT EXISTS firstname TEXT;")
         
         # AUTH TOKENS TABLE
         await conn.execute("""
@@ -151,15 +165,14 @@ async def create_tables():
                 id SERIAL PRIMARY KEY,
                 bookmark_id TEXT UNIQUE NOT NULL,
                 user_id TEXT NOT NULL,
-                item_id TEXT NOT NULL,
-                type TEXT NOT NULL,
-                
-                surah_name TEXT NOT NULL,
+
+                surah_name_eng TEXT NOT NULL,
+                surah_name_arb TEXT NOT NULL,
                 surah_no INTEGER NOT NULL,
                 ayah_no INTEGER NOT NULL,
                 total_ayah INTEGER NOT NULL,
                 ayah TEXT NOT NULL,
-                
+
                 created_at TIMESTAMP DEFAULT NOW(),
                 UNIQUE(user_id, surah_no, ayah_no)
             )
@@ -234,9 +247,9 @@ async def create_tables():
             ON recent_reflections(user_id)
         """)
 
-        print("✅ All PostgreSQL tables created/verified (including new tables)")
-                
-        print("✅ All PostgreSQL tables created/verified")
+        print("All PostgreSQL tables created/verified (including new tables)")
+
+        print("All PostgreSQL tables created/verified")
 
 # Helper functions for quick queries
 async def execute_query(query: str, *args):
