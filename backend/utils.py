@@ -36,12 +36,12 @@ def verify_password(password: str, hashed: str) -> bool:
 
 # ==================== JWT TOKEN MANAGEMENT ====================
 
-def create_access_token(user_id: str, username: str) -> str:
+def create_access_token(user_id: str, firstname: str) -> str:
     """Create JWT access token"""
     expire = datetime.utcnow() + timedelta(hours=TOKEN_EXPIRE_HOURS)
     payload = {
         "user_id": user_id,
-        "username": username,
+        "firstname": firstname,
         "exp": expire,
         "iat": datetime.utcnow()
     }

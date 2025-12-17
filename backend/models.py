@@ -7,14 +7,14 @@ from datetime import datetime, date
 # ==================== AUTH MODELS ====================
 
 class SignupRequest(BaseModel):
-    username: str = Field(..., min_length=3, max_length=50)
+    firstname: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
     password: str = Field(..., min_length=8)
-    
-    @validator('username')
-    def username_alphanumeric(cls, v):
+
+    @validator('firstname')
+    def firstname_alphanumeric(cls, v):
         if not v.replace('_', '').isalnum():
-            raise ValueError('Username must be alphanumeric')
+            raise ValueError('Firstname must be alphanumeric')
         return v
 
 class LoginRequest(BaseModel):
@@ -29,7 +29,7 @@ class AuthResponse(BaseModel):
     message: str
     loginTime: datetime
     user_id: str
-    username: str
+    firstname: str
 
 # ==================== NOTIFICATION MODELS ====================
 
@@ -48,9 +48,8 @@ class NotificationResponse(BaseModel):
 # ==================== BOOKMARK MODELS ====================
 
 class BookmarkCreate(BaseModel):
-    itemId: str
-    type: str = Field(..., description="e.g., 'ayah', 'story', 'tafsir'")
-    surah_name: str = Field(..., description="Surah name in English")
+    surah_name_eng: str = Field(..., description="Surah name in English")
+    surah_name_arb: str = Field(..., description="Surah name in Arabic")
     surah_no: int = Field(..., ge=1, le=114, description="Surah number (1-114)")
     ayah_no: int = Field(..., ge=1, description="Ayah number")
     total_ayah: int = Field(..., ge=1, description="Total ayahs in surah")
@@ -63,32 +62,36 @@ class BookmarkResponse(BaseModel):
 
 class BookmarkItem(BaseModel):
     bookmarkId: str
-    itemId: str
-    type: str
-    surahName: str
+    surahNameEng: str
+    surahNameArb: str
     surahNo: int
     ayahNo: int
     totalAyah: int
     ayah: str
     time: datetime
+
+class BookmarkDeleteRequest(BaseModel):
+    bookmarkId: str
     
 # ==================== USER PROFILE MODELS ====================
 
 class ProfileUpdate(BaseModel):
     """Update profile with specific fields only"""
-    username: Optional[str] = Field(None, min_length=3, max_length=50)
+    firstname: Optional[str] = Field(None, min_length=3, max_length=50)
+    lastName: Optional[str] = None
+    dateofBirth: Optional[date] = None
+    address: Optional[str] = None
+    phoneNumber: Optional[str] = Field(None, alias="contact")   # Accept 'contact' in request
     email: Optional[EmailStr] = None
     profilePicture: Optional[str] = Field(None, alias="image")  # Accept 'image' in request
-    phoneNumber: Optional[str] = Field(None, alias="contact")   # Accept 'contact' in request
-    dateofBirth: Optional[date] = None
-    gender: Optional[Literal["Male", "Female", "Other"]] = None
-    
+    bio: Optional[str] = None
+
     class Config:
         populate_by_name = True
 
 class UserProfile(BaseModel):
     id: str
-    username: str
+    firstname: str
     email: str
     profilePicture: Optional[str] = None
     bio: Optional[str] = None
@@ -100,13 +103,14 @@ class UserProfile(BaseModel):
     createdAt: datetime
 
 class EditProfileRequest(BaseModel):
-    """Edit Profile - Only these 6 fields"""
+    """Edit Profile - Fields that can be updated"""
     email: Optional[EmailStr] = None
     image: Optional[str] = Field(None, description="Profile picture URL")
-    username: Optional[str] = Field(None, min_length=3, max_length=50)
+    firstname: Optional[str] = Field(None, min_length=3, max_length=50)
     contact: Optional[str] = Field(None, description="Phone number")
     dateOfBirth: Optional[date] = None
     gender: Optional[Literal["Male", "Female", "Other"]] = None
+    bio: Optional[str] = Field(None, description="User bio")
 
 class EditProfileResponse(BaseModel):
     message: str
