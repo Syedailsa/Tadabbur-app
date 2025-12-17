@@ -7,6 +7,7 @@ import rehypeRaw from "rehype-raw";
 import { ReactNode, useContext, useEffect, useRef, useState } from "react";
 import ChatProvider from "./providers/chatbot/ChatProvider";
 import DownArrow from "../icons/arrow-down-head.svg";
+
 import {
   motion,
   easeInOut,
@@ -38,6 +39,10 @@ export default function ChatPage() {
     | null
   >(null);
 
+  [
+    { role: "user", content: "loremipsum34" },
+    { role: "assistant", content: "loremipsum34 " },
+  ];
   const inputRef = useRef<HTMLDivElement | null>(null);
   const [showPlaceholder, setShowPlaceholder] = useState<boolean | null>(true);
   const [greeting, setGreeting] = useState<string | null>(
@@ -55,16 +60,23 @@ export default function ChatPage() {
   const [streamingMessageIndex, setStreamingMessageIndex] = useState<
     number | null
   >(null);
+
+  const [showAudioDialog, setShowAudioDialog] = useState(false);
+  const [audioRequest, setAudioRequest] = useState<any>(null);
+
+  const [showQuranVerseDialog, setShowQuranVerseDialog] = useState(false);
+  const [verseRequest, setVerseRequest] = useState<any>(null);
+
+  const [showQuranPlayer, setShowQuranPlayer] = useState(false);
   const [chatHistory, setChatHistory] = useState<ChatRecord[] | null>(null);
   const messageScrollFlag = useRef<boolean | null>(false);
-
-  // --- ADDED: Track the last speech chunk to handle replacements ---
-  const lastSpeechRef = useRef<string>("");
-
-  // --- CHANGED: Track committed text (Final) vs Streaming text (Chunk) ---
-  const committedTextRef = useRef<string>("");
-
   const controls = useAnimationControls();
+
+  function preprocessContent(content: string) {
+    if (!content) return "";
+    // handles both colons (:) and periods (.)
+    return content.replace(/(\.|:)\s+(\d+\.)/g, "$1\n\n\n$2");
+  }
 
   function chunkText(text: string, size = 4) {
     const words = text.split(/\s+/);
@@ -76,40 +88,8 @@ export default function ChatPage() {
     return chunks;
   }
 
-  // --- Listen for Mic Start to reset Memory ---
   useEffect(() => {
-    const handleMicStart = () => {
-      // When mic restarts, assume current input is "committed" manually by user typing
-      if (inputRef.current) {
-        committedTextRef.current = inputRef.current.innerText.trim() + " ";
-      } else {
-        committedTextRef.current = "";
-      }
-    };
-    window.addEventListener("tadabbur-mic-start", handleMicStart);
-    return () =>
-      window.removeEventListener("tadabbur-mic-start", handleMicStart);
-  }, []);
-
-  const updateInputDisplay = (tempText: string) => {
-    if (inputRef.current) {
-      inputRef.current.innerText = committedTextRef.current + tempText;
-
-      // Move cursor to end
-      const range = document.createRange();
-      const sel = window.getSelection();
-      if (inputRef.current.lastChild) {
-        range.selectNodeContents(inputRef.current);
-        range.collapse(false);
-        sel?.removeAllRanges();
-        sel?.addRange(range);
-      }
-      setShowPlaceholder(false);
-    }
-  };
-
-  useEffect(() => {
-    const websocket = new WebSocket("ws://localhost:8000/ws/chat");
+    const websocket = new WebSocket("ws://localhost:9000/ws/chat");
     wsRef.current = websocket;
 
     wsRef.current.onopen = () => {
@@ -134,20 +114,31 @@ export default function ChatPage() {
 
     wsRef.current.onmessage = (event) => {
       const data = JSON.parse(event.data);
-
       console.log("Data from websocket", event.data);
 
       const type = data.type;
       switch (type) {
-        // --- CASE 1: PARTIAL CHUNK (Update only the end) ---
-        case "stt_chunk":
-          updateInputDisplay(data.text);
+        case "open_audio_dialog":
+          // This is triggered when user asks to listen to Quran
+          setAudioRequest({
+            parsed_request: data.parsed_request,
+            original_message: data.original_message,
+            available_reciters: data.available_reciters,
+            note: data.note || null,
+          });
+          setShowAudioDialog(true);
           break;
 
-        // --- CASE 2: FINAL SENTENCE (Commit it) ---
-        case "stt_final":
-          committedTextRef.current += data.text + " ";
-          updateInputDisplay("");
+        case "open_verse_dialog":
+          setVerseRequest({
+            parsed_request: data.parsed_request,
+            original_message: data.original_message,
+            note: data.note || null,
+          });
+          setShowQuranVerseDialog(true);
+          break;
+
+        case "audio_response":
           break;
 
         case "session_id":
@@ -190,9 +181,6 @@ export default function ChatPage() {
         case "assistance_response":
           const reply: string = data.content ?? "No reply from server";
           setLoadingMessage(null);
-
-          // Clear speech buffer when assistant replies
-          committedTextRef.current = "";
 
           const chunk_array = chunkText(reply, 4); // 4 words per chunk
 
@@ -512,6 +500,98 @@ export default function ChatPage() {
                             <ReactMarkdown
                               remarkPlugins={[remarkGfm]}
                               rehypePlugins={[rehypeRaw]}
+                              components={{
+                                // HEADERS
+                                h1: ({ node, ...props }) => (
+                                  <h1
+                                    className="text-3xl font-bold"
+                                    {...props}
+                                  />
+                                ),
+                                h2: ({ node, ...props }) => (
+                                  <h2
+                                    className="text-2xl font-semibold"
+                                    {...props}
+                                  />
+                                ),
+                                h3: ({ node, ...props }) => (
+                                  <h3
+                                    className="text-xl font-semibold"
+                                    {...props}
+                                  />
+                                ),
+
+                                // PARAGRAPH
+                                p: ({ node, ...props }) => (
+                                  <p
+                                    className="leading-7 my-2 text-gray-800"
+                                    {...props}
+                                  />
+                                ),
+
+                                // STRONG ( **bold** )
+                                strong: ({ node, ...props }) => (
+                                  <strong
+                                    className="font-bold text-black"
+                                    {...props}
+                                  />
+                                ),
+
+                                // EMPHASIS ( *italic* )
+                                em: ({ node, ...props }) => (
+                                  <em
+                                    className="italic text-gray-700"
+                                    {...props}
+                                  />
+                                ),
+
+                                // LINE BREAK
+                                br: ({ node, ...props }) => <br />,
+
+                                // LINKS
+                                a: ({ node, ...props }) => (
+                                  <a
+                                    className="text-blue-600 underline"
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    {...props}
+                                  />
+                                ),
+
+                                // LISTS
+                                ul: ({ node, ...props }) => (
+                                  <ul className="list-disc pl-6" {...props} />
+                                ),
+                                ol: ({ node, ...props }) => (
+                                  <ol
+                                    className="list-decimal pl-6"
+                                    {...props}
+                                  />
+                                ),
+                                li: ({ node, ...props }) => (
+                                  <li className="my-1" {...props} />
+                                ),
+                                blockquote: ({ node, ...props }) => (
+                                  <blockquote
+                                    className="border-l-4 border-gray-400 pl-4 italic my-3"
+                                    {...props}
+                                  />
+                                ),
+
+                                // HORIZONTAL RULE
+                                hr: () => (
+                                  <hr className="my-4 border-gray-300" />
+                                ),
+
+                                // IMAGES
+                                img: ({ node, ...props }) => (
+                                  <img
+                                    className="rounded-md my-2"
+                                    alt=""
+                                    {...props}
+                                  />
+                                ),
+                              }}
                             >
                               {message.content}
                             </ReactMarkdown>
