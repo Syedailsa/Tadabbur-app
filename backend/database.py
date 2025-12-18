@@ -31,7 +31,6 @@ async def init_db_pool():
         print("WARNING: DATABASE_URL not found in .env file!")
         print("PostgreSQL features will be disabled.")
         return
-    print("DATABASE_URL", DATABASE_URL)
     print(f"Attempting to connect to: {DATABASE_URL.replace(DATABASE_URL.split('@')[0].split(':')[-1], '****')}")  # Debug
 
     
@@ -237,8 +236,7 @@ async def create_tables():
                 total_ayah INTEGER NOT NULL,
                 last_ayah_read INTEGER,
                 last_read_at TIMESTAMP DEFAULT NOW(),
-                created_at TIMESTAMP DEFAULT NOW(),
-                UNIQUE(user_id)
+                created_at TIMESTAMP DEFAULT NOW()
             )
         """)
 

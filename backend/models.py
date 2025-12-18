@@ -93,7 +93,7 @@ class UserProfile(BaseModel):
     id: str
     firstname: str
     email: str
-    profilePicture: Optional[str] = None
+    profilePicture: Optional[str] = Field(None, alias= "image")
     bio: Optional[str] = None
     lastName: Optional[str] = None
     dateofBirth: Optional[date] = None
@@ -107,6 +107,7 @@ class EditProfileRequest(BaseModel):
     email: Optional[EmailStr] = None
     image: Optional[str] = Field(None, description="Profile picture URL")
     firstname: Optional[str] = Field(None, min_length=3, max_length=50)
+    last_name: Optional[str] = Field(None, min_length=3, max_length=50)
     contact: Optional[str] = Field(None, description="Phone number")
     dateOfBirth: Optional[date] = None
     gender: Optional[Literal["Male", "Female", "Other"]] = None

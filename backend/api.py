@@ -304,7 +304,7 @@ async def get_my_profile(user: dict = Depends(get_current_user)):
                 user_id as id,
                 firstname,
                 email,
-                profile_picture as "profilePicture",
+                profile_picture as "image",
                 NULL as bio,
                 created_at as "createdAt",
                 NULL as "lastName",
@@ -323,7 +323,7 @@ async def get_my_profile(user: dict = Depends(get_current_user)):
                     user_id as id,
                     firstname,
                     email,
-                    profile_picture as "profilePicture",
+                    profile_picture as "image",
                     bio,
                     created_at as "createdAt",
                     last_name as "lastName",
@@ -338,6 +338,7 @@ async def get_my_profile(user: dict = Depends(get_current_user)):
         if not profile:
             raise HTTPException(status_code=404, detail="Profile not found")
 
+    print("Profile", profile)
     return dict(profile)
 
 
@@ -427,6 +428,12 @@ async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current
                 updates.append(f"firstname = ${len(values) + 1}")
                 values.append(req.firstname)
                 updated_fields.append("firstname")
+
+            # 2. lastname
+            if req.last_name:
+                updates.append(f"last_name = ${len(values) + 1}")
+                values.append(req.last_name)
+                updated_fields.append("last_name")
 
             # 3. IMAGE
             if req.image:

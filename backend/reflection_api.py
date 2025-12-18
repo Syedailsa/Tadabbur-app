@@ -50,11 +50,11 @@ async def save_recent_reflection(
     user: dict = Depends(get_current_user)
 ):
     """
-    Save last read position
-    
+    Save reflection (append-only)
+
     Headers:
         Authorization: Bearer {token}
-    
+
     Body:
         surah_name_eng: Al-Fatihah
         surah_name_arabic: الفاتحة
@@ -63,59 +63,36 @@ async def save_recent_reflection(
         last_ayah_read: 5
     """
     async with get_db_connection() as conn:
-        existing = await conn.fetchrow("""
-            SELECT reflection_id 
-            FROM recent_reflections 
-            WHERE user_id = $1
-        """, user['user_id'])
-        
-        reflection_id = existing['reflection_id'] if existing else generate_reflection_id()
+        reflection_id = generate_reflection_id()
         current_time = datetime.utcnow()
-        
-        if existing:
-            # Update existing
-            await conn.execute("""
-                UPDATE recent_reflections 
-                SET surah_name_eng = $1,
-                    surah_name_arabic = $2,
-                    surah_no = $3,
-                    total_ayah = $4,
-                    last_ayah_read = $5,
-                    last_read_at = $6
-                WHERE user_id = $7
-            """, 
-                req.surah_name_eng,
-                req.surah_name_arabic,
-                req.surah_no,
-                req.total_ayah,
-                req.last_ayah_read,
-                current_time,
-                user['user_id']
-            )
-            message = "Last read position updated successfully"
-        else:
-            # Create new
-            await conn.execute("""
-                INSERT INTO recent_reflections (
-                    reflection_id, user_id, surah_name_eng, surah_name_arabic,
-                    surah_no, total_ayah, last_ayah_read, last_read_at, created_at
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            """,
+
+        await conn.execute("""
+            INSERT INTO recent_reflections (
                 reflection_id,
-                user['user_id'],
-                req.surah_name_eng,
-                req.surah_name_arabic,
-                req.surah_no,
-                req.total_ayah,
-                req.last_ayah_read,
-                current_time,
-                current_time
+                user_id,
+                surah_name_eng,
+                surah_name_arabic,
+                surah_no,
+                total_ayah,
+                last_ayah_read,
+                last_read_at,
+                created_at
             )
-            message = "Last read position saved successfully"
-        
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        """,
+            reflection_id,
+            user["user_id"],
+            req.surah_name_eng,
+            req.surah_name_arabic,
+            req.surah_no,
+            req.total_ayah,
+            req.last_ayah_read,
+            current_time,
+            current_time
+        )
+
         return SaveResponse(
-            message=message,
+            message="Reflection saved successfully",
             status="success",
             reflection_id=reflection_id,
             timestamp=current_time
