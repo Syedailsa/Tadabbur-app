@@ -165,7 +165,7 @@ async def create_tables():
                 id SERIAL PRIMARY KEY,
                 bookmark_id TEXT UNIQUE NOT NULL,
                 user_id TEXT NOT NULL,
-
+                type TEXT NOT NULL, 
                 surah_name_eng TEXT NOT NULL,
                 surah_name_arb TEXT NOT NULL,
                 surah_no INTEGER NOT NULL,

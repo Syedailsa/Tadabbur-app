@@ -49,6 +49,7 @@ class NotificationResponse(BaseModel):
 
 class BookmarkCreate(BaseModel):
     surah_name_eng: str = Field(..., description="Surah name in English")
+    type: Literal["surah", "story"] =  Field(..., description="Type of bookmark: 'surah' or 'story'")
     surah_name_arb: str = Field(..., description="Surah name in Arabic")
     surah_no: int = Field(..., ge=1, le=114, description="Surah number (1-114)")
     ayah_no: int = Field(..., ge=1, description="Ayah number")
@@ -65,6 +66,7 @@ class BookmarkItem(BaseModel):
     surahNameEng: str
     surahNameArb: str
     surahNo: int
+    type: Literal["surah", "story"]
     ayahNo: int
     totalAyah: int
     ayah: str
