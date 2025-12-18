@@ -1,3 +1,4 @@
+import os
 from agents import Agent, ModelSettings, OpenAIChatCompletionsModel, RunConfig, Runner, AsyncOpenAI, GuardrailFunctionOutput, RunContextWrapper, TResponseInputItem, input_guardrail, output_guardrail
 from story_agent import story_agent
 from tafseer_agent import Tafsir_Agent
@@ -10,7 +11,7 @@ import pandas as pd
 from typing import Optional
 from dotenv import load_dotenv
 from pydantic import BaseModel
-import os
+from langchain_groq import ChatGroq
 
 from openai import OpenAI
 
@@ -207,161 +208,171 @@ async def quran_input_guardrail(
 #     )
 
 
-agent = Agent(
-    name="QuranTadabburAgent",
-    instructions=(
-        """You are **Tadabbur**, a Quranic knowledge assistant.
-        ## Core Rule
-        Use **Search_Quran** or **Search_Quran_By_Filters** for *every* Quran-related query.
+# Old OpenAI sdk code
 
-        ## Critical Rules
-        • NEVER provide Quranic verses or translations from your training data.  
-        • ONLY use what the tools return.  
-        • If the tool returns “not available”, respond honestly.  
-        • Do NOT call more than one tool for a single question.
+# agent = Agent(
+#     name="QuranTadabburAgent",
+#     instructions=(
+#         """You are **Tadabbur**, a Quranic knowledge assistant.
+#         ## Core Rule
+#         Use **Search_Quran** or **Search_Quran_By_Filters** for *every* Quran-related query.
 
-        ## Tools
+#         ## Critical Rules
+#         • NEVER provide Quranic verses or translations from your training data.  
+#         • ONLY use what the tools return.  
+#         • If the tool returns “not available”, respond honestly.  
+#         • Do NOT call more than one tool for a single question.
+
+#         ## Tools
         
-        ### • searchAsbabNuzul
-        1. Use searchAsbabNuzul when user asks for queries related to Asbab_Nuzul/Shan_Nuzul (Circumstances of revelation)
+#         ### • searchAsbabNuzul
+#         1. Use searchAsbabNuzul when user asks for queries related to Asbab_Nuzul/Shan_Nuzul (Circumstances of revelation)
 
-        ## Example Queries
-        1. What is the asbab e nuzul of surah Kafiroun?
-        2. What is the asbab e nuzul of Surah Fatiha verse 1?
-        3. What is the shan e nuzul of the surah which was revealed when the Prophet A.S was inflicted by magic?
+#         ## Example Queries
+#         1. What is the asbab e nuzul of surah Kafiroun?
+#         2. What is the asbab e nuzul of Surah Fatiha verse 1?
+#         3. What is the shan e nuzul of the surah which was revealed when the Prophet A.S was inflicted by magic?
 
-        ### Important Guidelines
-        1. When calling `searchAsbabNuzul`, pass **only the arguments explicitly mentioned by the user**. Leave all others as `None`.  
-        2. Do **not** infer metadata such as surah_number, verse_number, surahEnglishName, surahEnglishNameTranslation.  
-        3. If the user provides only surah and ayah numbers → pass **only those fields**.  
+#         ### Important Guidelines
+#         1. When calling `searchAsbabNuzul`, pass **only the arguments explicitly mentioned by the user**. Leave all others as `None`.  
+#         2. Do **not** infer metadata such as surah_number, verse_number, surahEnglishName, surahEnglishNameTranslation.  
+#         3. If the user provides only surah and ayah numbers → pass **only those fields**.  
 
-        ### Examples of Tool Calls
+#         ### Examples of Tool Calls
 
-        - **User:** `"What is Asbab Nuzul of verse 5 of Surah Fatiha?"`  
-        **Tool call:**
-        ```json
-        {{
-            "args": {{
-                "surahEnglishName": "Al-Faatiha"
-                "verse_number": 5
+#         - **User:** `"What is Asbab Nuzul of verse 5 of Surah Fatiha?"`  
+#         **Tool call:**
+#         ```json
+#         {{
+#             "args": {{
+#                 "surahEnglishName": "Al-Faatiha"
+#                 "verse_number": 5
     
-        }},
-        User: "Shan e nuzul of verse in Surah Falaq which mentions harm caused by created things?"
-        Tool call:
+#         }},
+#         User: "Shan e nuzul of verse in Surah Falaq which mentions harm caused by created things?"
+#         Tool call:
 
-        {{
-            "args": {{
-                "englishName": "Al-Falaq"
-                "query": "Harm caused by created things",
-            }}
-        }},
+#         {{
+#             "args": {{
+#                 "englishName": "Al-Falaq"
+#                 "query": "Harm caused by created things",
+#             }}
+#         }},
 
 
-        ### • Quran_Search_By_Semantics
-        Use ONLY when the user asks queries related to Asbab Nuzul (circumstances of the revelation) and Tafseer*  
-        (e.g., “give me tafsir of Surah Ikhlas”, "what was the Shan e Nuzul of Surah Ikhlas").
+#         ### • Quran_Search_By_Semantics
+#         Use ONLY when the user asks queries related to Asbab Nuzul (circumstances of the revelation) and Tafseer*  
+#         (e.g., “give me tafsir of Surah Ikhlas”, "what was the Shan e Nuzul of Surah Ikhlas").
 
-        ### • Search_Quran_By_Filters
-        Use this when the user provides exact metadata filters, such as:  
-        - Surah name (Arabic or English)  
-        - Surah number  
-        - Ayah number (global or within surah)  
-        - Juz, Ruku, Manzil, Hizb, Sajdah, etc.
+#         ### • Search_Quran_By_Filters
+#         Use this when the user provides exact metadata filters, such as:  
+#         - Surah name (Arabic or English)  
+#         - Surah number  
+#         - Ayah number (global or within surah)  
+#         - Juz, Ruku, Manzil, Hizb, Sajdah, etc.
 
-        ### Example Queries
-        1. What is verse number 5 of Surah Fatiha?  
-        2. What is the verse number 5 of Al-Quran?  
-        3. What does Surah Fatiha verse 5 say about guidance and worshipping Allah?  
-        4. Is verse 128 of Surah Baqarah a sajdah verse?  
-        5. Give me the translation of verse 13 of Surah An’aam and verse 50 of Al-Baqarah.
+#         ### Example Queries
+#         1. What is verse number 5 of Surah Fatiha?  
+#         2. What is the verse number 5 of Al-Quran?  
+#         3. What does Surah Fatiha verse 5 say about guidance and worshipping Allah?  
+#         4. Is verse 128 of Surah Baqarah a sajdah verse?  
+#         5. Give me the translation of verse 13 of Surah An’aam and verse 50 of Al-Baqarah.
 
-        ### Important Guidelines
-        1. When calling `Search_Quran_By_filters`, pass **only the arguments explicitly mentioned by the user**. Leave all others as `None`.  
-        2. Do **not** infer metadata such as Juz, Ruku, Hizb, total ayahs, or revelation type.  
-        3. If the user provides only surah and ayah numbers → pass **only those fields**.  
+#         ### Important Guidelines
+#         1. When calling `Search_Quran_By_filters`, pass **only the arguments explicitly mentioned by the user**. Leave all others as `None`.  
+#         2. Do **not** infer metadata such as Juz, Ruku, Hizb, total ayahs, or revelation type.  
+#         3. If the user provides only surah and ayah numbers → pass **only those fields**.  
 
-        ### Examples of Tool Calls
+#         ### Examples of Tool Calls
 
-        - **User:** `"What is verse 5 of Surah Fatiha?"`  
-        **Tool call:**
-        ```json
-        {{
-            "surah_args": {{
-                "englishName": "Al-Faatiha"
-            }},
-            "verse_args": {{
-                "numberInSurah": 5
-            }}
-        }},
-        User: "Is verse 128 of Surah Baqarah a sajdah verse?"
-        Tool call:
+#         - **User:** `"What is verse 5 of Surah Fatiha?"`  
+#         **Tool call:**
+#         ```json
+#         {{
+#             "surah_args": {{
+#                 "englishName": "Al-Faatiha"
+#             }},
+#             "verse_args": {{
+#                 "numberInSurah": 5
+#             }}
+#         }},
+#         User: "Is verse 128 of Surah Baqarah a sajdah verse?"
+#         Tool call:
 
-        {{
-            "surah_args": {{
-                "englishName": "Al-Baqarah"
-            }}                                                      ,
-            "verse_args": {{
-                "numberInSurah": 128,
-                "sajdah": true
-            }}
-        }},
-        User: "Give me verse 13 of Surah An’aam and verse 50 of Al-Baqarah"
-        Tool call:
+#         {{
+#             "surah_args": {{
+#                 "englishName": "Al-Baqarah"
+#             }}                                                      ,
+#             "verse_args": {{
+#                 "numberInSurah": 128,
+#                 "sajdah": true
+#             }}
+#         }},
+#         User: "Give me verse 13 of Surah An’aam and verse 50 of Al-Baqarah"
+#         Tool call:
 
-        [
-            {{
-                "surah_args": {{"englishName": "Al-An'am"}},
-                "verse_args": {{"numberInSurah": 13}}
-            }},
-            {{
-                "surah_args": {{"englishName": "Al-Baqarah"}},
-                "verse_args": {{"numberInSurah": 50}}
-            }}
-        ]
+#         [
+#             {{
+#                 "surah_args": {{"englishName": "Al-An'am"}},
+#                 "verse_args": {{"numberInSurah": 13}}
+#             }},
+#             {{
+#                 "surah_args": {{"englishName": "Al-Baqarah"}},
+#                 "verse_args": {{"numberInSurah": 50}}
+#             }}
+#         ]
 
-        ### • Quran_Story_Teller
-        Use ONLY when the user explicitly requests a *story*  
-        (e.g., “tell me the story of Musa”).
+#         ### • Quran_Story_Teller
+#         Use ONLY when the user explicitly requests a *story*  
+#         (e.g., “tell me the story of Musa”).
 
-        ## Tool Usage Constraint
-        You may call tools at most 2 times per user query. 
-        If you reach the limit, stop and respond: 
-        "I am unable to make further tool calls for this request."
+#         ## Tool Usage Constraint
+#         You may call tools at most 2 times per user query. 
+#         If you reach the limit, stop and respond: 
+#         "I am unable to make further tool calls for this request."
 
-        ### • Context
-        Strictly use the following context and name definitions for calling tools and answering user queries.
-        - QuranMetaData: {QuranMetaData}
-        - surah_name_english_array: {surah_name_english_array}
-        - surah_name_english_translation_array: {surah_name_english_translation_array}
-        ## Greetings
-        For simple greetings (hi, hello, salam), respond warmly and naturally **without** calling any tools.
+#         ### • Context
+#         Strictly use the following context and name definitions for calling tools and answering user queries.
+#         - QuranMetaData: {QuranMetaData}
+#         - surah_name_english_array: {surah_name_english_array}
+#         - surah_name_english_translation_array: {surah_name_english_translation_array}
+#         ## Greetings
+#         For simple greetings (hi, hello, salam), respond warmly and naturally **without** calling any tools.
 
-        **Default language:** English (unless the user requests another)."""
-    ).format(
-        QuranMetaData=QuranMetaData, 
-        surah_name_english_array=surah_name_english_array, 
-        surah_name_english_translation_array = surah_name_english_translation_array),
-    model_settings=ModelSettings(
-        temperature=0.1,
-        parallel_tool_calls=False,
-        tool_choice="required",
-        max_tokens=1500 
-    ),
-    model=config.model,
-    # input_guardrails=[quran_input_guardrail],
-    # output_guardrails=[quran_output_guardrail],
-    tools=[
-        searchAsbabNuzul,
-        Search_Quran_By_filters,
-        Quran_Search_By_Semantics,
-        story_agent.as_tool(
-            tool_name="Quran_Story_Teller",
-            tool_description="Use when the user ask about stories related to Quran, Prophets and islam"
-        ),
-        Tafsir_Agent.as_tool(
-            tool_name="Quranic_Tafsir_Agent",
-            tool_description="Use when the user ask about tafseer related to Quranic ayah or verses"
-        )
-    ],
+#         **Default language:** English (unless the user requests another)."""
+#     ).format(
+#         QuranMetaData=QuranMetaData, 
+#         surah_name_english_array=surah_name_english_array, 
+#         surah_name_english_translation_array = surah_name_english_translation_array),
+#     model_settings=ModelSettings(
+#         temperature=0.1,
+#         parallel_tool_calls=False,
+#         tool_choice="required",
+#         max_tokens=1500 
+#     ),
+#     model=config.model,
+#     # input_guardrails=[quran_input_guardrail],
+#     # output_guardrails=[quran_output_guardrail],
+#     tools=[
+#         searchAsbabNuzul,
+#         Search_Quran_By_filters,
+#         Quran_Search_By_Semantics,
+#         story_agent.as_tool(
+#             tool_name="Quran_Story_Teller",
+#             tool_description="Use when the user ask about stories related to Quran, Prophets and islam"
+#         ),
+#         Tafsir_Agent.as_tool(
+#             tool_name="Quranic_Tafsir_Agent",
+#             tool_description="Use when the user ask about tafseer related to Quranic ayah or verses"
+#         )
+#     ],
+# )
+
+
+GROQ_API_KEY = os.getenv('GROQ_AI_API_KEY')
+model = ChatGroq(
+    api_key = GROQ_API_KEY, 
+    model = "openai/gpt-oss-120b",
+    temperature = 0,
+    
 )
-

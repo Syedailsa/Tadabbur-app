@@ -604,7 +604,7 @@ async def websocket_chat(websocket: WebSocket):
                     run_config=dynamic_config,
                     session= current_session
                 )
-
+                
                 final_text = ""  # Will collect all visible text
 
 
@@ -704,6 +704,8 @@ async def websocket_chat(websocket: WebSocket):
 
 
                 if final_output and isinstance(final_output, str) and final_output.strip():
+
+                    print("Final output", final_output.strip())
                     await websocket.send_json({
                         "type": "assistance_response",
                         "content": final_output.strip(),
