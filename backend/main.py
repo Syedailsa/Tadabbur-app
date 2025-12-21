@@ -3,7 +3,6 @@ import json
 import re
 from dotenv import load_dotenv
 from pathlib import Path
-import asyncpg
 load_dotenv()
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header
@@ -43,6 +42,8 @@ from api import (
     feedback_router,
     
 )
+from reflection_api import reflection_router
+from reset_password_api import password_reset_router
 from quran_api import quran_router , parah_router, story_router
 from reset_password_api import password_reset_router
 from reflection_api import reflection_router
@@ -120,7 +121,6 @@ app.include_router(reflection_router)
 
 
 API_KEY = os.getenv("CHAT_API_KEY")
-
 
 
 # ------------------- SESSION CODE -------------------
@@ -1010,6 +1010,7 @@ async def websocket_chat(websocket: WebSocket):
                 #     "content": "Thinking deeply about your question..."
                 # })
 
+                print("Conversation", conversation)
                 run_result = Runner.run_streamed(
                     active_agent,
                     conversation,
@@ -1187,4 +1188,4 @@ async def websocket_chat(websocket: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

@@ -12,6 +12,7 @@ import ReadAloudIcon from "../../../../icons/read_aloud.svg"; // Import for the 
 const PromptExtraOptions = () => {
   const {
     messages,
+    setMessages,
     index,
     wsRef,
     hidePromptExtraOptionsModelBox,
@@ -25,13 +26,16 @@ const PromptExtraOptions = () => {
   const [isCopied, setIsCopied] = useState<boolean | null>(null);
   const [overlayText, setOverlayText] = useState<string | null>(null);
   const [active, setActive] = useState<boolean | null>(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
 
+<<<<<<< HEAD
+  type OptionType = "copy" | "resend" | "like" | "dislike";
+=======
   useEffect(() => {
     console.log("Feedback", feedback);
   }, [feedback]);
   // Added 'read_aloud' as a new option type for audio playback
   type OptionType = "copy" | "resend" | "like" | "dislike" ;
+>>>>>>> 56705ce6bb48954371d1629a452dbfaff052b019
   const handleOptionClick = ({ type }: { type: OptionType }) => {
     switch (type) {
       case "copy":
@@ -45,6 +49,16 @@ const PromptExtraOptions = () => {
         break;
 
       case "like":
+        setMessages((prev: any) => {
+          if (!prev) return prev;
+          const updated = [...prev];
+          updated[index] = {
+            ...updated[index],
+            feedback: "liked",
+          };
+
+          return updated;
+        });
         wsRef?.current.send(
           JSON.stringify({
             type: "like",
@@ -52,8 +66,19 @@ const PromptExtraOptions = () => {
             session_id: sessionID,
           })
         );
+
         break;
       case "dislike":
+        setMessages((prev: any) => {
+          if (!prev) return prev;
+          const updated = [...prev];
+          updated[index] = {
+            ...updated[index],
+            feedback: "disliked",
+          };
+
+          return updated;
+        });
         wsRef?.current.send(
           JSON.stringify({
             type: "dislike",
@@ -100,12 +125,13 @@ const PromptExtraOptions = () => {
         }}
         onClick={() => {
           handleOptionClick({ type: "like" });
-          setFeedback("liked");
         }}
         className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
       >
         <ThumbsUp
-          className={`w-4 h-4 ${feedback === "liked" ? "fill-blue-400" : ""}`}
+          className={`w-4 h-4 ${
+            messages[index].feedback === "liked" ? "fill-blue-400" : ""
+          }`}
         />
       </div>
       <div
@@ -119,12 +145,13 @@ const PromptExtraOptions = () => {
         }}
         onClick={() => {
           handleOptionClick({ type: "dislike" });
-          setFeedback("disliked");
         }}
         className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
       >
         <ThumbsDown
-          className={`w-4 h-4 ${feedback === "disliked" ? "fill-red-400" : ""}`}
+          className={`w-4 h-4 ${
+            messages[index].feedback === "disliked" ? "fill-red-400" : ""
+          }`}
         />
       </div>
       <div

@@ -49,6 +49,7 @@ class NotificationResponse(BaseModel):
 
 class BookmarkCreate(BaseModel):
     surah_name_eng: str = Field(..., description="Surah name in English")
+    type: Literal["surah", "story"] =  Field(..., description="Type of bookmark: 'surah' or 'story'")
     surah_name_arb: str = Field(..., description="Surah name in Arabic")
     surah_no: int = Field(..., ge=1, le=114, description="Surah number (1-114)")
     ayah_no: int = Field(..., ge=1, description="Ayah number")
@@ -65,6 +66,7 @@ class BookmarkItem(BaseModel):
     surahNameEng: str
     surahNameArb: str
     surahNo: int
+    type: Literal["surah", "story"]
     ayahNo: int
     totalAyah: int
     ayah: str
@@ -93,7 +95,7 @@ class UserProfile(BaseModel):
     id: str
     firstname: str
     email: str
-    profilePicture: Optional[str] = None
+    profilePicture: Optional[str] = Field(None, alias= "image")
     bio: Optional[str] = None
     lastName: Optional[str] = None
     dateofBirth: Optional[date] = None
@@ -107,7 +109,6 @@ class EditProfileRequest(BaseModel):
     email: Optional[EmailStr] = None
     image: Optional[str] = Field(None, description="Profile picture URL")
     firstname: Optional[str] = Field(None, min_length=3, max_length=50)
-    last_name: Optional[str] = None
     contact: Optional[str] = Field(None, description="Phone number")
     dateOfBirth: Optional[date] = None
     gender: Optional[Literal["Male", "Female", "Other"]] = None

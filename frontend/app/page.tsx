@@ -33,9 +33,18 @@ import { PromptExtraOptionsContext } from "./context/chatbot/PromptExtraOptionsC
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<
-    { role: "user" | "assistant"; content: string }[] | null
+    | {
+        role: "user" | "assistant";
+        content: string;
+        feedback: "liked" | "disliked" | null;
+      }[]
+    | null
   >(null);
 
+  [
+    { role: "user", content: "loremipsum34" },
+    { role: "assistant", content: "loremipsum34 " },
+  ];
   const inputRef = useRef<HTMLDivElement | null>(null);
   const [showPlaceholder, setShowPlaceholder] = useState<boolean | null>(true);
   const [greeting, setGreeting] = useState<string | null>(
@@ -64,6 +73,12 @@ export default function ChatPage() {
   const [chatHistory, setChatHistory] = useState<ChatRecord[] | null>(null);
   const messageScrollFlag = useRef<boolean | null>(false);
   const controls = useAnimationControls();
+
+  function preprocessContent(content: string) {
+    if (!content) return "";
+    // handles both colons (:) and periods (.)
+    return content.replace(/(\.|:)\s+(\d+\.)/g, "$1\n\n\n$2");
+  }
 
   function chunkText(text: string, size = 4) {
     const words = text.split(/\s+/);
@@ -105,14 +120,13 @@ export default function ChatPage() {
 
       const type = data.type;
       switch (type) {
-
         case "open_audio_dialog":
           // This is triggered when user asks to listen to Quran
           setAudioRequest({
             parsed_request: data.parsed_request,
             original_message: data.original_message,
             available_reciters: data.available_reciters,
-            note: data.note || null
+            note: data.note || null,
           });
           setShowAudioDialog(true);
           break;
@@ -121,7 +135,7 @@ export default function ChatPage() {
           setVerseRequest({
             parsed_request: data.parsed_request,
             original_message: data.original_message,
-            note: data.note || null
+            note: data.note || null,
           });
           setShowQuranVerseDialog(true);
           break;
@@ -190,7 +204,11 @@ export default function ChatPage() {
                   updated[lastIdx].content =
                     (updated[lastIdx].content || "") + " " + chunk;
                 } else {
-                  updated.push({ role: "assistant", content: chunk });
+                  updated.push({
+                    role: "assistant",
+                    content: chunk,
+                    feedback: null,
+                  });
                 }
                 return updated;
               });
@@ -234,18 +252,18 @@ export default function ChatPage() {
     if (streamingMessageIndex !== null) return;
     setError(null);
     messageScrollFlag.current = false;
-    setMessages((prev): { role: "user" | "assistant"; content: string }[] => {
-      const updated: { role: "user" | "assistant"; content: string }[] = [
+    setMessages((prev: any) => {
+      // prev is already typed correctly from useState
+      const updated = [
         ...(prev || []),
-        { role: "user", content: input },
-        { role: "assistant", content: "" }, // placeholder for assistant reply
+        { role: "user", content: input, feedback: null },
+        { role: "assistant", content: "", feedback: null },
       ];
 
-      // Track the index of the new assistant message
       setStreamingMessageIndex(updated.length - 1);
-
       return updated;
     });
+
     setLoading(true);
 
     try {
@@ -303,6 +321,7 @@ export default function ChatPage() {
       <PromptExtraOptionsContext.Provider
         value={{
           messages,
+          setMessages,
           index,
           hidePromptExtraOptionsModelBox,
           setHidePromptExtraOptionsModelBox,
@@ -355,13 +374,14 @@ export default function ChatPage() {
                 note={verseRequest.note}
               />
             )}
-
           </div>
           <div
-            className={`w-full ${messages && messages?.length > 0 ? "h-max" : "h-full"
-              }
-             px-4 mt-12 lg:w-2/3 chat-box flex flex-col gap-y-4 ${!messages ? "justify-center items-center" : ""
-              }`}
+            className={`w-full ${
+              messages && messages?.length > 0 ? "h-max" : "h-full"
+            }
+             px-4 mt-12 lg:w-2/3 chat-box flex flex-col gap-y-4 ${
+               !messages ? "justify-center items-center" : ""
+             }`}
           >
             <AnimatePresence>
               {!messages && (
@@ -510,6 +530,98 @@ export default function ChatPage() {
                             <ReactMarkdown
                               remarkPlugins={[remarkGfm]}
                               rehypePlugins={[rehypeRaw]}
+                              components={{
+                                // HEADERS
+                                h1: ({ node, ...props }) => (
+                                  <h1
+                                    className="text-3xl font-bold"
+                                    {...props}
+                                  />
+                                ),
+                                h2: ({ node, ...props }) => (
+                                  <h2
+                                    className="text-2xl font-semibold"
+                                    {...props}
+                                  />
+                                ),
+                                h3: ({ node, ...props }) => (
+                                  <h3
+                                    className="text-xl font-semibold"
+                                    {...props}
+                                  />
+                                ),
+
+                                // PARAGRAPH
+                                p: ({ node, ...props }) => (
+                                  <p
+                                    className="leading-7 my-2 text-gray-800"
+                                    {...props}
+                                  />
+                                ),
+
+                                // STRONG ( **bold** )
+                                strong: ({ node, ...props }) => (
+                                  <strong
+                                    className="font-bold text-black"
+                                    {...props}
+                                  />
+                                ),
+
+                                // EMPHASIS ( *italic* )
+                                em: ({ node, ...props }) => (
+                                  <em
+                                    className="italic text-gray-700"
+                                    {...props}
+                                  />
+                                ),
+
+                                // LINE BREAK
+                                br: ({ node, ...props }) => <br />,
+
+                                // LINKS
+                                a: ({ node, ...props }) => (
+                                  <a
+                                    className="text-blue-600 underline"
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    {...props}
+                                  />
+                                ),
+
+                                // LISTS
+                                ul: ({ node, ...props }) => (
+                                  <ul className="list-disc pl-6" {...props} />
+                                ),
+                                ol: ({ node, ...props }) => (
+                                  <ol
+                                    className="list-decimal pl-6"
+                                    {...props}
+                                  />
+                                ),
+                                li: ({ node, ...props }) => (
+                                  <li className="my-1" {...props} />
+                                ),
+                                blockquote: ({ node, ...props }) => (
+                                  <blockquote
+                                    className="border-l-4 border-gray-400 pl-4 italic my-3"
+                                    {...props}
+                                  />
+                                ),
+
+                                // HORIZONTAL RULE
+                                hr: () => (
+                                  <hr className="my-4 border-gray-300" />
+                                ),
+
+                                // IMAGES
+                                img: ({ node, ...props }) => (
+                                  <img
+                                    className="rounded-md my-2"
+                                    alt=""
+                                    {...props}
+                                  />
+                                ),
+                              }}
                             >
                               {message.content}
                             </ReactMarkdown>

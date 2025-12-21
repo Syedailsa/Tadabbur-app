@@ -212,12 +212,12 @@ async def create_bookmark(req: BookmarkCreate, user: dict = Depends(get_current_
         # Create bookmark
         await conn.execute("""
             INSERT INTO bookmarks (
-                bookmark_id, user_id,
+                bookmark_id, user_id, type,
                 surah_name_eng, surah_name_arb, surah_no, ayah_no, total_ayah, ayah,
                 created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         """, bookmark_id, user['user_id'],
-            req.surah_name_eng, req.surah_name_arb, req.surah_no, req.ayah_no, req.total_ayah, req.ayah,
+            req.type, req.surah_name_eng, req.surah_name_arb, req.surah_no, req.ayah_no, req.total_ayah, req.ayah,
             created_time)
         # Auto notification
         notif_id = generate_notification_id()
@@ -243,6 +243,7 @@ async def get_bookmarks(user: dict = Depends(get_current_user)):
                 COALESCE(surah_name_eng, 'Unknown') as "surahNameEng",
                 COALESCE(surah_name_arb, 'Unknown') as "surahNameArb",
                 surah_no as "surahNo",
+                type,
                 ayah_no as "ayahNo",
                 total_ayah as "totalAyah",
                 COALESCE(ayah, '') as ayah,
@@ -252,6 +253,8 @@ async def get_bookmarks(user: dict = Depends(get_current_user)):
             ORDER BY created_at DESC
         """, user['user_id'])
 
+    
+    print("Rows", rows)
     return [dict(row) for row in rows]
 
 @bookmark_router.get("/{bookmark_id}", response_model=BookmarkItem)
@@ -264,6 +267,7 @@ async def get_bookmark(bookmark_id: str, user: dict = Depends(get_current_user))
                 COALESCE(surah_name_eng, 'Unknown') as "surahNameEng",
                 COALESCE(surah_name_arb, 'Unknown') as "surahNameArb",
                 surah_no as "surahNo",
+                type,
                 ayah_no as "ayahNo",
                 total_ayah as "totalAyah",
                 COALESCE(ayah, '') as ayah,
@@ -304,7 +308,7 @@ async def get_my_profile(user: dict = Depends(get_current_user)):
                 user_id as id,
                 firstname,
                 email,
-                profile_picture as "profilePicture",
+                profile_picture as "image",
                 NULL as bio,
                 created_at as "createdAt",
                 NULL as "lastName",
@@ -323,7 +327,7 @@ async def get_my_profile(user: dict = Depends(get_current_user)):
                     user_id as id,
                     firstname,
                     email,
-                    profile_picture as "profilePicture",
+                    profile_picture as "image",
                     bio,
                     created_at as "createdAt",
                     last_name as "lastName",
@@ -338,6 +342,7 @@ async def get_my_profile(user: dict = Depends(get_current_user)):
         if not profile:
             raise HTTPException(status_code=404, detail="Profile not found")
 
+    print("Profile", profile)
     return dict(profile)
 
 
@@ -427,6 +432,12 @@ async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current
                 updates.append(f"firstname = ${len(values) + 1}")
                 values.append(req.firstname)
                 updated_fields.append("firstname")
+
+            # 2. lastname
+            if req.last_name:
+                updates.append(f"last_name = ${len(values) + 1}")
+                values.append(req.last_name)
+                updated_fields.append("last_name")
 
             # 3. IMAGE
             if req.image:
