@@ -41,7 +41,7 @@ async def init_db_pool():
             max_size=20,
             command_timeout=60
         )
-        print("SUPABASE CONNECTED SUCCESSFULLY!" )
+        print("✅ SUPABASE CONNECTED SUCCESSFULLY!" )
         
         # Create tables automatically
         await create_tables()
@@ -211,17 +211,27 @@ async def create_tables():
         CREATE TABLE IF NOT EXISTS password_reset_otps (
         id SERIAL PRIMARY KEY,
         email TEXT NOT NULL,
+        reset_token TEXT UNIQUE NOT NULL,
         otp TEXT NOT NULL,
         expires_at TIMESTAMP NOT NULL,
         verified BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT NOW()
     )
- """)
+  """)
+
+        # Add reset_token column if not exists
+        await conn.execute("ALTER TABLE password_reset_otps ADD COLUMN IF NOT EXISTS reset_token TEXT UNIQUE;")
 
         # Create index for faster queries
         await conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_otp_email 
+            CREATE INDEX IF NOT EXISTS idx_otp_email
             ON password_reset_otps(email, created_at DESC)
+        """)
+
+        # Create index for reset_token
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_otp_reset_token
+            ON password_reset_otps(reset_token)
         """)
 
         # RECENT REFLECTIONS TABLE

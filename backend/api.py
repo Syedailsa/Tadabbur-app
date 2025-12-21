@@ -345,7 +345,7 @@ async def get_my_profile(user: dict = Depends(get_current_user)):
 async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current_user)):
     """
     Edit Profile API - Fields that can be updated:
-    For regular users: email, image, firstname, contact, dateOfBirth, gender
+    For regular users: email, image, firstname, last_name, contact, dateOfBirth, gender, bio, address
     For Google users: email, image, firstname
     """
 
@@ -457,6 +457,18 @@ async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current
                 updates.append(f"bio = ${len(values) + 1}")
                 values.append(req.bio)
                 updated_fields.append("bio")
+
+            # 8. LAST NAME
+            if req.last_name is not None:
+                updates.append(f"last_name = ${len(values) + 1}")
+                values.append(req.last_name)
+                updated_fields.append("last_name")
+
+            # 9. ADDRESS
+            if req.address is not None:
+                updates.append(f"address = ${len(values) + 1}")
+                values.append(req.address)
+                updated_fields.append("address")
 
             if not updates:
                 raise HTTPException(status_code=400, detail="No fields to update")

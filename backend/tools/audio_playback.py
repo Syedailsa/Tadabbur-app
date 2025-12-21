@@ -6,6 +6,7 @@ Provides audio URLs for Quran recitation
 
 import httpx
 from typing import Optional, Dict, Any
+from agents import function_tool
 import re
 
 QURAN_API_BASE = "https://api.alquran.cloud/v1"
@@ -157,7 +158,7 @@ def get_available_reciters():
         for key, value in RECITERS.items()
     ]
 
-
+@function_tool
 async def play_quran_audio(
     surah: Optional[int] = None,
     ayah: Optional[int] = None,
@@ -258,8 +259,8 @@ async def play_quran_audio(
     except KeyError as e:
         raise QuranAPIError(f"Invalid API response: {str(e)}")
 
-
-def parse_quran_audio_request(user_input: str) -> Optional[Dict[str, Any]]:
+@function_tool
+async def parse_quran_audio_request(user_input: str) -> Optional[Dict[str, Any]]:
     """
     Parse natural language audio requests
     

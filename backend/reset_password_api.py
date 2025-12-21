@@ -12,18 +12,22 @@ from utils import hash_password, generate_notification_id
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
+class ResendOTPRequest(BaseModel):
+    reset_token: str
+
 class VerifyOTPRequest(BaseModel):
-    email: EmailStr
+    reset_token: str
     otp: str
 
 class ChangePasswordRequest(BaseModel):
-    email: EmailStr
+    reset_token: str
     otp: str
     new_password: str
 
 class PasswordResetResponse(BaseModel):
     message: str
     status: str = "success"
+    reset_token: str = None
 
 # ==================== ROUTER ====================
 
@@ -32,8 +36,12 @@ password_reset_router = APIRouter(prefix="/auth", tags=["Password Reset"])
 # ==================== HELPER FUNCTIONS ====================
 
 def generate_otp() -> str:
-    """Generate 6-digit OTP"""
-    return str(secrets.randbelow(900000) + 100000)
+    """Generate 4-digit OTP"""
+    return str(secrets.randbelow(9000) + 1000)
+
+def generate_reset_token() -> str:
+    """Generate secure reset token"""
+    return secrets.token_urlsafe(32)
 
 async def send_otp_email(email: str, otp: str, username: str = "User") -> bool:
     """
@@ -117,11 +125,11 @@ async def send_otp_email(email: str, otp: str, username: str = "User") -> bool:
 async def forgot_password(req: ForgotPasswordRequest):
     """
     Step 1: Request OTP for password reset
-    
+
     - Only works for email/password accounts
     - Google users must use "Sign in with Google"
-    - Sends 6-digit OTP valid for 10 minutes
-    
+    - Sends 4-digit OTP valid for 10 minutes
+
     Body:
     ```json
     {
@@ -155,20 +163,21 @@ async def forgot_password(req: ForgotPasswordRequest):
                 status="success"
             )
         
-        # Generate OTP
+        # Generate OTP and reset token
         otp = generate_otp()
+        reset_token = generate_reset_token()
         expires_at = datetime.utcnow() + timedelta(minutes=10)
-        
+
         # Delete existing OTPs for this email
         await conn.execute("""
             DELETE FROM password_reset_otps WHERE email = $1
         """, req.email)
-        
+
         # Store new OTP
         await conn.execute("""
-            INSERT INTO password_reset_otps (email, otp, expires_at, created_at)
-            VALUES ($1, $2, $3, NOW())
-        """, req.email, otp, expires_at)
+            INSERT INTO password_reset_otps (email, reset_token, otp, expires_at, created_at)
+            VALUES ($1, $2, $3, $4, NOW())
+        """, req.email, reset_token, otp, expires_at)
         
         # Send OTP via email
         await send_otp_email(req.email, otp, user['firstname'])
@@ -184,7 +193,8 @@ async def forgot_password(req: ForgotPasswordRequest):
         
         return PasswordResetResponse(
             message=f"OTP sent to {req.email}. Valid for 10 minutes.",
-            status="success"
+            status="success",
+            reset_token=reset_token
         )
 
     
@@ -192,23 +202,23 @@ async def forgot_password(req: ForgotPasswordRequest):
 async def verify_otp(req: VerifyOTPRequest):
     """
     Step 2: Verify OTP code
-    
+
     Body:
     ```json
     {
-        "email": "user@example.com",
+        "reset_token": "token_here",
         "otp": "123456"
     }
     ```
     """
     async with get_db_connection() as conn:
         otp_record = await conn.fetchrow("""
-            SELECT otp, expires_at, verified 
-            FROM password_reset_otps 
-            WHERE email = $1
+            SELECT otp, expires_at, verified
+            FROM password_reset_otps
+            WHERE reset_token = $1
             ORDER BY created_at DESC
             LIMIT 1
-        """, req.email)
+        """, req.reset_token)
         
         if not otp_record:
             raise HTTPException(
@@ -236,10 +246,10 @@ async def verify_otp(req: VerifyOTPRequest):
         
         # Mark as verified
         await conn.execute("""
-            UPDATE password_reset_otps 
-            SET verified = TRUE 
-            WHERE email = $1 AND otp = $2
-        """, req.email, req.otp)
+            UPDATE password_reset_otps
+            SET verified = TRUE
+            WHERE reset_token = $1 AND otp = $2
+        """, req.reset_token, req.otp)
         
         return PasswordResetResponse(
             message="OTP verified successfully. You can now reset your password.",
@@ -251,16 +261,16 @@ async def verify_otp(req: VerifyOTPRequest):
 async def change_password(req: ChangePasswordRequest):
     """
     Step 3: Change password using verified OTP
-    
+
     Body:
     ```json
     {
-        "email": "user@example.com",
+        "reset_token": "token_here",
         "otp": "123456",
         "new_password": "NewSecurePass123!"
     }
     ```
-    
+
     Requirements:
     - Password must be at least 8 characters
     - OTP must be verified first
@@ -271,16 +281,16 @@ async def change_password(req: ChangePasswordRequest):
             status_code=400,
             detail="Password must be at least 8 characters long"
         )
-    
+
     async with get_db_connection() as conn:
         # Check OTP record
         otp_record = await conn.fetchrow("""
-            SELECT otp, expires_at, verified 
-            FROM password_reset_otps 
-            WHERE email = $1
+            SELECT email, otp, expires_at, verified
+            FROM password_reset_otps
+            WHERE reset_token = $1
             ORDER BY created_at DESC
             LIMIT 1
-        """, req.email)
+        """, req.reset_token)
         
         if not otp_record:
             raise HTTPException(
@@ -305,33 +315,33 @@ async def change_password(req: ChangePasswordRequest):
                 status_code=400,
                 detail="Invalid OTP."
             )
-        
+
         # Get user
         user = await conn.fetchrow("""
             SELECT user_id, firstname
             FROM users WHERE email = $1
-        """, req.email)
-        
+        """, otp_record['email'])
+
         if not user:
             raise HTTPException(
                 status_code=404,
                 detail="User not found"
             )
-        
+
         # Hash new password
         new_pwd_hash = hash_password(req.new_password)
-        
+
         # Update password
         await conn.execute("""
-            UPDATE users 
-            SET password_hash = $1, updated_at = NOW() 
+            UPDATE users
+            SET password_hash = $1, updated_at = NOW()
             WHERE email = $2
-        """, new_pwd_hash, req.email)
-        
+        """, new_pwd_hash, otp_record['email'])
+
         # Delete used OTP
         await conn.execute("""
-            DELETE FROM password_reset_otps WHERE email = $1
-        """, req.email)
+            DELETE FROM password_reset_otps WHERE reset_token = $1
+        """, req.reset_token)
         
         # Invalidate all existing tokens for security
         await conn.execute("""
@@ -354,16 +364,62 @@ async def change_password(req: ChangePasswordRequest):
 
 
 @password_reset_router.post("/resend-otp", response_model=PasswordResetResponse)
-async def resend_otp(req: ForgotPasswordRequest):
+async def resend_otp(req: ResendOTPRequest):
     """
     Resend OTP if user didn't receive it or it expired
-    
+
     Body:
     ```json
     {
-        "email": "user@example.com"
+        "reset_token": "token_here"
     }
     ```
     """
-    # Reuse forgot_password logic
-    return await forgot_password(req)
+    async with get_db_connection() as conn:
+        # Check if reset_token exists
+        otp_record = await conn.fetchrow("""
+            SELECT email, expires_at
+            FROM password_reset_otps
+            WHERE reset_token = $1
+            ORDER BY created_at DESC
+            LIMIT 1
+        """, req.reset_token)
+
+        if not otp_record:
+            raise HTTPException(
+                status_code=404,
+                detail="Invalid reset token. Please request a new password reset."
+            )
+
+        # Check if expired
+        if datetime.utcnow() > otp_record['expires_at']:
+            raise HTTPException(
+                status_code=400,
+                detail="Reset token expired. Please request a new password reset."
+            )
+
+        # Generate new OTP
+        otp = generate_otp()
+        expires_at = datetime.utcnow() + timedelta(minutes=10)
+
+        # Update OTP
+        await conn.execute("""
+            UPDATE password_reset_otps
+            SET otp = $1, expires_at = $2, verified = FALSE, created_at = NOW()
+            WHERE reset_token = $3
+        """, otp, expires_at, req.reset_token)
+
+        # Get user
+        user = await conn.fetchrow("""
+            SELECT firstname FROM users WHERE email = $1
+        """, otp_record['email'])
+
+        username = user['firstname'] if user else "User"
+
+        # Send OTP
+        await send_otp_email(otp_record['email'], otp, username)
+
+        return PasswordResetResponse(
+            message="OTP resent. Valid for 10 minutes.",
+            status="success"
+        )

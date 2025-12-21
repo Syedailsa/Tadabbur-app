@@ -107,10 +107,12 @@ class EditProfileRequest(BaseModel):
     email: Optional[EmailStr] = None
     image: Optional[str] = Field(None, description="Profile picture URL")
     firstname: Optional[str] = Field(None, min_length=3, max_length=50)
+    last_name: Optional[str] = None
     contact: Optional[str] = Field(None, description="Phone number")
     dateOfBirth: Optional[date] = None
     gender: Optional[Literal["Male", "Female", "Other"]] = None
     bio: Optional[str] = Field(None, description="User bio")
+    address: Optional[str] = None
 
 class EditProfileResponse(BaseModel):
     message: str

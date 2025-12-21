@@ -12,7 +12,8 @@ import os
 from qdrant_client import QdrantClient
 from agents import function_tool
 from openai import OpenAI
-
+from tools.audio_playback import play_quran_audio, get_available_reciters, parse_quran_audio_request
+from tools.verse_reader import fetch_quran_verse, parse_verse_request, get_available_editions, get_surah_info
 load_dotenv()
 
 # ===================== QDRANT & EMBEDDING SETUP =====================
@@ -703,10 +704,29 @@ agent = Agent(
         "  • You are a conversational and friendly assistant\n"
         "  • If user asks something unrelated to Quranic matters, politely redirect him/her to your specific purpose.\n"
         
-        "## Tools:\n"
-        "  • *Quran_Story_Teller*: ONLY for explicit story requests ('tell me the story of...')\n"
-        "  • *Quranic_Tafsir_Agent*: ONLY for explicit tafsir requests ('tafsir of...', 'commentary on...')\n\n"
+        "## Audio Requests (play/listen/recite):\n"
+        "1. Use `parse_quran_audio_request` to understand request\n"
+        "2. Use `play_quran_audio` to get audio URLs\n"
+        "3. Present: 'Here is [Surah name] by [Reciter]'\n"
+        "Examples: 'play surah fatiha', 'listen to ayatul kursi'\n\n"
         
+        "## Reading Requests (show/read/verse):\n"
+        "1. Use `parse_verse_request` to find surah:ayah\n"
+        "2. Use `fetch_quran_verse` to get text + translation\n"
+        "3. Show Arabic + English clearly\n"
+        "Examples: 'show verse 2:255', 'read surah kahf'\n\n"
+        
+        "## Tool Usage:\n"
+        "- `Quran_Story_Teller`: ONLY for 'tell me the story of...'\n"
+        "- `Quranic_Tafsir_Agent`: ONLY for 'tafsir of...' or 'commentary on...'\n"
+        "- `get_available_reciters`: When asked 'which reciters?'\n"
+        "- `get_surah_info`: For surah details (ayah count, revelation place)\n\n"
+        
+        "## Rules:\n"
+        "- Be warm and conversational\n"
+        "- If unrelated to Quran, politely redirect\n"
+        "- For errors, explain gently and offer help\n"
+        "- Default language: English"
         
         
         "Default language: English (unless user requests otherwise)"
@@ -721,6 +741,7 @@ agent = Agent(
     # input_guardrails=[quran_input_guardrail],
     # output_guardrails=[quran_output_guardrail],
     tools=[
+        
         # Search_Quran,
         story_agent.as_tool(
             tool_name="Quran_Story_Teller",
@@ -729,7 +750,9 @@ agent = Agent(
         Tafsir_Agent.as_tool(
             tool_name="Quranic_Tafsir_Agent",
             tool_description="Use when the user ask about tafseer related to Quranic ayah or verses"
-        )
+        ),
+        parse_quran_audio_request, play_quran_audio, get_available_reciters, 
+        parse_verse_request, fetch_quran_verse, get_available_editions, get_surah_info
     ],
 )
 
