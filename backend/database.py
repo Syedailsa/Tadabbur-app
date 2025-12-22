@@ -94,6 +94,7 @@ async def create_tables():
                 phone_number TEXT,
                 gender TEXT,
                 profile_picture TEXT,
+                image_url TEXT,
                 bio TEXT,
 
                 created_at TIMESTAMP DEFAULT NOW(),
@@ -102,16 +103,34 @@ async def create_tables():
             )
         """)
 
-        # Add missing columns if they don't exist
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS firstname TEXT UNIQUE;")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name TEXT;")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth DATE;")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT;")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_number TEXT;")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT;")
-        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_picture TEXT;")
+        
+        # Add image_url column if not exists
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS image_url TEXT;")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();")
+        
+        # USER IMAGES TABLE (for storing image bytes)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_images (
+                id SERIAL PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                image_name TEXT NOT NULL,
+                image_data BYTEA NOT NULL,
+                content_type TEXT NOT NULL,
+                image_size INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            )
+        """)
+        
+        # Create index for faster queries
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_user_images_user_id ON user_images(user_id);")
         
         # GOOGLE USERS TABLE (OAuth authentication)
         await conn.execute("""
@@ -122,12 +141,14 @@ async def create_tables():
                 email TEXT UNIQUE NOT NULL,
                 firstname TEXT,
                 profile_picture TEXT,
+                image_url TEXT,
                 created_at TIMESTAMP DEFAULT NOW()
             )
         """)
-
+        
         # Add missing columns if they don't exist for google_users
         await conn.execute("ALTER TABLE google_users ADD COLUMN IF NOT EXISTS firstname TEXT;")
+        await conn.execute("ALTER TABLE google_users ADD COLUMN IF NOT EXISTS image_url TEXT;")
         
         # AUTH TOKENS TABLE
         await conn.execute("""

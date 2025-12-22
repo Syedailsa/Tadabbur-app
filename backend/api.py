@@ -2,6 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from datetime import datetime, timedelta
 from models import BookmarkDeleteRequest
 from typing import List
+import base64
+import logging
+from fastapi.responses import StreamingResponse
 
 # Local imports
 from models import *
@@ -11,6 +14,10 @@ from utils import (
     generate_bookmark_id, generate_feedback_id, get_current_user
 )
 from database import get_db_connection
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # ==================== AUTH ROUTER ====================
 
@@ -309,6 +316,7 @@ async def get_my_profile(user: dict = Depends(get_current_user)):
                 firstname,
                 email,
                 profile_picture as "image",
+                image_url as "imageUrl",
                 NULL as bio,
                 created_at as "createdAt",
                 NULL as "lastName",
@@ -328,6 +336,7 @@ async def get_my_profile(user: dict = Depends(get_current_user)):
                     firstname,
                     email,
                     profile_picture as "image",
+                    image_url as "imageUrl",
                     bio,
                     created_at as "createdAt",
                     last_name as "lastName",
@@ -342,8 +351,28 @@ async def get_my_profile(user: dict = Depends(get_current_user)):
         if not profile:
             raise HTTPException(status_code=404, detail="Profile not found")
 
-    print("Profile", profile)
-    return dict(profile)
+    # If user has uploaded image, get the actual image data
+    profile_dict = dict(profile)
+    if profile_dict.get('imageUrl'):
+        try:
+            # Extract image ID from URL
+            image_id = int(profile_dict['imageUrl'].split('/')[-1])
+            
+            # Get image data from database
+            image_result = await conn.fetchrow(
+                "SELECT image_data FROM user_images WHERE id = $1 AND user_id = $2", 
+                image_id, user['user_id']
+            )
+            
+            if image_result:
+                # Convert bytes to base64 string
+                profile_dict['image_data'] = base64.b64encode(image_result['image_data']).decode('utf-8')
+        except Exception as e:
+            logger.warning(f"Failed to get image data: {str(e)}")
+            profile_dict['image_data'] = None
+
+    print("Profile", profile_dict)
+    return profile_dict
 
 
 @profile_router.put("/edit-profile", response_model=EditProfileResponse)
@@ -392,7 +421,14 @@ async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current
                 values.append(req.firstname)
                 updated_fields.append("firstname")
 
-            # 3. IMAGE
+            # 3. IMAGE URL
+            if req.imageUrl:
+                # Store the full URL directly
+                updates.append(f"image_url = ${len(values) + 1}")
+                values.append(req.imageUrl)
+                updated_fields.append("imageUrl")
+
+            # 4. IMAGE (legacy)
             if req.image:
                 updates.append(f"profile_picture = ${len(values) + 1}")
                 values.append(req.image)
@@ -433,29 +469,36 @@ async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current
                 values.append(req.firstname)
                 updated_fields.append("firstname")
 
-            # 2. lastname
-            if req.last_name:
+            # 2. LASTNAME
+            if req.lastName:
                 updates.append(f"last_name = ${len(values) + 1}")
-                values.append(req.last_name)
-                updated_fields.append("last_name")
+                values.append(req.lastName)
+                updated_fields.append("lastName")
 
-            # 3. IMAGE
+            # 3. IMAGE URL
+            if req.imageUrl:
+                # Store the full URL directly
+                updates.append(f"image_url = ${len(values) + 1}")
+                values.append(req.imageUrl)
+                updated_fields.append("imageUrl")
+
+            # 4. IMAGE (legacy)
             if req.image:
                 updates.append(f"profile_picture = ${len(values) + 1}")
                 values.append(req.image)
                 updated_fields.append("image")
 
             # 4. CONTACT
-            if req.contact:
+            if req.phoneNumber:
                 updates.append(f"phone_number = ${len(values) + 1}")
-                values.append(req.contact)
-                updated_fields.append("contact")
+                values.append(req.phoneNumber)
+                updated_fields.append("phoneNumber")
 
             # 5. DATE OF BIRTH
-            if req.dateOfBirth:
+            if req.dateofBirth:
                 updates.append(f"date_of_birth = ${len(values) + 1}")
-                values.append(req.dateOfBirth)
-                updated_fields.append("dateOfBirth")
+                values.append(req.dateofBirth)
+                updated_fields.append("dateofBirth")
 
             # 6. GENDER
             if req.gender:
@@ -470,10 +513,10 @@ async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current
                 updated_fields.append("bio")
 
             # 8. LAST NAME
-            if req.last_name is not None:
+            if req.lastName is not None:
                 updates.append(f"last_name = ${len(values) + 1}")
-                values.append(req.last_name)
-                updated_fields.append("last_name")
+                values.append(req.lastName)
+                updated_fields.append("lastName")
 
             # 9. ADDRESS
             if req.address is not None:
@@ -494,6 +537,187 @@ async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current
         updatedFields=updated_fields,
         timestamp=datetime.utcnow()
     )
+
+# ==================== IMAGE UPLOAD ENDPOINTS ====================
+
+@profile_router.post("/upload-image", response_model=ImageUploadResponse)
+async def upload_image(req: ImageUploadRequest, user: dict = Depends(get_current_user)):
+    """Upload and process user image"""
+    try:
+        # Decode base64 image data
+        try:
+            image_data = base64.b64decode(req.image_data)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid base64 image data: {str(e)}")
+        
+        # Store image directly in database (no file processing)
+        async with get_db_connection() as conn:
+            # Generate unique image ID
+            image_id = await conn.fetchval("""
+                INSERT INTO user_images (user_id, image_name, image_data, content_type, image_size, created_at)
+                VALUES ($1, $2, $3, $4, $5, NOW())
+                RETURNING id
+            """, 
+                user['user_id'], 
+                req.filename, 
+                image_data, 
+                req.content_type or "image/jpeg", 
+                len(image_data)
+            )
+            
+            # Check if user is Google user
+            google_user = await conn.fetchrow(
+                "SELECT user_id FROM google_users WHERE user_id = $1", 
+                user['user_id']
+            )
+            is_google = google_user is not None
+            
+            # Update user profile with image URL
+            image_url = f"/users/image/{image_id}"
+            if is_google:
+                await conn.execute(
+                    "UPDATE google_users SET image_url = $1 WHERE user_id = $2",
+                    image_url, user['user_id']
+                )
+            else:
+                await conn.execute(
+                    "UPDATE users SET image_url = $1, updated_at = NOW() WHERE user_id = $2",
+                    image_url, user['user_id']
+                )
+        
+        logger.info(f"Image uploaded successfully for user {user['user_id']}: image_id {image_id}")
+        
+        return ImageUploadResponse(
+            message="Image uploaded and stored successfully",
+            image_url=f"/users/image/{image_id}",  # Return full URL
+            timestamp=datetime.utcnow()
+        )
+        
+    except ValueError as e:
+        logger.error(f"Image validation error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Image upload error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Image upload failed: {str(e)}")
+
+@profile_router.get("/image/{image_id}")
+async def get_user_image(image_id: int, user: dict = Depends(get_current_user)):
+    """Serve user image from database"""
+    try:
+        async with get_db_connection() as conn:
+            # Get image data directly
+            result = await conn.fetchrow(
+                "SELECT image_data, content_type, image_name FROM user_images WHERE id = $1", 
+                image_id
+            )
+            
+            if not result:
+                raise HTTPException(status_code=404, detail="Image not found")
+            
+            image_data, content_type, image_name = result
+            
+            # Verify user ownership
+            image_owner = await conn.fetchval(
+                "SELECT user_id FROM user_images WHERE id = $1", 
+                image_id
+            )
+            
+            if image_owner != user['user_id']:
+                raise HTTPException(status_code=403, detail="Not authorized to view this image")
+            
+            logger.info(f"Image served successfully: ID {image_id}")
+            
+            return StreamingResponse(
+                iter([image_data]),
+                media_type=content_type,
+                headers={"Content-Disposition": f"inline; filename={image_name}"}
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error serving image {image_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to serve image")
+
+@profile_router.delete("/delete-image", response_model=SuccessResponse)
+async def delete_image(req: ImageDeleteRequest, user: dict = Depends(get_current_user)):
+    """Delete user image from database"""
+    try:
+        # Parse image_id from the URL string (format: /users/image/123)
+        try:
+            if req.image_url.startswith('/users/image/'):
+                image_id = int(req.image_url.split('/')[-1])
+            else:
+                image_id = int(req.image_url)
+        except (ValueError, IndexError):
+            raise HTTPException(status_code=400, detail="Invalid image URL format")
+        
+        async with get_db_connection() as conn:
+            # Check if user is Google user
+            google_user = await conn.fetchrow(
+                "SELECT user_id FROM google_users WHERE user_id = $1", 
+                user['user_id']
+            )
+            is_google = google_user is not None
+            
+            # Verify ownership and delete
+            result = await conn.execute(
+                "DELETE FROM user_images WHERE id = $1 AND user_id = $2", 
+                image_id, user['user_id']
+            )
+            
+            if result == "DELETE 1":
+                # Clear profile image reference if this was the profile image
+                current_profile_image = await conn.fetchval(
+                    f"SELECT image_url FROM {'google_users' if is_google else 'users'} WHERE user_id = $1",
+                    user['user_id']
+                )
+                
+                if current_profile_image and current_profile_image == req.image_url:
+                    # Clear the image_url field
+                    if is_google:
+                        await conn.execute(
+                            "UPDATE google_users SET image_url = NULL WHERE user_id = $1",
+                            user['user_id']
+                        )
+                    else:
+                        await conn.execute(
+                            "UPDATE users SET image_url = NULL, updated_at = NOW() WHERE user_id = $1",
+                            user['user_id']
+                        )
+            
+            if result == "DELETE 1":
+                # Clear profile image reference if this was the profile image
+                current_profile_image = await conn.fetchval(
+                    f"SELECT image_url FROM {'google_users' if is_google else 'users'} WHERE user_id = $1",
+                    user['user_id']
+                )
+                
+                if current_profile_image and current_profile_image == req.image_url:
+                    # Clear the image_url field
+                    if is_google:
+                        await conn.execute(
+                            "UPDATE google_users SET image_url = NULL WHERE user_id = $1",
+                            user['user_id']
+                        )
+                    else:
+                        await conn.execute(
+                            "UPDATE users SET image_url = NULL, updated_at = NOW() WHERE user_id = $1",
+                            user['user_id']
+                        )
+                
+                logger.info(f"Image deleted successfully: ID {image_id}")
+                
+                return SuccessResponse(message="Image deleted successfully")
+            else:
+                raise HTTPException(status_code=404, detail="Image not found or not authorized to delete")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Image deletion error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Image deletion failed: {str(e)}")
+
 
 # ==================== FEEDBACK ROUTER ====================
 

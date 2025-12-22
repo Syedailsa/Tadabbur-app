@@ -86,6 +86,7 @@ class ProfileUpdate(BaseModel):
     phoneNumber: Optional[str] = Field(None, alias="contact")   # Accept 'contact' in request
     email: Optional[EmailStr] = None
     profilePicture: Optional[str] = Field(None, alias="image")  # Accept 'image' in request
+    image_url: Optional[str] = Field(None, alias="imageUrl")    # Accept 'imageUrl' in request
     bio: Optional[str] = None
 
     class Config:
@@ -96,6 +97,8 @@ class UserProfile(BaseModel):
     firstname: str
     email: str
     profilePicture: Optional[str] = Field(None, alias= "image")
+    image_url: Optional[str] = Field(None, alias="imageUrl")
+    image_data: Optional[str] = Field(None, description="Base64 encoded image data")  # Actual image bytes
     bio: Optional[str] = None
     lastName: Optional[str] = None
     dateofBirth: Optional[date] = None
@@ -108,9 +111,11 @@ class EditProfileRequest(BaseModel):
     """Edit Profile - Fields that can be updated"""
     email: Optional[EmailStr] = None
     image: Optional[str] = Field(None, description="Profile picture URL")
+    imageUrl: Optional[str] = Field(None, description="Image URL for uploaded images")
     firstname: Optional[str] = Field(None, min_length=3, max_length=50)
-    contact: Optional[str] = Field(None, description="Phone number")
-    dateOfBirth: Optional[date] = None
+    lastName: Optional[str] = Field(None, description="Last name")  # Changed from last_name
+    phoneNumber: Optional[str] = Field(None, description="Phone number")  # Changed from contact
+    dateofBirth: Optional[date] = None  # Changed from dateOfBirth
     gender: Optional[Literal["Male", "Female", "Other"]] = None
     bio: Optional[str] = Field(None, description="User bio")
     address: Optional[str] = None
@@ -163,3 +168,22 @@ class ErrorResponse(BaseModel):
     error: str
     status: str = "error"
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+# ==================== IMAGE UPLOAD MODELS ====================
+
+class ImageUploadRequest(BaseModel):
+    """Request model for image upload"""
+    image_data: str = Field(..., description="Base64 encoded image data")
+    filename: str = Field(..., description="Original filename")
+    content_type: Optional[str] = Field(None, description="MIME type of the image")
+
+class ImageUploadResponse(BaseModel):
+    """Response model for image upload"""
+    message: str
+    status: str = "success"
+    image_url: str = Field(..., description="URL path to the uploaded image")
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+class ImageDeleteRequest(BaseModel):
+    """Request model for image deletion"""
+    image_url: str = Field(..., description="URL path of the image to delete")

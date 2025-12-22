@@ -91,7 +91,7 @@ export default function ChatPage() {
   }
 
   useEffect(() => {
-    const websocket = new WebSocket("ws://localhost:9000/ws/chat");
+    const websocket = new WebSocket("ws://localhost:8000/ws/chat");
     wsRef.current = websocket;
 
     wsRef.current.onopen = () => {
