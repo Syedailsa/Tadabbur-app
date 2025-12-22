@@ -134,22 +134,22 @@ The output must always follow EXACTLY this shape:
 #     comprehensive_surah_metadata = safe_meta_data_str
 # )
 
-prompt = ChatPromptTemplate.from_messages([
-    ("system", system_instructions), ("user", "{extract}")
-])
-llm = ChatFireworks(api_key = os.getenv("FIREWORKS_API_KEY"), model = "accounts/fireworks/models/kimi-k2-instruct-0905", temperature = 0.1)
+# prompt = ChatPromptTemplate.from_messages([
+#     ("system", system_instructions), ("user", "{extract}")
+# ])
+# llm = ChatFireworks(api_key = os.getenv("FIREWORKS_API_KEY"), model = "accounts/fireworks/models/kimi-k2-instruct-0905", temperature = 0.1)
 
-structured_llm = llm.with_structured_output(AllSurahSchema, method = "json_mode")
+# structured_llm = llm.with_structured_output(AllSurahSchema, method = "json_mode")
 
 
-chain  = prompt | structured_llm
+# chain  = prompt | structured_llm
 
-pattern = r'\[\s*(\d+)\s*:\s*(\d+(?:-\d+)?)\s*\]\s*$'
-vector_embeddings_array = []
-embeddings = FireworksEmbeddings(
-  api_key=os.getenv('FIREWORKS_API_KEY'),
-  model = EMBEDDING_MODEL
-)
+# pattern = r'\[\s*(\d+)\s*:\s*(\d+(?:-\d+)?)\s*\]\s*$'
+# vector_embeddings_array = []
+# embeddings = FireworksEmbeddings(
+#   api_key=os.getenv('FIREWORKS_API_KEY'),
+#   model = EMBEDDING_MODEL
+# )
 
 # full_text = ""
 # for i, page in enumerate(reader.pages[15:], start = 15):
@@ -195,28 +195,28 @@ embeddings = FireworksEmbeddings(
 # with open("extra.txt", "w", encoding = 'utf-8') as f:
 #   f.write(json.dumps(structured_data, indent = 2, ensure_ascii = False))
 
-asbab_nuzul_array = [verse['asbab_nuzul'] for verse in structured_data]
-embeddings_array = embeddings.embed_documents(asbab_nuzul_array)
+# asbab_nuzul_array = [verse['asbab_nuzul'] for verse in structured_data]
+# embeddings_array = embeddings.embed_documents(asbab_nuzul_array)
 
-print("Length of embeddings array", len(embeddings_array))
+# print("Length of embeddings array", len(embeddings_array))
 
-points = []
-for i, verse in enumerate(structured_data):
+# points = []
+# for i, verse in enumerate(structured_data):
 
-  print(f"Appending point {i+1} to points array")
-  points.append(models.PointStruct(id = i + 1, vector = {"verse-dense-vector": embeddings_array[i]}, payload = {"surah_number": verse['surah_number'], "verse_number": verse['verse_number'], "asbab_nuzul" :verse['asbab_nuzul'], "surah_englishName": verse['surah_englishName'], "surah_englishNameTranslation": verse['surah_englishNameTranslation'], "reference": verse['reference'], "book_author": verse['book_author']}))
+#   print(f"Appending point {i+1} to points array")
+#   points.append(models.PointStruct(id = i + 1, vector = {"verse-dense-vector": embeddings_array[i]}, payload = {"surah_number": verse['surah_number'], "verse_number": verse['verse_number'], "asbab_nuzul" :verse['asbab_nuzul'], "surah_englishName": verse['surah_englishName'], "surah_englishNameTranslation": verse['surah_englishNameTranslation'], "reference": verse['reference'], "book_author": verse['book_author']}))
 
 
-# upsert the point in the Asbab e nuzul collection
-operation_info  = qdrant.upsert(
-  collection_name = "Asbab_Nuzul",
-  wait = True,
-  points = points
-)
+# # upsert the point in the Asbab e nuzul collection
+# operation_info  = qdrant.upsert(
+#   collection_name = "Asbab_Nuzul",
+#   wait = True,
+#   points = points
+# )
 
-print('All points upserted successfully!')
-# verify count of points in the collection
-count = qdrant.count(collection_name="Asbab_Nuzul").count
+# print('All points upserted successfully!')
+# # verify count of points in the collection
+# count = qdrant.count(collection_name="Asbab_Nuzul").count
 
 
 index_schema = [
@@ -239,29 +239,29 @@ for i, schema in enumerate(index_schema):
 print('All indexes created successfully!')
 
 
-embedding_query = embeddings.embed_query("Patience, Preservance and Honesty")
+# embedding_query = embeddings.embed_query("Patience, Preservance and Honesty")
 
-qdrant_response = qdrant.query_points(
-  collection_name = "Asbab_Nuzul",
-  query = embedding_query,
-  using = 'verse-dense-vector',
-  query_filter = models.Filter(
-    must=[
-      models.FieldCondition(
-        key = "surah_englishName",
-        match = models.MatchValue(
-          value = "Al-Baqara",
-        )
-      ),
-      models.FieldCondition(
-        key = "verse_number",
-        match = models.MatchValue(
-          value = 284
-        )
-      )
-    ]
-  ),
-  limit = 1
-)
+# qdrant_response = qdrant.query_points(
+#   collection_name = "Asbab_Nuzul",
+#   query = embedding_query,
+#   using = 'verse-dense-vector',
+#   query_filter = models.Filter(
+#     must=[
+#       models.FieldCondition(
+#         key = "surah_englishName",
+#         match = models.MatchValue(
+#           value = "Al-Baqara",
+#         )
+#       ),
+#       models.FieldCondition(
+#         key = "verse_number",
+#         match = models.MatchValue(
+#           value = 284
+#         )
+#       )
+#     ]
+#   ),
+#   limit = 1
+# )
 
-print(qdrant_response)
+# print(qdrant_response)

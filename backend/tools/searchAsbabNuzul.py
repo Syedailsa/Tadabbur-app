@@ -1,48 +1,65 @@
 import os
-import operator
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import List, Optional
 from langchain_fireworks import FireworksEmbeddings
 from qdrant_client import QdrantClient, models
 from tools.utils import normalize_surah
 from data.data import surah_name_english_translation_array, surah_name_english_array
+from langchain.tools import tool
 
-
+load_dotenv()
 COLLECTION_NAME = "Asbab_Nuzul"
 EMBEDDING_MODEL = "fireworks/qwen3-embedding-8b"
 
 # instantiate the embeddings model
 embeddings = FireworksEmbeddings(
-  api_key=os.getenv('FIREWORKS_API_KEY'),
+  api_key = os.getenv('FIREWORKS_API_KEY'),
   model = EMBEDDING_MODEL
 )
 
 class ToolSchema(BaseModel):
-    surah_number: Optional[int] = None
-    surah_number_min: Optional[int] = None
-    surah_number_max: Optional[int] = None
+    "Input for surah schema"
+    surah_number: Optional[int] = Field(default=None)
+    surah_number_min: Optional[int] = Field(default=None)
+    surah_number_max: Optional[int] = Field(default=None)
 
 
-    verse_number: Optional[int]= None
-    verse_number_min: Optional[int]= None
-    verse_number_max: Optional[int]= None
+    verse_number: Optional[int] = Field(default=None)
+    verse_number_min: Optional[int] = Field(default=None)
+    verse_number_max: Optional[int] = Field(default=None)
 
-    surahEnglishName: Optional[str]= None
-    surahEnglishNameTranslation: Optional[str]= None
+    surah_englishName: Optional[str] = Field(default=None)
+    surah_englishNameTranslation: Optional[str] = Field(default=None)
+    query: Optional[str] = Field(default=None)
+    limit: Optional[int] = Field(default=None)
 
-
-def searchAsbabNuzul(args: ToolSchema, limit:int = 3, query = None):
+@tool(args_schema = ToolSchema)
+def searchAsbabNuzul(
+    surah_number: Optional[int] = None,
+    surah_number_min: Optional[int] = None,
+    surah_number_max: Optional[int] = None,
+    verse_number: Optional[int] = None,
+    verse_number_min: Optional[int] = None,
+    verse_number_max: Optional[int] = None,
+    surah_englishName: Optional[str] = None,
+    surah_englishNameTranslation: Optional[str] = None,
+    query: Optional[str] = None,
+    limit: int = 3
+    ) -> List[dict]:
     """Search tool for searching Asbab e Nuzul (Cicrumstances under revelation)
     
     **ARGS:**
-    1. surah_number
-    2. surah_number_min
-    3. surah_number_max
-    4. verse_number
-    5. verse_number_min
-    6. verse_number_max
-    7. surahEnglishName
-    8. surahEnglishNameTranslation
+    1. surah_number (int)
+    2. surah_number_min (int)
+    3. surah_number_max (int)
+    4. verse_number (int)
+    5. verse_number_min (int)
+    6. verse_number_max (int)
+    7. surah_englishName (int)
+    8. surah_englishNameTranslation (str)
+    8. limit (int)
+    8. query (str)
     
     ### • searchAsbabNuzul
     1. Use searchAsbabNuzul when user asks for queries related to Asbab_Nuzul/Shan_Nuzul (Circumstances of revelation)
@@ -54,7 +71,7 @@ def searchAsbabNuzul(args: ToolSchema, limit:int = 3, query = None):
 
     ### Important Guidelines
     1. When calling `searchAsbabNuzul`, pass **only the arguments explicitly mentioned by the user**. Leave all others as `None`.  
-    2. Do **not** infer metadata such as surah_number, verse_number, surahEnglishName, surahEnglishNameTranslation.  
+    2. Do **not** infer metadata such as surah_number, verse_number, surah_englishName, surah_englishNameTranslation.  
     3. If the user provides only surah and ayah numbers → pass **only those fields**.  
     """
 
@@ -65,33 +82,34 @@ def searchAsbabNuzul(args: ToolSchema, limit:int = 3, query = None):
     timeout=60
     )
 
-    tool_args = {
-        "surah_number": args.surah_number,    
-        "surah_number_min": args.surah_number_min,
-        "surah_number_max": args.surah_number_max,
+    print("Query", query)
+    print("Limit", limit)
+    verse_tool_args = {
+        "surah_number": surah_number,    
+        "surah_number_min": surah_number_min,
+        "surah_number_max": surah_number_max,
 
-        "verse_number": args.verse_number,
-        "verse_number_min": args.verse_number_min,
-        "verse_number_max":args.verse_number_max,
+        "verse_number": verse_number,
+        "verse_number_min": verse_number_min,
+        "verse_number_max":verse_number_max,
 
-        "surahEnglishName": normalize_surah(args.surahEnglishName , surah_name_english_array), 
-        "surahEnglishNameTranslation": normalize_surah(args.surahEnglishName , surah_name_english_translation_array)
+        "surah_englishName": normalize_surah(surah_englishName , surah_name_english_array), 
+        "surah_englishNameTranslation": normalize_surah(surah_englishNameTranslation , surah_name_english_translation_array),
     }
+    
     # if no Qdrant Client, then return
     if not qdrant_client:
         return "Qdrant client not instantiated properly"
 
     # checks if all tool arguments are none
-    if not any(tool_args.values()):
+    if not any(verse_tool_args.values()):
         # all arguments are none so return
         return "No tool arguments are provided"
 
     # filter and remove the none tool arguments
-    clean_arguments = {k:v for k,v in tool_args.items() if v is not None}
+    clean_arguments = {k:v for k,v in verse_tool_args.items() if v is not None}
 
     print("Clean tool arguments", clean_arguments)
-
-    print("Number of results to return", limit)
 
     must = []
     # build the filter
@@ -124,6 +142,7 @@ def searchAsbabNuzul(args: ToolSchema, limit:int = 3, query = None):
                     match = models.MatchValue(value = v)
                 )
             )
+    query_embeddings = None
     if query:
         query_embeddings = embeddings.embed_query(query)
     
@@ -137,4 +156,6 @@ def searchAsbabNuzul(args: ToolSchema, limit:int = 3, query = None):
         query_filter = models.Filter(must=must) if must else None,
         limit = limit
     )
+
+    print("Resuls to return", results)
     return results

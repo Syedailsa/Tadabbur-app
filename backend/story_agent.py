@@ -1,9 +1,11 @@
+import asyncio
+import json
+import os
 from agents import (
     Agent, ModelSettings, OpenAIChatCompletionsModel, 
     RunConfig, Runner, GuardrailFunctionOutput,
     RunContextWrapper, TResponseInputItem, function_tool, input_guardrail
 )
-
 from agents import output_guardrail, GuardrailFunctionOutput
 from openai import AsyncOpenAI
 from typing import Optional
@@ -13,28 +15,12 @@ from dotenv import load_dotenv
 from qdrant_client import QdrantClient
 from agents import function_tool
 from openai import OpenAI
-import asyncio
-import json
-import os
-
+from langchain_groq import ChatGroq
+from langchain.agents import create_agent
 # Load environment variables
+
+GROQ_API_KEY = os.getenv('GROQ_AI_API_KEY')
 load_dotenv()
-
-# # ===================== QDRANT & EMBEDDING SETUP =====================
-# qdrant = QdrantClient(
-#     url=os.getenv("QDRANT_URL_ENDPOINT"),
-#     api_key=os.getenv("QDRANT_API_KEY"),
-#     timeout=60
-# )
-
-# embed_client = OpenAI(
-#     api_key=os.getenv("FIREWORKS_API_KEY"),
-#     base_url="https://api.fireworks.ai/inference/v1"
-# )
-
-# COLLECTION_NAME = "Quran-Dataset-Collection"
-# EMBEDDING_MODEL = "fireworks/qwen3-embedding-8b"
-
 
 FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY")
 
@@ -462,27 +448,50 @@ async def quran_input_guardrail(
         tripwire_triggered=False
     )
 
-story_agent = Agent(
-    name="QuranStoryTeller",
-    instructions=(
-        "You are Tadabbur, a storytelling assistant inspired by the Quran. "
-        f"Always craft short, emotionally engaging stories "
+system_instructions = f"""You are Tadabbur, a storytelling assistant inspired by the Quran. "
+        f "Always craft short, emotionally engaging stories "
         "that teach moral lessons from Quranic verses. "
         "Your stories should be engaging and like this example:\n\n"
-        f"{story_example}\n\n"
+        {story_example}\n\n"
         "the final answer should be in a story format for users to read and not in json form. "
-        "Always stay relevant to the Quranic moral and narrative context."
-    ),
-    model=config.model,
-    # tools=[
-    #     Get_Specific_Verse,
-    #     Quran_Semantic_Search,
-    #     Get_Surah_Info,
-    # ],
-    model_settings=ModelSettings(temperature=0.7, max_turns=2),
-    # input_guardrails=[quran_input_guardrail],
-    # output_guardrails=[story_output_guardrail],
+        "Always stay relevant to the Quranic moral and narrative context.
+"""
+model = ChatGroq(
+    api_key = GROQ_API_KEY, 
+    model = "openai/gpt-oss-120b",
+    temperature = 0.7,
+    max_retries = 2    
 )
+
+story_agent = create_agent(
+    model = model,
+    tools = [],
+    system_prompt = system_instructions
+)
+
+# story_agent = Agent(
+#     name="QuranStoryTeller",
+#     instructions=(
+#         "You are Tadabbur, a storytelling assistant inspired by the Quran. "
+#         f"Always craft short, emotionally engaging stories "
+#         "that teach moral lessons from Quranic verses. "
+#         "Your stories should be engaging and like this example:\n\n"
+#         f"{story_example}\n\n"
+#         "the final answer should be in a story format for users to read and not in json form. "
+#         "Always stay relevant to the Quranic moral and narrative context."
+#     ),
+#     model=config.model,
+#     # tools=[
+#     #     Get_Specific_Verse,
+#     #     Quran_Semantic_Search,
+#     #     Get_Surah_Info,
+#     # ],
+#     model_settings=ModelSettings(temperature=0.7, max_turns=2),
+#     # input_guardrails=[quran_input_guardrail],
+#     # output_guardrails=[story_output_guardrail],
+# )
+
+
 
 
         

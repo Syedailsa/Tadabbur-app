@@ -16,8 +16,8 @@ from pydantic import BaseModel
 from qdrant_client import QdrantClient
 from agents import function_tool
 from openai import OpenAI
-
-
+from langchain_groq import ChatGroq
+from langchain.agents import create_agent
 import pandas as pd
 import qdrant_client
 load_dotenv()
@@ -36,6 +36,7 @@ embed_client = OpenAI(
     base_url="https://api.fireworks.ai/inference/v1"
 )
 
+GROQ_API_KEY = os.getenv('GROQ_AI_API_KEY')
 COLLECTION_NAME = "Quran-Dataset-Collection"
 EMBEDDING_MODEL = "fireworks/qwen3-embedding-8b"
 
@@ -392,25 +393,39 @@ def get_model_config(model_key: Optional[str] = None) -> RunConfig:
     )
 
 # config as default (for backward compatibility)
-config = get_model_config("gpt-oss-20b") 
+config = get_model_config("gpt-oss-20b")
 
-
-Tafsir_Agent: Agent = Agent(
-    name="QuranicTafsirAgent",
-    instructions=f"""
-    You are a Quranic Tafsir agent. Provide explanations of Quranic verses based ONLY on Quranic tafseer data.
-    Dont tell any other thing accept the tafseer of the ayah or surah asked by user.
-    """,
-    model_settings=ModelSettings( 
-        temperature=0.4,
-    ),
-    model=config.model,
-    tools=[
-            Get_Specific_Verse,
-            Quran_Semantic_Search,
-            Get_Surah_Info,
-    ]
-
+system_instructions = f"""
+You are a Quranic Tafsir agent. Provide explanations of Quranic verses based ONLY on Quranic tafseer data.
+Dont tell any other thing accept the tafseer of the ayah or surah asked by user.
+"""
+model = ChatGroq(
+    api_key = GROQ_API_KEY, 
+    model = "openai/gpt-oss-120b",
+    temperature = 0.7, 
 )
+
+tafseer_agent = create_agent(
+    model = model,
+    tools = [],
+    system_prompt = system_instructions 
+) 
+
+# Tafsir_Agent: Agent = Agent(
+#     name="QuranicTafsirAgent",
+#     instructions=f"""
+#     You are a Quranic Tafsir agent. Provide explanations of Quranic verses based ONLY on Quranic tafseer data.
+#     Dont tell any other thing accept the tafseer of the ayah or surah asked by user.
+#     """,
+#     model_settings=ModelSettings( 
+#         temperature=0.4,
+#     ),
+#     model=config.model,
+#     tools=[
+#             Get_Specific_Verse,
+#             Quran_Semantic_Search,
+#             Get_Surah_Info,
+#     ]
+# )
 
 

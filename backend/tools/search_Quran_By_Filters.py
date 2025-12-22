@@ -2,11 +2,13 @@ import operator
 import os
 import requests
 from data.data import surah_name_english_translation_array, surah_name_english_array
-from agents import function_tool
+# from agents import function_tool
 from pydantic import BaseModel
 from typing import Optional
 from qdrant_client import QdrantClient
 from tools.utils import normalize_surah
+from langchain.tools import tool
+from typing import List
 # ===================== QDRANT & EMBEDDING SETUP =====================
 
 qdrant = QdrantClient(
@@ -22,6 +24,7 @@ EMBEDDING_MODEL = "fireworks/qwen3-embedding-8b"
 
 
 class SurahFilter(BaseModel):
+    """Input for surah queries"""
     number: Optional[int] = None
     number_min: Optional[int] = None
     number_max: Optional[int] = None
@@ -32,6 +35,7 @@ class SurahFilter(BaseModel):
 
 
 class VerseFilter(BaseModel):
+    """Input for verse queries"""
     number: Optional[int] = None
     number_min: Optional[int] = None
     number_max: Optional[int] = None
@@ -59,8 +63,8 @@ class VerseFilter(BaseModel):
     sajdah: Optional[bool] = None
 
 
-@function_tool
-async def Search_Quran_By_filters(surah_args:SurahFilter, verse_args: VerseFilter, limit: int) -> str:
+@tool
+def Search_Quran_By_filters(surah_args: SurahFilter = None, verse_args: VerseFilter = None, limit: int = 1) -> str:
 
     """Search Quran using metadata filters
     This tool does an exact filter search on the Quran verses stored in the vector database. It does not use embeddings or similarity search. Only fields that are provided (not None) are used as filter conditions.
@@ -160,6 +164,7 @@ async def Search_Quran_By_filters(surah_args:SurahFilter, verse_args: VerseFilte
     3. What does Surah Fatiha verse 5 says about Guidance and worshipping Allah.
     4. Is verse number 128 of Surah Baqarah a Sajda verse.
     5. Give me translation of verse 13 of Surah An'aam and verse 50 of Al-Baqarah.
+    
     """
 
     surah_arguments = {
@@ -275,11 +280,33 @@ async def Search_Quran_By_filters(surah_args:SurahFilter, verse_args: VerseFilte
             new_filtered_array.append(surah)
 
     filtered_array = new_filtered_array
-
+    filtered_array = filtered_array[:limit]
     
-    print("filtered_array after verse filter", filtered_array)
+    results_array = []
+
+    for surah in filtered_array:
+        surah_string = ""
         
-    return filtered_array[:limit]
+        surah_string += f"Surah {surah['number']}: {surah['englishName']}\n"
+        surah_string += f"Arabic Name: {surah['name']}\n"
+        surah_string += f'Translation: "{surah["englishNameTranslation"]}"\n'
+        surah_string += f"Revelation Type: {surah['revelationType']}\n"
+        surah_string += f"Number of Ayahs: {len(surah['ayahs'])}\n\n"
+        
+        for i, ayah in enumerate(surah['ayahs']):
+            surah_string += f"Ayah {ayah['numberInSurah']} (Global #{ayah['number']}):\n"
+            surah_string += f'"{ayah["text"]}"\n'
+            surah_string += f"Details: Juz {ayah['juz']}, Manzil {ayah['manzil']}, Page {ayah['page']}, Ruku {ayah['ruku']}, HizbQuarter {ayah['hizbQuarter']}, Sajda: {ayah['sajda']}\n"
+            
+            if i < len(surah['ayahs']) - 1:
+                surah_string += "-" * 40 + "\n"
+        
+        results_array.append(surah_string)
+
+    print(f"Total surahs processed: {len(results_array)}")
+    print("filtered results", results_array[0], type(results_array[0]))
+     
+    return results_array[0]
 
 
 

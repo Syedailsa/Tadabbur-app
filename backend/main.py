@@ -2,16 +2,12 @@ import os
 import json
 from dotenv import load_dotenv
 from pathlib import Path
-load_dotenv()
-
-
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import asyncio # --- ADDED: Required for background tasks
-
-
+from langchain.messages import HumanMessage
 from agents import Runner
 from agents import InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered, SQLiteSession
 import agent as agent_module
@@ -20,11 +16,9 @@ import sqlite3
 import logging
 import secrets
 from agents import ItemHelpers  # used to extract message text from items (STREAMING)
-
-
+load_dotenv()
 # --- IMPORT NEW STT CLASS ---
-from speech_to_text import SpeechToTextEngine #
-
+from speech_to_text import SpeechToTextEngine
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -279,9 +273,9 @@ async def websocket_chat(websocket: WebSocket):
 
     session_model_key: str = "gpt-oss-20b"
     active_agent = agent_module.agent
-    active_config = getattr(agent_module, "config", None)
-    current_agent_name = getattr(active_agent, "name", "QuranTadabburAgent")
-    current_agent_normalized = _normalize_name(current_agent_name)
+    # active_config = getattr(agent_module, "config", None)
+    # current_agent_name = getattr(active_agent, "name", "QuranTadabburAgent")
+    # current_agent_normalized = _normalize_name(current_agent_name)
 
 
     # await websocket.send_json({
@@ -294,11 +288,7 @@ async def websocket_chat(websocket: WebSocket):
 
     try:
         while True:
-
-
             message = await websocket.receive()
-
-
             if "bytes" in message and message["bytes"]:
                 if stt_engine: # Only feed if we started the mic
                     await stt_engine.process_audio(message["bytes"])
@@ -376,8 +366,8 @@ async def websocket_chat(websocket: WebSocket):
                     "type": "session_id",
                     "status": "acknowledged",
                     "session_id": session_id,
-                    "current_agent": current_agent_name,
-                    "current_model": session_model_key
+                    # "current_agent": current_agent_name,
+                    # "current_model": session_model_key
                 })
 
 
@@ -489,9 +479,6 @@ async def websocket_chat(websocket: WebSocket):
                     })
                 continue
 
-
-
-
             if data.get("type") == "message":
                 if not current_session:
                     await websocket.send_json({
@@ -552,13 +539,12 @@ async def websocket_chat(websocket: WebSocket):
                     current_agent_name = getattr(mapped, "name", agent_name)
                 elif agent_name == "story-telling":
                     active_agent = story_module.story_agent
-                    active_config = getattr(story_module, "config", None)
-                    current_agent_name = "Quran Storyteller"
+                    # active_config = getattr(story_module, "config", None)
+                    # current_agent_name = "Quran Storyteller"
                 else:
                     active_agent = agent_module.agent
-                    active_config = getattr(agent_module, "config", None)
-                    current_agent_name = "Quran Tadabbur Agent"
-
+                    # active_config = getattr(agent_module, "config", None)
+                    # current_agent_name = "Quran Tadabbur Agent"
 
                 current_agent_normalized = _normalize_name(current_agent_name)
                 await websocket.send_json({
@@ -576,139 +562,32 @@ async def websocket_chat(websocket: WebSocket):
                 latest_message = ""
 
 
-            logger.info(f"[{current_agent_name}] Session: {session_id} | Message: {latest_message[:50]} ...")
+            # logger.info(f"[{current_agent_name}] Session: {session_id} | Message: {latest_message[:50]} ...")
 
             run_result = None
 
             conversation = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
-            logger.info(f"[{current_agent_name}] Processing with model: {session_model_key}")
+            # logger.info(f"[{current_agent_name}] Processing with model: {session_model_key}")
 
 
             try:
-                dynamic_config = agent_module.get_model_config(session_model_key)
-                base_config = getattr(active_agent, "config", None) or agent_module.config
-                if base_config and hasattr(base_config, "model_settings"):
-                    dynamic_config.model_settings = base_config.model_settings
-
-
-                # Show initial thinking
-                # await websocket.send_json({
-                #     "type": "loading_message",
-                #     "content": "Thinking deeply about your question..."
-                # })
-
-                print("Conversation", conversation)
-                run_result = Runner.run_streamed(
-                    active_agent,
-                    conversation,
-                    run_config=dynamic_config,
-                    session= current_session
+                print("Latest message", latest_message)
+                response = active_agent.invoke(
+                    {"messages": [HumanMessage(latest_message)]},
+                    config={"configurable": {"thread_id": "abc1234"}}
                 )
-                
-                final_text = ""  # Will collect all visible text
-
-
-                async for event in run_result.stream_events():
-
-
-                    # # # === LLM TOKEN STREAMING ====
-                    # if event.type == "raw_response_event":
-                    #     delta = getattr(event.data, "delta", None) or getattr(event.data, "text", None)
-                    #     if delta and delta.strip():
-                    #         # Block raw tool call JSON
-                    #         if not (delta.strip().startswith("{") and ("name" in delta or "arguments" in delta)):
-                    #             await websocket.send_json({
-                    #                 "type": "assistance_response_chunk",
-                    #                 "content": delta
-                    #             })
-                               
-                    #             final_text += delta
-                    #     continue
-
-
-                    # === AGENT HAND-OFF ===
-                    if event.type == "agent_updated_stream_event":
-                        new_name = None
-                        try:
-                            obj = getattr(event, "new_agent", None)
-                            new_name = getattr(obj, "name", None) if obj else getattr(event.data, "new_agent_name", None)
-                        except:
-                            pass
-                        if new_name and _normalize_name(new_name) != current_agent_normalized:
-                            mapped = _map_name_to_agent(new_name)
-                            if mapped:
-                                active_agent = mapped
-                                active_config = getattr(mapped, "config", active_config)
-                                current_agent_name = getattr(mapped, "name", new_name)
-                            else:
-                                current_agent_name = new_name
-                            current_agent_normalized = _normalize_name(current_agent_name)
-
-
-                            await websocket.send_json({
-                                "type": "loading_message",
-                                "content": f"Handing to expert..**"
-                            })
-                        continue
-
-
-                    # === TOOL CALL & OUTPUT ===
-                    elif event.type == "run_item_stream_event":
-                        item = event.item
-                        itype = getattr(item, "type", None)
-
-
-                    elif event.type == "tool_call_item":
-                        await websocket.send_json({
-                            "type": "loading_message",
-                            "content": "Searching authentic Quranic sources..."
-                        })
-
-
-                    elif event.type == "tool_call_output_item":
-                        output = getattr(event.item, "output", "")
-                        if isinstance(output, str) and output.strip():
-                            await websocket.send_json({
-                                "type": "assistance_response_chunk",
-                                "content": output
-                            })
-
-
-                    elif event.type == "message_output_item":
-                        try:
-                            text = ItemHelpers.text_message_output(event.item)
-                        except:
-                            text = str(event.item)
-                        if text and text.strip():
-                            await websocket.send_json({
-                                "type": "assistance_response_chunk",
-                                "content": text
-                            })
-                       
-                # try:
-                #     final_text = getattr(run_result, "final_output", None) \
-                #             or getattr(run_result, "output_text", None)
-                # except:
-                #     final_text = None
-
-
-                # print(final_text)
-
-
-                final_output = (
-                    getattr(run_result, "final_output", None) or
-                    getattr(run_result, "output_text", None) or
-                    getattr(run_result, "assistance_response", None) or
-                    ""
-                )
-
-
-                if final_output and isinstance(final_output, str) and final_output.strip():
-
-                    print("Final output", final_output.strip())
+                response = response['messages'][-1].content
+                print("LLM Response", response)
+                # run_result = Runner.run_streamed(
+                #     active_agent,
+                #     conversation,
+                #     run_config=dynamic_config,
+                #     session= current_session
+                # )
+                if response:
                     await websocket.send_json({
                         "type": "assistance_response",
-                        "content": final_output.strip(),
+                        "content": response,
                         "final": True
                     })
 
@@ -747,7 +626,7 @@ async def websocket_chat(websocket: WebSocket):
                                         fallback_result = await Runner.run(
                                             fallback_agent,
                                             conversation,
-                                            run_config=active_config or dynamic_config
+                                            # run_config=active_config or dynamic_config
                                         )
                                         msg = getattr(fallback_result, "final_output", None) or \
                                             getattr(fallback_result, "output_text", None) or \
@@ -799,9 +678,10 @@ async def websocket_chat(websocket: WebSocket):
         logger.exception("WebSocket error")
     finally:
         # --- ADDED: CLEANUP STT ---
-        await stt_engine.stop()
-        stt_task.cancel()
-        # --------------------------
+        if stt_engine:
+            await stt_engine.stop()
+            stt_task.cancel()
+            # --------------------------
 
 
 # ------------------- APP RUNNER -------------------
