@@ -45,6 +45,10 @@ class NotificationResponse(BaseModel):
     time: datetime
     is_read: bool = False
 
+class MarkNotificationReadRequest(BaseModel):
+    notification_id: Optional[str] = None
+    mark_all: Optional[bool] = False
+
 # ==================== BOOKMARK MODELS ====================
 
 class BookmarkCreate(BaseModel):
@@ -175,7 +179,6 @@ class ImageUploadRequest(BaseModel):
     """Request model for image upload"""
     image_data: str = Field(..., description="Base64 encoded image data")
     filename: str = Field(..., description="Original filename")
-    content_type: Optional[str] = Field(None, description="MIME type of the image")
 
 class ImageUploadResponse(BaseModel):
     """Response model for image upload"""

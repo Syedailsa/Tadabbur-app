@@ -196,6 +196,54 @@ async def get_notification(notification_id: str, user: dict = Depends(get_curren
 
     return dict(row)
 
+# ==================== SINGLE PUT ENDPOINT ====================
+
+@notif_router.put("/mark-read", response_model=SuccessResponse)
+async def mark_notifications_as_read(
+    req: MarkNotificationReadRequest,
+    user: dict = Depends(get_current_user)
+):
+    """
+    Mark notification(s) as read
+    - Pass notification_id to mark single notification
+    - Pass mark_all=true to mark all notifications as read
+    """
+    async with get_db_connection() as conn:
+        if req.mark_all:
+            # Mark all notifications as read
+            result = await conn.execute("""
+                UPDATE notifications 
+                SET is_read = TRUE 
+                WHERE user_id = $1 AND (is_read = FALSE OR is_read IS NULL)
+            """, user['user_id'])
+            
+            return SuccessResponse(
+                message="All notifications marked as read",
+                timestamp=datetime.utcnow()
+            )
+        
+        elif req.notification_id:
+            # Mark single notification as read
+            result = await conn.execute("""
+                UPDATE notifications 
+                SET is_read = TRUE 
+                WHERE notification_id = $1 AND user_id = $2
+            """, req.notification_id, user['user_id'])
+            
+            if result == "UPDATE 0":
+                raise HTTPException(status_code=404, detail="Notification not found")
+            
+            return SuccessResponse(
+                message="Notification marked as read",
+                timestamp=datetime.utcnow()
+            )
+        
+        else:
+            raise HTTPException(
+                status_code=400, 
+                detail="Either notification_id or mark_all must be provided"
+            )
+
 # # ==================== BOOKMARKS ROUTER ====================
 
 bookmark_router = APIRouter(prefix="/bookmarks", tags=["Bookmarks"])
@@ -550,6 +598,21 @@ async def upload_image(req: ImageUploadRequest, user: dict = Depends(get_current
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Invalid base64 image data: {str(e)}")
         
+        # Auto-detect content type from filename
+        filename_lower = req.filename.lower()
+        if filename_lower.endswith('.jpg') or filename_lower.endswith('.jpeg'):
+            content_type = "image/jpeg"
+        elif filename_lower.endswith('.png'):
+            content_type = "image/png"
+        elif filename_lower.endswith('.gif'):
+            content_type = "image/gif"
+        elif filename_lower.endswith('.webp'):
+            content_type = "image/webp"
+        elif filename_lower.endswith('.bmp'):
+            content_type = "image/bmp"
+        else:
+            content_type = "image/jpeg"  # Default
+        
         # Store image directly in database (no file processing)
         async with get_db_connection() as conn:
             # Generate unique image ID
@@ -561,7 +624,7 @@ async def upload_image(req: ImageUploadRequest, user: dict = Depends(get_current
                 user['user_id'], 
                 req.filename, 
                 image_data, 
-                req.content_type or "image/jpeg", 
+                content_type, 
                 len(image_data)
             )
             
