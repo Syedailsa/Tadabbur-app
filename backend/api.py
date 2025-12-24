@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile
 from datetime import datetime, timedelta
 from models import BookmarkDeleteRequest
 from typing import List
@@ -172,12 +172,22 @@ async def send_notification(req: NotificationCreate, user: dict = Depends(get_cu
 
 @notif_router.get("", response_model=List[NotificationResponse])
 async def get_notifications(user: dict = Depends(get_current_user)):
-    """Get all notifications for authenticated user"""
+    """
+    Get all notifications and automatically mark them as read
+    """
     async with get_db_connection() as conn:
+        # 1. Fetch notifications
         rows = await conn.fetch("""
             SELECT notification_id as id, title, message, COALESCE(is_read, FALSE) as is_read, created_at as time
             FROM notifications WHERE user_id = $1
             ORDER BY created_at DESC
+        """, user['user_id'])
+
+        # 2. Automatically mark them as read in the background
+        await conn.execute("""
+            UPDATE notifications 
+            SET is_read = TRUE 
+            WHERE user_id = $1 AND (is_read = FALSE OR is_read IS NULL)
         """, user['user_id'])
 
     return [dict(row) for row in rows]
@@ -349,24 +359,32 @@ async def delete_bookmark(req: BookmarkDeleteRequest, user: dict = Depends(get_c
     
     return SuccessResponse(message="Bookmark deleted", timestamp=datetime.utcnow())
 
+
+
 # ==================== PROFILE ROUTER ====================
 
 profile_router = APIRouter(prefix="/users", tags=["User Profile"])
 
-@profile_router.get("/me", response_model=UserProfile)
+@profile_router.get("/me", response_model=UserProfileResponse)
 async def get_my_profile(user: dict = Depends(get_current_user)):
-    """Get current user's profile"""
+    """
+    Get current user's profile
+    
+    Returns profileImageUrl: "/users/image/123"
+    Frontend calls: GET /users/image/123 to display image
+    
+    
+    """
     async with get_db_connection() as conn:
         # Try google_users first
         profile = await conn.fetchrow("""
-             SELECT
+            SELECT
                 user_id as id,
                 firstname,
                 email,
-                profile_picture as "image",
-                image_url as "imageUrl",
-                NULL as bio,
+                COALESCE(image_url, profile_picture) as "profileImageUrl",
                 created_at as "createdAt",
+                NULL as bio,
                 NULL as "lastName",
                 NULL as "dateofBirth",
                 NULL as address,
@@ -379,12 +397,11 @@ async def get_my_profile(user: dict = Depends(get_current_user)):
         if not profile:
             # Try users table
             profile = await conn.fetchrow("""
-                 SELECT
+                SELECT
                     user_id as id,
                     firstname,
                     email,
-                    profile_picture as "image",
-                    image_url as "imageUrl",
+                    COALESCE(image_url, profile_picture) as "profileImageUrl",
                     bio,
                     created_at as "createdAt",
                     last_name as "lastName",
@@ -399,41 +416,21 @@ async def get_my_profile(user: dict = Depends(get_current_user)):
         if not profile:
             raise HTTPException(status_code=404, detail="Profile not found")
 
-    # If user has uploaded image, get the actual image data
-    profile_dict = dict(profile)
-    if profile_dict.get('imageUrl'):
-        try:
-            # Extract image ID from URL
-            image_id = int(profile_dict['imageUrl'].split('/')[-1])
-            
-            # Get image data from database
-            image_result = await conn.fetchrow(
-                "SELECT image_data FROM user_images WHERE id = $1 AND user_id = $2", 
-                image_id, user['user_id']
-            )
-            
-            if image_result:
-                # Convert bytes to base64 string
-                profile_dict['image_data'] = base64.b64encode(image_result['image_data']).decode('utf-8')
-        except Exception as e:
-            logger.warning(f"Failed to get image data: {str(e)}")
-            profile_dict['image_data'] = None
-
-    print("Profile", profile_dict)
-    return profile_dict
+        logger.info(f"Profile fetched for user {user['user_id']}")
+        return dict(profile)
 
 
 @profile_router.put("/edit-profile", response_model=EditProfileResponse)
 async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current_user)):
     """
-    Edit Profile API - Fields that can be updated:
-    For regular users: email, image, firstname, last_name, contact, dateOfBirth, gender, bio, address
-    For Google users: email, image, firstname
+    Edit Profile API
     """
-
     async with get_db_connection() as conn:
         # Check if user is Google user
-        google_user = await conn.fetchrow("SELECT user_id FROM google_users WHERE user_id = $1", user['user_id'])
+        google_user = await conn.fetchrow(
+            "SELECT user_id FROM google_users WHERE user_id = $1", 
+            user['user_id']
+        )
         is_google = google_user is not None
 
         updates = []
@@ -441,9 +438,7 @@ async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current
         updated_fields = []
 
         if is_google:
-            # For Google users, only process email, firstname, image (ignore others)
-
-            # 1. EMAIL
+            # Google users: email, firstname only
             if req.email:
                 existing = await conn.fetchrow(
                     "SELECT user_id FROM google_users WHERE email = $1 AND user_id != $2",
@@ -451,36 +446,14 @@ async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current
                 )
                 if existing:
                     raise HTTPException(status_code=400, detail="Email already in use")
-
                 updates.append(f"email = ${len(values) + 1}")
                 values.append(req.email)
                 updated_fields.append("email")
 
-            # 2. FIRSTNAME
             if req.firstname:
-                existing = await conn.fetchrow(
-                    "SELECT user_id FROM google_users WHERE firstname = $1 AND user_id != $2",
-                    req.firstname, user['user_id']
-                )
-                if existing:
-                    raise HTTPException(status_code=400, detail="Firstname already taken")
-
                 updates.append(f"firstname = ${len(values) + 1}")
                 values.append(req.firstname)
                 updated_fields.append("firstname")
-
-            # 3. IMAGE URL
-            if req.imageUrl:
-                # Store the full URL directly
-                updates.append(f"image_url = ${len(values) + 1}")
-                values.append(req.imageUrl)
-                updated_fields.append("imageUrl")
-
-            # 4. IMAGE (legacy)
-            if req.image:
-                updates.append(f"profile_picture = ${len(values) + 1}")
-                values.append(req.image)
-                updated_fields.append("image")
 
             if not updates:
                 raise HTTPException(status_code=400, detail="No fields to update")
@@ -490,8 +463,7 @@ async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current
             await conn.execute(query, *values)
 
         else:
-            # For regular users
-            # 1. EMAIL
+            # Regular users: all fields
             if req.email:
                 existing = await conn.fetchrow(
                     "SELECT user_id FROM users WHERE email = $1 AND user_id != $2",
@@ -499,74 +471,40 @@ async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current
                 )
                 if existing:
                     raise HTTPException(status_code=400, detail="Email already in use")
-
                 updates.append(f"email = ${len(values) + 1}")
                 values.append(req.email)
                 updated_fields.append("email")
 
-            # 2. FIRSTNAME
             if req.firstname:
-                existing = await conn.fetchrow(
-                    "SELECT user_id FROM users WHERE firstname = $1 AND user_id != $2",
-                    req.firstname, user['user_id']
-                )
-                if existing:
-                    raise HTTPException(status_code=400, detail="Firstname already taken")
-
                 updates.append(f"firstname = ${len(values) + 1}")
                 values.append(req.firstname)
                 updated_fields.append("firstname")
 
-            # 2. LASTNAME
-            if req.lastName:
-                updates.append(f"last_name = ${len(values) + 1}")
-                values.append(req.lastName)
-                updated_fields.append("lastName")
-
-            # 3. IMAGE URL
-            if req.imageUrl:
-                # Store the full URL directly
-                updates.append(f"image_url = ${len(values) + 1}")
-                values.append(req.imageUrl)
-                updated_fields.append("imageUrl")
-
-            # 4. IMAGE (legacy)
-            if req.image:
-                updates.append(f"profile_picture = ${len(values) + 1}")
-                values.append(req.image)
-                updated_fields.append("image")
-
-            # 4. CONTACT
-            if req.phoneNumber:
-                updates.append(f"phone_number = ${len(values) + 1}")
-                values.append(req.phoneNumber)
-                updated_fields.append("phoneNumber")
-
-            # 5. DATE OF BIRTH
-            if req.dateofBirth:
-                updates.append(f"date_of_birth = ${len(values) + 1}")
-                values.append(req.dateofBirth)
-                updated_fields.append("dateofBirth")
-
-            # 6. GENDER
-            if req.gender:
-                updates.append(f"gender = ${len(values) + 1}")
-                values.append(req.gender)
-                updated_fields.append("gender")
-
-            # 7. BIO
-            if req.bio is not None:
-                updates.append(f"bio = ${len(values) + 1}")
-                values.append(req.bio)
-                updated_fields.append("bio")
-
-            # 8. LAST NAME
             if req.lastName is not None:
                 updates.append(f"last_name = ${len(values) + 1}")
                 values.append(req.lastName)
                 updated_fields.append("lastName")
 
-            # 9. ADDRESS
+            if req.phoneNumber:
+                updates.append(f"phone_number = ${len(values) + 1}")
+                values.append(req.phoneNumber)
+                updated_fields.append("phoneNumber")
+
+            if req.dateofBirth:
+                updates.append(f"date_of_birth = ${len(values) + 1}")
+                values.append(req.dateofBirth)
+                updated_fields.append("dateofBirth")
+
+            if req.gender:
+                updates.append(f"gender = ${len(values) + 1}")
+                values.append(req.gender)
+                updated_fields.append("gender")
+
+            if req.bio is not None:
+                updates.append(f"bio = ${len(values) + 1}")
+                values.append(req.bio)
+                updated_fields.append("bio")
+
             if req.address is not None:
                 updates.append(f"address = ${len(values) + 1}")
                 values.append(req.address)
@@ -580,63 +518,69 @@ async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current
             query = f"UPDATE users SET {', '.join(updates)} WHERE user_id = ${len(values)}"
             await conn.execute(query, *values)
 
+    logger.info(f"Profile updated for user {user['user_id']}: {updated_fields}")
+    
     return EditProfileResponse(
         message="Profile updated successfully",
         updatedFields=updated_fields,
         timestamp=datetime.utcnow()
     )
 
-# ==================== IMAGE UPLOAD ENDPOINTS ====================
+
+# ==================== IMAGE ENDPOINTS ====================
+
+from fastapi import File, UploadFile
 
 @profile_router.post("/upload-image", response_model=ImageUploadResponse)
-async def upload_image(req: ImageUploadRequest, user: dict = Depends(get_current_user)):
-    """Upload and process user image"""
+async def upload_profile_image(
+    file: UploadFile = File(...), 
+    user: dict = Depends(get_current_user)
+):
+    """
+    Upload profile image (Multipart/Form-Data)
+    - Stores image binary in Database (user_images table)
+    - Updates user profile with URL link
+    """
     try:
-        # Decode base64 image data
-        try:
-            image_data = base64.b64decode(req.image_data)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Invalid base64 image data: {str(e)}")
+        # 1. Validate file type
+        if file.content_type not in ["image/jpeg", "image/png", "image/webp"]:
+            raise HTTPException(status_code=400, detail="Invalid file type. Only JPG, PNG, and WebP are allowed.")
         
-        # Auto-detect content type from filename
-        filename_lower = req.filename.lower()
-        if filename_lower.endswith('.jpg') or filename_lower.endswith('.jpeg'):
-            content_type = "image/jpeg"
-        elif filename_lower.endswith('.png'):
-            content_type = "image/png"
-        elif filename_lower.endswith('.gif'):
-            content_type = "image/gif"
-        elif filename_lower.endswith('.webp'):
-            content_type = "image/webp"
-        elif filename_lower.endswith('.bmp'):
-            content_type = "image/bmp"
-        else:
-            content_type = "image/jpeg"  # Default
+        # 2. Read file data
+        MAX_SIZE = 5 * 1024 * 1024  # 5MB
+        image_data = await file.read()
         
-        # Store image directly in database (no file processing)
+        if len(image_data) > MAX_SIZE:
+            raise HTTPException(status_code=400, detail="Image too large (max 5MB)")
+            
         async with get_db_connection() as conn:
-            # Generate unique image ID
+            # Delete old image from user_images table if exists
+            old_image_url = await conn.fetchval(
+                f"SELECT image_url FROM {'google_users' if await conn.fetchval('SELECT 1 FROM google_users WHERE user_id = $1', user['user_id']) else 'users'} WHERE user_id = $1",
+                user['user_id']
+            )
+            
+            if old_image_url and "/users/image/" in old_image_url:
+                try:
+                    old_id = int(old_image_url.split("/")[-1])
+                    await conn.execute("DELETE FROM user_images WHERE id = $1", old_id)
+                except:
+                    pass
+
+            # Insert new image into DB
             image_id = await conn.fetchval("""
                 INSERT INTO user_images (user_id, image_name, image_data, content_type, image_size, created_at)
                 VALUES ($1, $2, $3, $4, $5, NOW())
                 RETURNING id
-            """, 
-                user['user_id'], 
-                req.filename, 
-                image_data, 
-                content_type, 
-                len(image_data)
-            )
+            """, user['user_id'], file.filename, image_data, file.content_type, len(image_data))
             
-            # Check if user is Google user
-            google_user = await conn.fetchrow(
-                "SELECT user_id FROM google_users WHERE user_id = $1", 
+            # Update profile with URL
+            image_url = f"/users/image/{image_id}"
+            is_google = await conn.fetchval(
+                "SELECT 1 FROM google_users WHERE user_id = $1", 
                 user['user_id']
             )
-            is_google = google_user is not None
             
-            # Update user profile with image URL
-            image_url = f"/users/image/{image_id}"
             if is_google:
                 await conn.execute(
                     "UPDATE google_users SET image_url = $1 WHERE user_id = $2",
@@ -648,52 +592,51 @@ async def upload_image(req: ImageUploadRequest, user: dict = Depends(get_current
                     image_url, user['user_id']
                 )
         
-        logger.info(f"Image uploaded successfully for user {user['user_id']}: image_id {image_id}")
+        logger.info(f"Image uploaded to DB: user={user['user_id']}, image_id={image_id}")
         
         return ImageUploadResponse(
-            message="Image uploaded and stored successfully",
-            image_url=f"/users/image/{image_id}",  # Return full URL
+            message="Profile image uploaded successfully",
+            status="success",
+            profileImageUrl=image_url,
             timestamp=datetime.utcnow()
         )
         
-    except ValueError as e:
-        logger.error(f"Image validation error: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"❌ UPLOAD ERROR DEBUG: {str(e)}") # Added for debugging
         logger.error(f"Image upload error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Image upload failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Image upload failed")
+
 
 @profile_router.get("/image/{image_id}")
-async def get_user_image(image_id: int, user: dict = Depends(get_current_user)):
-    """Serve user image from database"""
+async def get_profile_image(image_id: int, user: dict = Depends(get_current_user)):
+    """
+    Fetch profile image
+ 
+    """
     try:
         async with get_db_connection() as conn:
-            # Get image data directly
             result = await conn.fetchrow(
-                "SELECT image_data, content_type, image_name FROM user_images WHERE id = $1", 
+                """SELECT image_data, content_type, image_name, user_id 
+                   FROM user_images WHERE id = $1""", 
                 image_id
             )
             
             if not result:
                 raise HTTPException(status_code=404, detail="Image not found")
             
-            image_data, content_type, image_name = result
-            
-            # Verify user ownership
-            image_owner = await conn.fetchval(
-                "SELECT user_id FROM user_images WHERE id = $1", 
-                image_id
-            )
-            
-            if image_owner != user['user_id']:
-                raise HTTPException(status_code=403, detail="Not authorized to view this image")
-            
-            logger.info(f"Image served successfully: ID {image_id}")
+            # Verify ownership
+            if result['user_id'] != user['user_id']:
+                raise HTTPException(status_code=403, detail="Access denied")
             
             return StreamingResponse(
-                iter([image_data]),
-                media_type=content_type,
-                headers={"Content-Disposition": f"inline; filename={image_name}"}
+                iter([result['image_data']]),
+                media_type=result['content_type'],
+                headers={
+                    "Content-Disposition": f"inline; filename={result['image_name']}",
+                    "Cache-Control": "public, max-age=31536000"  # Cache for 1 year
+                }
             )
             
     except HTTPException:
@@ -702,84 +645,58 @@ async def get_user_image(image_id: int, user: dict = Depends(get_current_user)):
         logger.error(f"Error serving image {image_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to serve image")
 
+
 @profile_router.delete("/delete-image", response_model=SuccessResponse)
-async def delete_image(req: ImageDeleteRequest, user: dict = Depends(get_current_user)):
-    """Delete user image from database"""
+async def delete_profile_image(user: dict = Depends(get_current_user)):
+    """
+    Delete current profile image
+    """
     try:
-        # Parse image_id from the URL string (format: /users/image/123)
-        try:
-            if req.image_url.startswith('/users/image/'):
-                image_id = int(req.image_url.split('/')[-1])
-            else:
-                image_id = int(req.image_url)
-        except (ValueError, IndexError):
-            raise HTTPException(status_code=400, detail="Invalid image URL format")
-        
         async with get_db_connection() as conn:
-            # Check if user is Google user
-            google_user = await conn.fetchrow(
-                "SELECT user_id FROM google_users WHERE user_id = $1", 
+            is_google = await conn.fetchval(
+                "SELECT 1 FROM google_users WHERE user_id = $1", 
                 user['user_id']
             )
-            is_google = google_user is not None
             
-            # Verify ownership and delete
+            # Get current image URL
+            image_url = await conn.fetchval(
+                f"SELECT image_url FROM {'google_users' if is_google else 'users'} WHERE user_id = $1",
+                user['user_id']
+            )
+            
+            if not image_url or not image_url.startswith('/users/image/'):
+                raise HTTPException(status_code=404, detail="No profile image to delete")
+            
+            # Extract image ID and delete
+            image_id = int(image_url.split('/')[-1])
             result = await conn.execute(
                 "DELETE FROM user_images WHERE id = $1 AND user_id = $2", 
                 image_id, user['user_id']
             )
             
             if result == "DELETE 1":
-                # Clear profile image reference if this was the profile image
-                current_profile_image = await conn.fetchval(
-                    f"SELECT image_url FROM {'google_users' if is_google else 'users'} WHERE user_id = $1",
-                    user['user_id']
-                )
+                # Clear from profile
+                if is_google:
+                    await conn.execute(
+                        "UPDATE google_users SET image_url = NULL WHERE user_id = $1",
+                        user['user_id']
+                    )
+                else:
+                    await conn.execute(
+                        "UPDATE users SET image_url = NULL, updated_at = NOW() WHERE user_id = $1",
+                        user['user_id']
+                    )
                 
-                if current_profile_image and current_profile_image == req.image_url:
-                    # Clear the image_url field
-                    if is_google:
-                        await conn.execute(
-                            "UPDATE google_users SET image_url = NULL WHERE user_id = $1",
-                            user['user_id']
-                        )
-                    else:
-                        await conn.execute(
-                            "UPDATE users SET image_url = NULL, updated_at = NOW() WHERE user_id = $1",
-                            user['user_id']
-                        )
-            
-            if result == "DELETE 1":
-                # Clear profile image reference if this was the profile image
-                current_profile_image = await conn.fetchval(
-                    f"SELECT image_url FROM {'google_users' if is_google else 'users'} WHERE user_id = $1",
-                    user['user_id']
-                )
-                
-                if current_profile_image and current_profile_image == req.image_url:
-                    # Clear the image_url field
-                    if is_google:
-                        await conn.execute(
-                            "UPDATE google_users SET image_url = NULL WHERE user_id = $1",
-                            user['user_id']
-                        )
-                    else:
-                        await conn.execute(
-                            "UPDATE users SET image_url = NULL, updated_at = NOW() WHERE user_id = $1",
-                            user['user_id']
-                        )
-                
-                logger.info(f"Image deleted successfully: ID {image_id}")
-                
-                return SuccessResponse(message="Image deleted successfully")
+                logger.info(f"Image deleted: user={user['user_id']}, image_id={image_id}")
+                return SuccessResponse(message="Profile image deleted successfully")
             else:
-                raise HTTPException(status_code=404, detail="Image not found or not authorized to delete")
+                raise HTTPException(status_code=404, detail="Image not found")
             
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Image deletion error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Image deletion failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete image")
 
 
 # ==================== FEEDBACK ROUTER ====================

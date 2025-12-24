@@ -79,30 +79,16 @@ class BookmarkItem(BaseModel):
 class BookmarkDeleteRequest(BaseModel):
     bookmarkId: str
     
-# ==================== USER PROFILE MODELS ====================
-
-class ProfileUpdate(BaseModel):
-    """Update profile with specific fields only"""
-    firstname: Optional[str] = Field(None, min_length=3, max_length=50)
-    lastName: Optional[str] = None
-    dateofBirth: Optional[date] = None
-    address: Optional[str] = None
-    phoneNumber: Optional[str] = Field(None, alias="contact")   # Accept 'contact' in request
-    email: Optional[EmailStr] = None
-    profilePicture: Optional[str] = Field(None, alias="image")  # Accept 'image' in request
-    image_url: Optional[str] = Field(None, alias="imageUrl")    # Accept 'imageUrl' in request
-    bio: Optional[str] = None
-
-    class Config:
-        populate_by_name = True
-
-class UserProfile(BaseModel):
+# # ==================== USER PROFILE MODELS ====================
+class UserProfileResponse(BaseModel):
+    """
+    Production-ready profile response
+    Single profileImageUrl field - simple and clear!
+    """
     id: str
     firstname: str
     email: str
-    profilePicture: Optional[str] = Field(None, alias= "image")
-    image_url: Optional[str] = Field(None, alias="imageUrl")
-    image_data: Optional[str] = Field(None, description="Base64 encoded image data")  # Actual image bytes
+    profileImageUrl: Optional[str] = Field(None, description="URL to fetch profile image: /users/image/{id}")
     bio: Optional[str] = None
     lastName: Optional[str] = None
     dateofBirth: Optional[date] = None
@@ -112,17 +98,15 @@ class UserProfile(BaseModel):
     createdAt: datetime
 
 class EditProfileRequest(BaseModel):
-    """Edit Profile - Fields that can be updated"""
-    email: Optional[EmailStr] = None
-    image: Optional[str] = Field(None, description="Profile picture URL")
-    imageUrl: Optional[str] = Field(None, description="Image URL for uploaded images")
+    """Simple edit request - no image field needed"""
     firstname: Optional[str] = Field(None, min_length=3, max_length=50)
-    lastName: Optional[str] = Field(None, description="Last name")  # Changed from last_name
-    phoneNumber: Optional[str] = Field(None, description="Phone number")  # Changed from contact
-    dateofBirth: Optional[date] = None  # Changed from dateOfBirth
-    gender: Optional[Literal["Male", "Female", "Other"]] = None
-    bio: Optional[str] = Field(None, description="User bio")
+    lastName: Optional[str] = None
+    dateofBirth: Optional[date] = None
     address: Optional[str] = None
+    phoneNumber: Optional[str] = None
+    email: Optional[EmailStr] = None
+    bio: Optional[str] = None
+    gender: Optional[str] = None
 
 class EditProfileResponse(BaseModel):
     message: str
@@ -130,7 +114,15 @@ class EditProfileResponse(BaseModel):
     updatedFields: list
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
+class ImageUploadRequest(BaseModel):
+    image_data: str = Field(..., description="Base64 encoded image")
+    filename: str
 
+class ImageUploadResponse(BaseModel):
+    message: str
+    status: str = "success"
+    profileImageUrl: str = Field(..., description="URL to fetch the image")
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 # ==================== FEEDBACK MODELS ====================
 
@@ -171,20 +163,6 @@ class SuccessResponse(BaseModel):
 class ErrorResponse(BaseModel):
     error: str
     status: str = "error"
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
-# ==================== IMAGE UPLOAD MODELS ====================
-
-class ImageUploadRequest(BaseModel):
-    """Request model for image upload"""
-    image_data: str = Field(..., description="Base64 encoded image data")
-    filename: str = Field(..., description="Original filename")
-
-class ImageUploadResponse(BaseModel):
-    """Response model for image upload"""
-    message: str
-    status: str = "success"
-    image_url: str = Field(..., description="URL path to the uploaded image")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 class ImageDeleteRequest(BaseModel):

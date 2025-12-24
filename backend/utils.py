@@ -204,17 +204,3 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
     payload = decode_token(token)
     
     return payload
-
-# ========== HELPER FUNCTIONS ============
-
-def generate_user_id() -> str:
-    return f"user_{secrets.token_hex(8)}"
-
-def generate_notification_id() -> str:
-    return f"notif_{secrets.token_hex(8)}"
-
-def generate_bookmark_id() -> str:
-    return f"bm_{secrets.token_hex(8)}"
-
-def generate_feedback_id() -> str:
-    return f"fb_{secrets.token_hex(8)}"
