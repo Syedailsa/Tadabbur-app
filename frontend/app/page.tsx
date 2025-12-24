@@ -72,12 +72,6 @@ export default function ChatPage() {
   const messageScrollFlag = useRef<boolean | null>(false);
   const controls = useAnimationControls();
 
-  function preprocessContent(content: string) {
-    if (!content) return "";
-    // handles both colons (:) and periods (.)
-    return content.replace(/(\.|:)\s+(\d+\.)/g, "$1\n\n\n$2");
-  }
-
   function chunkText(text: string, size = 4) {
     const words = text.split(/\s+/);
     const chunks = [];
@@ -146,7 +140,13 @@ export default function ChatPage() {
           const isNew = session_id != sessionID;
           if (isNew) {
             setSessionID(session_id);
-            setMessages(null);
+            // Use functional update to ensure we're working with latest state
+            setMessages((prevMessages) => {
+              if (prevMessages && prevMessages.length > 0) {
+                return null;
+              }
+              return prevMessages; // Return unchanged if no messages
+            });
           }
           break;
 
@@ -267,10 +267,10 @@ export default function ChatPage() {
     try {
       wsRef.current?.send(
         JSON.stringify({
-          messages: [
-            ...(messages || []),
-            { role: "user", content: input },
-          ].slice(-10),
+          user_message: {
+            role: "user",
+            content: input,
+          },
         })
       );
       if (inputRef.current) {

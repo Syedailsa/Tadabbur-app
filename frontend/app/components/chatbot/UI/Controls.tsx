@@ -35,8 +35,14 @@ const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
   const InitializeNewSession = () => {
     if (!wsRef.current) return;
     const session_id = generateNewSessionId();
-    wsRef.current.send(
-      JSON.stringify({ type: "new-chat", session_id: session_id })
+    if (!session_id) return;
+
+    wsRef.current?.send(
+      JSON.stringify({
+        type: "session-init",
+        session_id: session_id,
+        model: "kimi-k2-instruct-0905",
+      })
     );
   };
   return (

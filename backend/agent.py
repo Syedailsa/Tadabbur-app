@@ -517,9 +517,9 @@ model = ChatGroq(
     
 )
 
-agent = create_agent(
+main_agent = create_agent(
+    name = "QuranTadabburAgent",
     model = model,
     system_prompt = system_instructions,
     tools = [Search_Quran_By_filters, searchAsbabNuzul],
-    checkpointer = InMemorySaver()
 )
