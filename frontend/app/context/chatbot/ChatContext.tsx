@@ -4,7 +4,7 @@ export interface ChatRecord {
   session_id: string | null;
   title: string | null;
   description: string | null;
-  date: string | null;
+  created_at: string | null;
 }
 export interface ChatContextType {
   hideExtraOptions: boolean;

@@ -8,7 +8,11 @@ import Copy from "../../../../icons/copy.svg";
 import Refresh from "../../../../icons/refresh.svg";
 import MoreOptions from "../../../../icons/more_options.svg";
 
-const PromptExtraOptions = () => {
+const PromptExtraOptions = ({
+  messageType,
+}: {
+  messageType: string | null;
+}) => {
   const {
     messages,
     index,
@@ -26,9 +30,10 @@ const PromptExtraOptions = () => {
   const [active, setActive] = useState<boolean | null>(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  useEffect(() => {
-    console.log("Feedback", feedback);
-  }, [feedback]);
+  // useEffect(() => {
+  //   console.log("Feedback", feedback);
+  // }, [feedback]);
+
   type OptionType = "copy" | "resend" | "like" | "dislike";
   const handleOptionClick = ({ type }: { type: OptionType }) => {
     switch (type) {
@@ -69,101 +74,133 @@ const PromptExtraOptions = () => {
         break;
     }
   };
+
   return (
-    <div className="flex gap-x-1.5 px-2 py-2 relative">
-      <div
-        onMouseOver={() => {
-          setOverlayTranslateAmount(4);
-          setOverlayText("Copy");
-          setActive(true);
-        }}
-        onMouseLeave={() => {
-          setActive(false);
-          setIsCopied(false);
-        }}
-        onClick={() => {
-          handleOptionClick({ type: "copy" });
-          setOverlayText("Copied");
-        }}
-        className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
-      >
-        <Copy className="w-4.5 h-4.5" />
-      </div>
-      <div
-        onMouseOver={() => {
-          setOverlayTranslateAmount(38);
-          setOverlayText("Like");
-          setActive(true);
-        }}
-        onMouseLeave={() => {
-          setActive(false);
-        }}
-        onClick={() => {
-          handleOptionClick({ type: "like" });
-          setFeedback("liked");
-        }}
-        className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
-      >
-        <ThumbsUp
-          className={`w-4 h-4 ${feedback === "liked" ? "fill-blue-400" : ""}`}
-        />
-      </div>
-      <div
-        onMouseOver={() => {
-          setOverlayTranslateAmount(66);
-          setOverlayText("Dislike");
-          setActive(true);
-        }}
-        onMouseLeave={() => {
-          setActive(false);
-        }}
-        onClick={() => {
-          handleOptionClick({ type: "dislike" });
-          setFeedback("disliked");
-        }}
-        className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
-      >
-        <ThumbsDown
-          className={`w-4 h-4 ${feedback === "disliked" ? "fill-red-400" : ""}`}
-        />
-      </div>
-      <div
-        onMouseOver={() => {
-          setOverlayTranslateAmount(98);
-          setOverlayText("Resend");
-          setActive(true);
-        }}
-        onMouseLeave={() => {
-          setActive(false);
-        }}
-        onClick={() => {
-          handleOptionClick({ type: "resend" });
-        }}
-        className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
-      >
-        <Refresh className="w-4 h-4" />
-      </div>
-      <div
-        onMouseOver={() => {
-          setOverlayTranslateAmount(132);
-        }}
-        onClick={() => {
-          setHidePromptExtraOptionsModelBox((prev: boolean | null) => !prev);
-        }}
-        className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
-      >
-        <MoreOptions className="w-4 h-4" />
-      </div>
-      {active && (
-        <motion.div
-          style={{ left: `${overlayTranslateAmount}px` }}
-          id="overlay-prompt-options-name"
-          className={`absolute top-11 py-2 px-3 h-2 rounded-full bg-black/90 flex justify-center items-center tracking-tighter`}
-        >
-          <p className="switzer-500 text-white text-xs">{overlayText}</p>
-        </motion.div>
-      )}
-      {!hidePromptExtraOptionsModelBox && <PromptExtraOptionsModelBox />}
+    <div>
+      {messageType === "assistant" ? (
+        <div className="flex gap-x-1.5 px-2 py-2 relative">
+          <div
+            onMouseOver={() => {
+              setOverlayTranslateAmount(4);
+              setOverlayText("Copy");
+              setActive(true);
+            }}
+            onMouseLeave={() => {
+              setActive(false);
+              setIsCopied(false);
+            }}
+            onClick={() => {
+              handleOptionClick({ type: "copy" });
+              setOverlayText("Copied");
+            }}
+            className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
+          >
+            <Copy className="w-4.5 h-4.5" />
+          </div>
+          <div
+            onMouseOver={() => {
+              setOverlayTranslateAmount(38);
+              setOverlayText("Like");
+              setActive(true);
+            }}
+            onMouseLeave={() => {
+              setActive(false);
+            }}
+            onClick={() => {
+              handleOptionClick({ type: "like" });
+              setFeedback("liked");
+            }}
+            className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
+          >
+            <ThumbsUp
+              className={`w-4 h-4 ${
+                feedback === "liked" ? "fill-blue-400" : ""
+              }`}
+            />
+          </div>
+          <div
+            onMouseOver={() => {
+              setOverlayTranslateAmount(66);
+              setOverlayText("Dislike");
+              setActive(true);
+            }}
+            onMouseLeave={() => {
+              setActive(false);
+            }}
+            onClick={() => {
+              handleOptionClick({ type: "dislike" });
+              setFeedback("disliked");
+            }}
+            className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
+          >
+            <ThumbsDown
+              className={`w-4 h-4 ${
+                feedback === "disliked" ? "fill-red-400" : ""
+              }`}
+            />
+          </div>
+          <div
+            onMouseOver={() => {
+              setOverlayTranslateAmount(98);
+              setOverlayText("Resend");
+              setActive(true);
+            }}
+            onMouseLeave={() => {
+              setActive(false);
+            }}
+            onClick={() => {
+              handleOptionClick({ type: "resend" });
+            }}
+            className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
+          >
+            <Refresh className="w-4 h-4" />
+          </div>
+          <div
+            onMouseOver={() => {
+              setOverlayTranslateAmount(132);
+            }}
+            onClick={() => {
+              setHidePromptExtraOptionsModelBox(
+                (prev: boolean | null) => !prev
+              );
+            }}
+            className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
+          >
+            <MoreOptions className="w-4 h-4" />
+          </div>
+          {active && (
+            <motion.div
+              style={{ left: `${overlayTranslateAmount}px` }}
+              id="overlay-prompt-options-name"
+              className="absolute top-11 py-2 px-3 h-2 rounded-full bg-black/90 flex justify-center items-center tracking-tighter"
+            >
+              <p className="switzer-500 text-white text-xs">{overlayText}</p>
+            </motion.div>
+          )}
+          {!hidePromptExtraOptionsModelBox && <PromptExtraOptionsModelBox />}
+        </div>
+      ) : messageType === "user" ? (
+        <div className="flex gap-x-1.5 px-2 py-2 relative">
+          <div
+            onMouseOver={() => {
+              setOverlayTranslateAmount(4);
+              setOverlayText("Copy");
+              setActive(true);
+            }}
+            onMouseLeave={() => {
+              setActive(false);
+              setIsCopied(false);
+            }}
+            onClick={() => {
+              handleOptionClick({ type: "copy" });
+              setOverlayText("Copied");
+            }}
+            className="p-1.5 hover:bg-black/5 ml-auto rounded-md cursor-pointer"
+          >
+            <Copy className="w-4.5 h-4.5" />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

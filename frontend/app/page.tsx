@@ -160,9 +160,7 @@ export default function ChatPage() {
           break;
         case "chat_history":
           const chat_history = data.chat_history;
-          console.log(chat_history);
           const history_status = data.status;
-          console.log(history_status);
           // handle chat history
           if (history_status === "acknowledged") {
             setChatHistory(chat_history);
@@ -438,10 +436,17 @@ export default function ChatPage() {
             <AnimatePresence mode="popLayout">
               {messages?.map((message, index) =>
                 message.role === "user" ? (
-                  <div key={index}>
-                    <p className="ml-auto w-max min-w-40 max-w-[20rem] bg-neutral-900 text-white switzer-500 py-2 px-3 rounded-md shadow-md border border-black/5">
-                      {message.content}
-                    </p>
+                  <div>
+                    <div key={index}>
+                      <p className="ml-auto w-max min-w-40 max-w-[20rem] bg-neutral-900 text-white switzer-500 py-2 px-3 rounded-md shadow-md border border-black/5">
+                        {message.content}
+                      </p>
+                    </div>
+                    <div>
+                      <PromptExtraOptionsProvider index={index}>
+                        <PromptExtraOptions messageType={"user"} />
+                      </PromptExtraOptionsProvider>
+                    </div>
                   </div>
                 ) : (
                   <div key={index}>
@@ -599,7 +604,7 @@ export default function ChatPage() {
                           {streamingMessageIndex != index && (
                             <div>
                               <PromptExtraOptionsProvider index={index}>
-                                <PromptExtraOptions />
+                                <PromptExtraOptions messageType={"assistant"} />
                               </PromptExtraOptionsProvider>
                             </div>
                           )}

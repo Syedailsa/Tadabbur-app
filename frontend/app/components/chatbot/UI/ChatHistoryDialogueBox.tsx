@@ -4,6 +4,15 @@ import { useContext, useEffect, useRef, useState } from "react";
 import { dummyChatHistory } from "@/static/data";
 import ChatHistory from "../../../../icons/history_icon.svg";
 
+const formatDateToDMY = (dateString: string | null): string => {
+  const date = new Date(dateString || new Date());
+  const day = date.getDate().toString().padStart(2, "0");
+  const month = (date.getMonth() + 1).toString().padStart(2, "0"); // Months are 0-indexed
+  const year = date.getFullYear();
+
+  return `${day}-${month}-${year}`;
+};
+
 const ChatHisoryDialoguseBox = () => {
   const {
     chatHistory,
@@ -121,7 +130,7 @@ const ChatHisoryDialoguseBox = () => {
                         {chat.title}
                       </p>
                       <p className="switzer-500 text-sm text-white/70 tracking-tight">
-                        {chat.date}
+                        {formatDateToDMY(chat.created_at)}
                       </p>
                     </div>
                     <p className="switzer-500 text-sm text-white/70">
