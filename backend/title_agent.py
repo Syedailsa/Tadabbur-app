@@ -26,9 +26,6 @@ class OutputSchema(BaseModel):
     description: str = Field(description="The description of the chat session (concise summary)")
 
 
-title_agent = create_agent(
-    name="Title and Description Generator",
-    model = model,
-    system_prompt=system_prompt,
-    response_format = OutputSchema
-)
+# Use structured output directly - NO create_agent needed
+title_agent = model.with_structured_output(OutputSchema, method='json_schema')
+
