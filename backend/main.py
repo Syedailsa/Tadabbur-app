@@ -410,30 +410,34 @@ async def websocket_chat(websocket: WebSocket):
                 })
                 continue
 
-            if data.get("type") == "like" or "dislike" or "report":
-                type = data.get("type")
-                session_id = data.get('session_id')
-                message_id = data.get('message_id')
-                if not session_id or message_id:
-                    continue
-                try:
-                    print("Submitting user feedback")
-                    supabase_client.table("chat_messages").update({"feedback": type}).eq("session_id", session_id).eq("message_id", message_id).execute()
-                    print("✅ Successfully submitted user feedback!")
-                except Exception as e:
-                    print("Failed to submit user feedback")
-                # the main system injection flow here
+            # if data.get("type") == "like" or "dislike" or "report":
+            #     type = data.get("type")
+            #     session_id = data.get('session_id')
+            #     message_id = data.get('message_id')
+            #     if not session_id or message_id:
+            #         continue
+            #     try:
+            #         print("Submitting user feedback")
+            #         supabase_client.table("chat_messages").update({"feedback": type}).eq("session_id", session_id).eq("message_id", message_id).execute()
+            #         print("✅ Successfully submitted user feedback!")
+            #     except Exception as e:
+            #         print("Failed to submit user feedback")
+            #     # the main system injection flow here
                 
-                # Fetch the user prompt for the above assistant response
-                try:
-                    supabase_client.table('chat_messages').select("")
-                except Exception as e:
-                    print("Failed to fetch the user prompt for the assistant response", e)
+            #     # Fetch the user prompt for the above assistant response
+            #     try:
+            #         supabase_client.table('chat_messages').select("")
+            #     except Exception as e:
+            #         print("Failed to fetch the user prompt for the assistant response", e)
+            #     continue
             # === MAIN CHAT MESSAGE ===
+
             if data.get("type") == "user_message":
                 role = data.get("role", "user")
                 message = data.get("content", "")
                 message_id = data.get("message_id")
+                
+                print("New message received", message)
                 if message_id:
                     unique_message_ids.add(message_id)
                 else:
@@ -446,7 +450,7 @@ async def websocket_chat(websocket: WebSocket):
                     supabase_client.table('chat_messages').insert({
                         "message_id": message_id,
                         "session_id": session_id,
-                        "role": "user",
+                        "role": role,
                         "message": message,
                     }).execute()
                     print("✅ User message saved successfully!")
