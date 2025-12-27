@@ -7,7 +7,7 @@ from supabase import create_client, Client
 from supabase.client import ClientOptions
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import Any, Any, Any, List, Optional
 import asyncio # --- ADDED: Required for background tasks
 from langchain.messages import HumanMessage, AIMessage
 from agents import Runner
@@ -17,6 +17,8 @@ import agent as agent_module
 import story_agent as story_module
 import logging
 import secrets
+import random
+import string
 from agents import ItemHelpers  # used to extract message text from items (STREAMING)
 load_dotenv()
 # --- IMPORT NEW STT CLASS ---
@@ -46,6 +48,11 @@ API_KEY = os.getenv("CHAT_API_KEY")
 DB_PATH = "chat.db"
 
 
+
+def generate_short_id() -> str:
+    # This is the closest equivalent to Math.random().toString(36)
+    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+
 def generate_session_id() -> str:
     """Generate unique session ID: sess_ + 12 hex chars"""
     return f"sess_{secrets.token_hex(6)}"
@@ -62,81 +69,27 @@ def generate_session_id() -> str:
 # ensure_db_exists()
 
 
-# def get_all_sessions_from_db():
-#     """Fetch all sessions from database with metadata"""
-#     conn = sqlite3.connect(DB_PATH)
-#     cursor = conn.cursor()
-   
-#     # Get all sessions with their first message as title
-#     cursor.execute("""
-#         SELECT
-#             s.session_id,
-#             s.created_at,
-#             s.updated_at,
-#             s.content,
-#             (
-#                 SELECT message_data
-#                 FROM agent_messages
-#                 WHERE session_id = s.session_id
-#                 AND json_extract(message_data, '$.role') = 'user'
-#                 ORDER BY created_at ASC
-#                 LIMIT 1
-#             ) as first_message,
-#             (
-#                 SELECT COUNT(*)
-#                 FROM agent_messages
-#                 WHERE session_id = s.session_id
-#             ) as message_count
-#         FROM agent_sessions s
-#         ORDER BY s.updated_at DESC
-#     """)
-   
-#     sessions = []
-#     for row in cursor.fetchall():
-#         session_id, content, created_at, updated_at, first_message_json, message_count = row
-       
-#         print(content)
-#         # Extract title from first user message
-#         title = "New Chat"
-#         if first_message_json:
-#             try:
-#                 first_msg = json.loads(first_message_json)
-#                 content = first_msg.get("content", "")
-#                 # Use first 50 chars as title
-#                 title = content[:50] + "..." if len(content) > 50 else content
-#             except:
-#                 pass
-       
-#         # Generate description
-#         description = f"{message_count} messages"
-       
-#         sessions.append({
-#             "session_id": session_id,
-#             "title": title,
-#             "description": description,
-#             "content": content,
-#             "date": updated_at,
-#             "language": "english"  # Default, can be enhanced later
-#         })
-   
-#     conn.close()
-#     return sessions
 
-
-def get_chat_messages(session_id: str, supabase_client):
+def get_chat_messages(session_id: str, supabase_client) -> List[str]:
     """Get all messages of a specific session"""
     if not session_id:
         return []
-    chat_messages = supabase_client.table('chat_messages').select('role','message').order('created_at').eq('session_id', session_id).execute().data
+    chat_messages = supabase_client.table('chat_messages').select('message_id','role','message').order('created_at').eq('session_id', session_id).execute().data
     chat_messages = [
     {'role': msg['role'], 'content': msg['message']}
     for msg in chat_messages
     ]
-    print("Chat messages", chat_messages)
     return chat_messages
 
 
+def get_message_ids(session_id: str, supabase_client) -> list[str | None]:
+    """Get all message IDs for a specific session"""
+    if not session_id:
+        return []
 
+    message_ids = supabase_client.table('chat_messages').select('message_id').order('created_at').eq('session_id', session_id).execute().data
+    print(f"All message IDs for session {session_id}, {message_ids}")
+    return message_ids
 
 # ------------------- OPTIONAL HTTP ENDPOINT -------------------
 class Message(BaseModel):
@@ -239,8 +192,9 @@ async def websocket_chat(websocket: WebSocket):
     except Exception as e:
         print("Some error occured while connecting to supabase", e)
 
-    # initialize the conversation history array
+    # initialize the conversation history and message_IDs set
     conversation_history = []
+    unique_message_ids = set()
     # STT State
     stt_engine: Optional[SpeechToTextEngine] = None
     stt_task: Optional[asyncio.Task] = None
@@ -261,7 +215,6 @@ async def websocket_chat(websocket: WebSocket):
                     await stt_engine.process_audio(message["bytes"])
                 continue
             # -----------------------------------------------------------------
-
 
             if "text" in message:
                 try:
@@ -324,8 +277,9 @@ async def websocket_chat(websocket: WebSocket):
                 try:    
                     print("🔃 Creating a new session record")
                     supabase_client.table("chat_sessions").insert({'session_id': session_id, "title": "Chat Title", "description":"Description for the chat session" }).execute()
-                    # reset the conversation history
+                    # reset the conversation history and unique message ids
                     conversation_history = []
+                    unique_message_ids.clear()
                     print("✅ Successfully created a new session record!")
                 except Exception as e:
                     print("Some error occured while adding a new session record", e)
@@ -379,6 +333,9 @@ async def websocket_chat(websocket: WebSocket):
                     print(f"🔃 Retrieving messages for chat with session-id {session_id}")
                     # get chat messages
                     chat_history = get_chat_messages(session_id, supabase_client)
+                    # get message ids for this session
+                    message_ids = get_message_ids(session_id, supabase_client)
+                    unique_message_ids = set(message_ids)
                     # override conversation_history with new_chat_history
                     conversation_history = chat_history or []
                     await websocket.send_json({
@@ -453,161 +410,147 @@ async def websocket_chat(websocket: WebSocket):
                 })
                 continue
 
-            # === MAIN CHAT MESSAGE ===
-            user_message = data.get("user_message", [])
-            print("New conversation history", conversation_history)
-            if user_message:
-                print("Latest message", user_message)
-                latest_message = user_message
-            else:
-                latest_message = {"role": "user", "content": ""}
-            # save user message in db
-            try:
-                supabase_client.table('chat_messages').insert({
-                    "session_id": session_id,
-                    "role": "user",
-                    "message": latest_message['content'],
-                }).execute()
-                print("✅ User message saved successfully!")
-            except Exception as e:
-                print("Some error occured while inserting user messages", e)
-
-            logger.info(f"[{current_agent_name}] Session: {session_id} | Message: {latest_message} ...")
-            # logger.info(f"[{current_agent_name}] Processing with model: {session_model_key}")
-            try:
-                # append user message to conversation history
-                latest_message_content = latest_message['content']
-                conversation_history.append(HumanMessage(latest_message_content or ""))
+            if data.get("type") == "like" or "dislike" or "report":
+                type = data.get("type")
+                session_id = data.get('session_id')
+                message_id = data.get('message_id')
+                if not session_id or message_id:
+                    continue
+                try:
+                    print("Submitting user feedback")
+                    supabase_client.table("chat_messages").update({"feedback": type}).eq("session_id", session_id).eq("message_id", message_id).execute()
+                    print("✅ Successfully submitted user feedback!")
+                except Exception as e:
+                    print("Failed to submit user feedback")
+                # the main system injection flow here
                 
-                response = active_agent.invoke(
-                    {"messages": conversation_history},
-                )
-                response = response['messages'][-1].content
-                # append assistant message to conversation history
-                conversation_history.append(AIMessage(response or ""))
+                # Fetch the user prompt for the above assistant response
+                try:
+                    supabase_client.table('chat_messages').select("")
+                except Exception as e:
+                    print("Failed to fetch the user prompt for the assistant response", e)
+            # === MAIN CHAT MESSAGE ===
+            if data.get("type") == "user_message":
+                role = data.get("role", "user")
+                message = data.get("content", "")
+                message_id = data.get("message_id")
+                if message_id:
+                    unique_message_ids.add(message_id)
+                else:
+                    message_id = generate_short_id()
+                    while message_id in unique_message_ids:
+                        message_id = generate_short_id()
+                    unique_message_ids.add(message_id)
+                # save user message in db
                 try:
                     supabase_client.table('chat_messages').insert({
+                        "message_id": message_id,
                         "session_id": session_id,
-                        "role": "assistant",
-                        "message": response or "",
+                        "role": "user",
+                        "message": message,
                     }).execute()
-                    print("✅ Assistant message saved successfully!")
+                    print("✅ User message saved successfully!")
                 except Exception as e:
-                    print("Some error occured while inserting assistant messages", e)
+                    print("Some error occured while inserting user messages", e)
 
-                # generate title and description for the current chat history if there are 2 user/assistant messages each
-                # run the below logic in a seperate thread
-                if (len(conversation_history) == 2):
-                    conversation_string = ""
-                    # build a conversation string from user & assistant messages
-                    for message in conversation_history:
-                        if isinstance(message, HumanMessage):
-                            conversation_string += f"User message: {message.content} \n"
-                        else:
-                            conversation_string += f"Assistant message: {message.content} \n"
-                    if conversation_string:
-                        try:
-                            agent_response = title_agent.invoke(conversation_string)
-                            title = agent_response.title or "Title"
-                            description = agent_response.description or "Description of chat session"
-                            # insert title and description in session table
+                logger.info(f"[{current_agent_name}] Session: {session_id} | Message: {message} ...")
+                try:
+                    # append user message to conversation history
+                    conversation_history.append(HumanMessage(message))
+                    response = active_agent.invoke(
+                        {"messages": conversation_history},
+                    )
+                    response = response['messages'][-1].content
+                    # append assistant message to conversation history
+                    conversation_history.append(AIMessage(response or ""))
+                    # generate a message id for response message
+                    response_message_id = generate_short_id()
+                    while response_message_id in unique_message_ids:
+                        response_message_id = generate_short_id()
+
+                    unique_message_ids.add(response_message_id)
+
+                    try:
+                        supabase_client.table('chat_messages').insert({
+                            "message_id": response_message_id,
+                            "session_id": session_id,
+                            "role": "assistant",
+                            "message": response or "",
+                        }).execute()
+                        print("✅ Assistant message saved successfully!")
+                    except Exception as e:
+                        print("Some error occured while inserting assistant messages", e)
+
+                    # generate title and description for the current chat history if there are 2 user/assistant messages each
+                    # run the below logic in a seperate thread
+                    if (len(conversation_history) == 2):
+                        conversation_string = ""
+                        # build a conversation string from user & assistant messages
+                        for message in conversation_history:
+                            if isinstance(message, HumanMessage):
+                                conversation_string += f"User message: {message.content} \n"
+                            else:
+                                conversation_string += f"Assistant message: {message.content} \n"
+                        if conversation_string:
                             try:
-                                print("🔃 Inserting title and description in session record")
-                                supabase_client.table('chat_sessions').update({"title": title, "description": description}).eq("session_id", session_id).execute()
-                                print("✅ Successfully insert title and description")
+                                agent_response = title_agent.invoke(conversation_string)
+                                title = agent_response.title or "Title"
+                                description = agent_response.description or "Description of chat session"
+                                # insert title and description in session table
+                                try:
+                                    print("🔃 Inserting title and description in session record")
+                                    supabase_client.table('chat_sessions').update({"title": title, "description": description}).eq("session_id", session_id).execute()
+                                    print("✅ Successfully insert title and description")
+                                except Exception as e:
+                                    print("Some error occured while inserting title and description in session table", e)
                             except Exception as e:
-                                print("Some error occured while inserting title and description in session table", e)
-                        except Exception as e:
-                            print("Some error occured while generating title and description", e)
-                    else:
-                        print("No conversation string so not generating title and description.")
+                                print("Some error occured while generating title and description", e)
+                        else:
+                            print("No conversation string so not generating title and description.")
 
-                if response:
+                    if response:
+                        await websocket.send_json({
+                            "type": "assistance_response",
+                            "message_id": response_message_id,
+                            "content": response,
+                            "final": True
+                        })
+
+
+                    # === FINAL RESPONSE & CLEANUP ===
+                    # await websocket.send_json({
+                    #     "type": "assistance_response",
+                    #     "content": final_text.strip() if final_text.strip() else "I'm not sure how to respond to that."
+                    # })
+
+
+                    await websocket.send_json({"type": "streaming_end"})
+                    await websocket.send_json({"type": "run_complete"})
+
+
+                except OutputGuardrailTripwireTriggered as e:
+                    msg = getattr(e.guardrail_result, "output_info",
+                                "Sorry, I can only respond within the context of the Quran and authentic Islamic sources.")
+
+
                     await websocket.send_json({
                         "type": "assistance_response",
-                        "content": response,
-                        "final": True
+                        "content": msg.strip()
                     })
+                    await websocket.send_json({"type": "streaming_end"})
+                    await websocket.send_json({"type": "run_complete"})
 
 
-                # === FINAL RESPONSE & CLEANUP ===
-                # await websocket.send_json({
-                #     "type": "assistance_response",
-                #     "content": final_text.strip() if final_text.strip() else "I'm not sure how to respond to that."
-                # })
+                except WebSocketDisconnect:
+                    logger.info("Client disconnected")
+                    break
 
 
-                await websocket.send_json({"type": "streaming_end"})
-                await websocket.send_json({"type": "run_complete"})
-
-
-            # except InputGuardrailTripwireTriggered as e:
-            #                 msg = getattr(e.guardrail_result, "output_info", None)
-
-
-            #                 # If guardrail didn't provide a message → use fallback agent
-            #                 if not msg or not msg.strip():
-            #                     logger.info("Input guardrail triggered → trying fallback agent")
-
-
-            #                     # Choose correct fallback agent based on current active agent
-            #                     if getattr(active_agent, "name", "").startswith("QuranTadabburAgent"):
-            #                         fallback_agent = getattr(agent_module, "fallback_agent", None)
-            #                     elif "Story" in getattr(active_agent, "name", "") or getattr(active_agent, "name", "") == "QuranStoryTeller":
-            #                         fallback_agent = getattr(story_module, "fallback_agent", None)
-            #                     else:
-            #                         fallback_agent = getattr(agent_module, "fallback_agent", None)
-
-
-            #                     if fallback_agent:
-            #                         try:
-            #                             fallback_result = await Runner.run(
-            #                                 fallback_agent,
-            #                                 conversation,
-            #                                 # run_config=active_config or dynamic_config
-            #                             )
-            #                             msg = getattr(fallback_result, "final_output", None) or \
-            #                                 getattr(fallback_result, "output_text", None) or \
-            #                                 "I'm sorry, I can't assist with that topic."
-            #                         except Exception as fallback_err:
-            #                             logger.error(f"Fallback agent failed: {fallback_err}")
-            #                             msg = "I'm sorry, I can't assist with that topic."
-            #                     else:
-            #                         msg = "This question is outside my allowed scope."
-
-
-            #                 # Send final response
-            #                 await websocket.send_json({
-            #                     "type": "assistance_response",
-            #                     "content": msg.strip()
-            #                 })
-            #                 await websocket.send_json({"type": "streaming_end"})
-            #                 await websocket.send_json({"type": "run_complete"})
-
-
-            except OutputGuardrailTripwireTriggered as e:
-                msg = getattr(e.guardrail_result, "output_info",
-                              "Sorry, I can only respond within the context of the Quran and authentic Islamic sources.")
-
-
-                await websocket.send_json({
-                    "type": "assistance_response",
-                    "content": msg.strip()
-                })
-                await websocket.send_json({"type": "streaming_end"})
-                await websocket.send_json({"type": "run_complete"})
-
-
-            except WebSocketDisconnect:
-                logger.info("Client disconnected")
-                break
-
-
-            except Exception as e:
-                logger.exception("Streaming error")
-                await websocket.send_json({"type": "assistance_response", "content": "Sorry, something went wrong."})
-                await websocket.send_json({"type": "streaming_end"})
-                await websocket.send_json({"type": "run_complete"})
+                except Exception as e:
+                    logger.exception("Streaming error")
+                    await websocket.send_json({"type": "assistance_response", "content": "Sorry, something went wrong."})
+                    await websocket.send_json({"type": "streaming_end"})
+                    await websocket.send_json({"type": "run_complete"})
 
 
     except WebSocketDisconnect:

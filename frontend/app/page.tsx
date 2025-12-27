@@ -32,17 +32,14 @@ import { PromptExtraOptionsContext } from "./context/chatbot/PromptExtraOptionsC
 export default function ChatPage() {
   const [messages, setMessages] = useState<
     | {
+        message_id: string;
         role: "user" | "assistant";
         content: string;
-        feedback: "liked" | "disliked" | null;
+        feedback: "liked" | "disliked" | "reported" | null;
       }[]
     | null
   >(null);
 
-  [
-    { role: "user", content: "loremipsum34" },
-    { role: "assistant", content: "loremipsum34 " },
-  ];
   const inputRef = useRef<HTMLDivElement | null>(null);
   const [showPlaceholder, setShowPlaceholder] = useState<boolean | null>(true);
   const [greeting, setGreeting] = useState<string | null>(
@@ -61,6 +58,7 @@ export default function ChatPage() {
     number | null
   >(null);
 
+  const [messageIDs, setMessageIDs] = useState<string[] | null>(null);
   const [showAudioDialog, setShowAudioDialog] = useState(false);
   const [audioRequest, setAudioRequest] = useState<any>(null);
 
@@ -81,6 +79,9 @@ export default function ChatPage() {
     }
     return chunks;
   }
+
+  const generateShortId = (): string =>
+    Math.random().toString(36).substring(2, 8);
 
   useEffect(() => {
     const websocket = new WebSocket("ws://localhost:8000/ws/chat");
@@ -178,13 +179,30 @@ export default function ChatPage() {
 
         case "assistance_response":
           const reply: string = data.content ?? "No reply from server";
+          const message_id: string = data.message_id;
           setLoadingMessage(null);
 
-          const chunk_array = chunkText(reply, 4); // 4 words per chunk
+          messageScrollFlag.current = false;
+          // Start a new message
+          setMessages((prev) => {
+            const updated = [...(prev || [])];
+
+            // Add a new assistant message with empty content
+            updated.push({
+              message_id: message_id,
+              role: "assistant",
+              content: "", // Start empty
+              feedback: null,
+            });
+
+            // Set the streaming index to this new message
+            setStreamingMessageIndex(updated.length - 1);
+            return updated;
+          });
 
           setLoading(false);
-          messageScrollFlag.current = false;
 
+          const chunk_array = chunkText(reply, 4); // 4 words per chunk
           (async () => {
             for (const chunk of chunk_array) {
               // smaller delay → faster
@@ -192,15 +210,13 @@ export default function ChatPage() {
 
               setMessages((prev) => {
                 const updated = [...(prev || [])];
-                const lastIdx = updated.findLastIndex(
-                  (m) => m.role === "assistant"
-                );
-
-                if (lastIdx !== -1) {
-                  updated[lastIdx].content =
-                    (updated[lastIdx].content || "") + " " + chunk;
+                const streamIndex = streamingMessageIndex ?? updated.length - 1;
+                if (streamIndex >= 0 && streamIndex < updated.length) {
+                  updated[streamIndex].content =
+                    (updated[streamIndex].content || "") + " " + chunk;
                 } else {
                   updated.push({
+                    message_id: message_id,
                     role: "assistant",
                     content: chunk,
                     feedback: null,
@@ -212,7 +228,6 @@ export default function ChatPage() {
           })().then(() => {
             setStreamingMessageIndex(null);
           });
-
           break;
 
         case "agent":
@@ -248,27 +263,32 @@ export default function ChatPage() {
     if (streamingMessageIndex !== null) return;
     setError(null);
     messageScrollFlag.current = false;
+    setLoading(true);
+    // generate a message ID for the user message
+    let messageID = generateShortId();
+    while (messageIDs?.includes(messageID)) {
+      messageID = generateShortId(); // Reassign the same variable
+    }
+    setMessageIDs((prev) => {
+      return [...(prev || []), messageID];
+    });
+
     setMessages((prev: any) => {
       // prev is already typed correctly from useState
       const updated = [
         ...(prev || []),
-        { role: "user", content: input, feedback: null },
-        { role: "assistant", content: "", feedback: null },
+        { message_id: messageID, role: "user", content: input, feedback: null },
       ];
-
-      setStreamingMessageIndex(updated.length - 1);
       return updated;
     });
-
-    setLoading(true);
 
     try {
       wsRef.current?.send(
         JSON.stringify({
-          user_message: {
-            role: "user",
-            content: input,
-          },
+          type: "user_message",
+          message_id: messageID,
+          role: "user",
+          content: input,
         })
       );
       if (inputRef.current) {
@@ -306,10 +326,11 @@ export default function ChatPage() {
   interface PromptExtraOptionsProviderProps {
     children: ReactNode;
     index: number | null;
+    message_id: string | null;
   }
   const PromptExtraOptionsProvider: React.FC<
     PromptExtraOptionsProviderProps
-  > = ({ children, index }) => {
+  > = ({ children, index, message_id }) => {
     const [hidePromptExtraOptionsModelBox, setHidePromptExtraOptionsModelBox] =
       useState<boolean | null>(true);
 
@@ -319,6 +340,7 @@ export default function ChatPage() {
           messages,
           setMessages,
           index,
+          message_id,
           hidePromptExtraOptionsModelBox,
           setHidePromptExtraOptionsModelBox,
           sessionID,
@@ -436,184 +458,173 @@ export default function ChatPage() {
             <AnimatePresence mode="popLayout">
               {messages?.map((message, index) =>
                 message.role === "user" ? (
-                  <div>
-                    <div key={index}>
+                  <div key={index}>
+                    <div>
                       <p className="ml-auto w-max min-w-40 max-w-[20rem] bg-neutral-900 text-white switzer-500 py-2 px-3 rounded-md shadow-md border border-black/5">
                         {message.content}
                       </p>
                     </div>
                     <div>
-                      <PromptExtraOptionsProvider index={index}>
+                      <PromptExtraOptionsProvider
+                        message_id={message.message_id}
+                        index={index}
+                      >
                         <PromptExtraOptions messageType={"user"} />
                       </PromptExtraOptionsProvider>
                     </div>
                   </div>
                 ) : (
                   <div key={index}>
-                    <AnimatePresence mode="wait">
-                      {loading && !loadingMessage && !message.content ? (
-                        <motion.div
-                          animate={{ scale: [1, 1.2, 1] }}
-                          transition={{
-                            duration: 0.8,
-                            ease: easeInOut,
-                            repeat: Infinity,
-                            repeatType: "loop",
-                          }}
-                          className="w-3 h-3 rounded-full bg-black"
-                        ></motion.div>
-                      ) : loadingMessage && !message.content ? (
-                        <motion.div
-                          initial={{ opacity: 0, x: -20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{
-                            duration: 0.1,
-                            ease: easeInOut,
-                            type: "spring",
-                          }}
-                          exit={{ opacity: 0 }}
-                          className="w-max flex gap-x-1"
+                    <div className="w-max min-w-40 max-w-full switzer-500 mt-2 py-2 px-3 rounded-md bg-white shadow-md">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        rehypePlugins={[rehypeRaw]}
+                        components={{
+                          // HEADERS
+                          h1: ({ node, ...props }) => (
+                            <h1 className="text-3xl font-bold" {...props} />
+                          ),
+                          h2: ({ node, ...props }) => (
+                            <h2 className="text-2xl font-semibold" {...props} />
+                          ),
+                          h3: ({ node, ...props }) => (
+                            <h3 className="text-xl font-semibold" {...props} />
+                          ),
+
+                          // PARAGRAPH
+                          p: ({ node, ...props }) => (
+                            <p
+                              className="leading-7 my-2 text-gray-800"
+                              {...props}
+                            />
+                          ),
+
+                          // STRONG ( **bold** )
+                          strong: ({ node, ...props }) => (
+                            <strong
+                              className="font-bold text-black"
+                              {...props}
+                            />
+                          ),
+
+                          // EMPHASIS ( *italic* )
+                          em: ({ node, ...props }) => (
+                            <em className="italic text-gray-700" {...props} />
+                          ),
+
+                          // LINE BREAK
+                          br: ({ node, ...props }) => <br />,
+
+                          // LINKS
+                          a: ({ node, ...props }) => (
+                            <a
+                              className="text-blue-600 underline"
+                              target="_blank"
+                              rel="noreferrer"
+                              {...props}
+                            />
+                          ),
+
+                          // LISTS
+                          ul: ({ node, ...props }) => (
+                            <ul className="list-disc pl-6" {...props} />
+                          ),
+                          ol: ({ node, ...props }) => (
+                            <ol className="list-decimal pl-6" {...props} />
+                          ),
+                          li: ({ node, ...props }) => (
+                            <li className="my-1" {...props} />
+                          ),
+                          blockquote: ({ node, ...props }) => (
+                            <blockquote
+                              className="border-l-4 border-gray-400 pl-4 italic my-3"
+                              {...props}
+                            />
+                          ),
+
+                          // HORIZONTAL RULE
+                          hr: () => <hr className="my-4 border-gray-300" />,
+
+                          // IMAGES
+                          img: ({ node, ...props }) => (
+                            <img
+                              className="rounded-md my-2"
+                              alt=""
+                              {...props}
+                            />
+                          ),
+                        }}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
+                    </div>
+                    {streamingMessageIndex != index && (
+                      <div>
+                        <PromptExtraOptionsProvider
+                          message_id={message.message_id}
+                          index={index}
                         >
-                          <motion.p
-                            className="space-grotesk-500 text-black/60 bg-linear-to-l from-black-40 via-bg-black/50 to-black/60 bg-size-[200%_100%] bg-clip-text"
-                            animate={{
-                              backgroundPosition: ["200% 0", "-200% 0"],
-                            }}
-                            transition={{
-                              duration: 3,
-                              ease: "linear",
-                              repeat: Infinity,
-                            }}
-                          >
-                            {loadingMessage}
-                          </motion.p>
-                          <motion.div
-                            animate={{ x: [-4, 6] }}
-                            transition={{
-                              duration: 1,
-                              ease: easeIn,
-                              repeat: Infinity,
-                              repeatType: "loop",
-                            }}
-                          >
-                            <DownArrow className="mt-[0.32rem] w-4 h-4 -rotate-90" />
-                          </motion.div>
-                        </motion.div>
-                      ) : (
-                        <div>
-                          <div className="w-max min-w-40 max-w-full switzer-500 py-2 px-3 rounded-md bg-white shadow-md">
-                            <ReactMarkdown
-                              remarkPlugins={[remarkGfm]}
-                              rehypePlugins={[rehypeRaw]}
-                              components={{
-                                // HEADERS
-                                h1: ({ node, ...props }) => (
-                                  <h1
-                                    className="text-3xl font-bold"
-                                    {...props}
-                                  />
-                                ),
-                                h2: ({ node, ...props }) => (
-                                  <h2
-                                    className="text-2xl font-semibold"
-                                    {...props}
-                                  />
-                                ),
-                                h3: ({ node, ...props }) => (
-                                  <h3
-                                    className="text-xl font-semibold"
-                                    {...props}
-                                  />
-                                ),
-
-                                // PARAGRAPH
-                                p: ({ node, ...props }) => (
-                                  <p
-                                    className="leading-7 my-2 text-gray-800"
-                                    {...props}
-                                  />
-                                ),
-
-                                // STRONG ( **bold** )
-                                strong: ({ node, ...props }) => (
-                                  <strong
-                                    className="font-bold text-black"
-                                    {...props}
-                                  />
-                                ),
-
-                                // EMPHASIS ( *italic* )
-                                em: ({ node, ...props }) => (
-                                  <em
-                                    className="italic text-gray-700"
-                                    {...props}
-                                  />
-                                ),
-
-                                // LINE BREAK
-                                br: ({ node, ...props }) => <br />,
-
-                                // LINKS
-                                a: ({ node, ...props }) => (
-                                  <a
-                                    className="text-blue-600 underline"
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    {...props}
-                                  />
-                                ),
-
-                                // LISTS
-                                ul: ({ node, ...props }) => (
-                                  <ul className="list-disc pl-6" {...props} />
-                                ),
-                                ol: ({ node, ...props }) => (
-                                  <ol
-                                    className="list-decimal pl-6"
-                                    {...props}
-                                  />
-                                ),
-                                li: ({ node, ...props }) => (
-                                  <li className="my-1" {...props} />
-                                ),
-                                blockquote: ({ node, ...props }) => (
-                                  <blockquote
-                                    className="border-l-4 border-gray-400 pl-4 italic my-3"
-                                    {...props}
-                                  />
-                                ),
-
-                                // HORIZONTAL RULE
-                                hr: () => (
-                                  <hr className="my-4 border-gray-300" />
-                                ),
-
-                                // IMAGES
-                                img: ({ node, ...props }) => (
-                                  <img
-                                    className="rounded-md my-2"
-                                    alt=""
-                                    {...props}
-                                  />
-                                ),
-                              }}
-                            >
-                              {message.content}
-                            </ReactMarkdown>
-                          </div>
-                          {streamingMessageIndex != index && (
-                            <div>
-                              <PromptExtraOptionsProvider index={index}>
-                                <PromptExtraOptions messageType={"assistant"} />
-                              </PromptExtraOptionsProvider>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </AnimatePresence>
+                          <PromptExtraOptions messageType={"assistant"} />
+                        </PromptExtraOptionsProvider>
+                      </div>
+                    )}
                   </div>
                 )
               )}
+
+              {/* Loading indicators - separate from messages array */}
+              <AnimatePresence mode="wait">
+                {loading && !loadingMessage && (
+                  <motion.div
+                    animate={{ scale: [1, 1.2, 1] }}
+                    transition={{
+                      duration: 0.8,
+                      ease: easeInOut,
+                      repeat: Infinity,
+                      repeatType: "loop",
+                    }}
+                    className="w-3 h-3 rounded-full bg-black"
+                  ></motion.div>
+                )}
+                {loadingMessage && (
+                  <motion.div
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{
+                      duration: 0.1,
+                      ease: easeInOut,
+                      type: "spring",
+                    }}
+                    exit={{ opacity: 0 }}
+                    className="w-max flex gap-x-1"
+                  >
+                    <motion.p
+                      className="space-grotesk-500 text-black/60 bg-linear-to-l from-black-40 via-bg-black/50 to-black/60 bg-size-[200%_100%] bg-clip-text"
+                      animate={{
+                        backgroundPosition: ["200% 0", "-200% 0"],
+                      }}
+                      transition={{
+                        duration: 3,
+                        ease: "linear",
+                        repeat: Infinity,
+                      }}
+                    >
+                      {loadingMessage}
+                    </motion.p>
+                    <motion.div
+                      animate={{ x: [-4, 6] }}
+                      transition={{
+                        duration: 1,
+                        ease: easeIn,
+                        repeat: Infinity,
+                        repeatType: "loop",
+                      }}
+                    >
+                      <DownArrow className="mt-[0.32rem] w-4 h-4 -rotate-90" />
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </AnimatePresence>
             <div ref={messagesEndRef}></div>
           </div>

@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState } from "react";
+import { useContext, useState } from "react";
 import { PromptExtraOptionsContext } from "@/app/context/chatbot/PromptExtraOptionsContext";
 import { motion } from "framer-motion";
 import PromptExtraOptionsModelBox from "./PromptExtraOptionsModelBox";
@@ -16,6 +16,7 @@ const PromptExtraOptions = ({
   const {
     messages,
     index,
+    message_id,
     wsRef,
     hidePromptExtraOptionsModelBox,
     setHidePromptExtraOptionsModelBox,
@@ -46,12 +47,12 @@ const PromptExtraOptions = ({
           })
           .catch((err) => console.error("Failed to copy", err));
         break;
-
       case "like":
         wsRef?.current.send(
           JSON.stringify({
             type: "like",
             index: index,
+            message_id: message_id,
             session_id: sessionID,
           })
         );
@@ -61,15 +62,14 @@ const PromptExtraOptions = ({
           JSON.stringify({
             type: "dislike",
             index: index,
+            message_id: message_id,
             session_id: sessionID,
           })
         );
         break;
       case "resend":
         ask(messages[index - 1].content);
-        console.log("Message sent again");
         break;
-
       default:
         break;
     }
@@ -180,10 +180,9 @@ const PromptExtraOptions = ({
           {!hidePromptExtraOptionsModelBox && <PromptExtraOptionsModelBox />}
         </div>
       ) : messageType === "user" ? (
-        <div className="flex gap-x-1.5 px-2 py-2 relative">
+        <div className="flex gap-x-1.5 pr-1 pl-2 pb-2 pt-1 relative">
           <div
             onMouseOver={() => {
-              setOverlayTranslateAmount(4);
               setOverlayText("Copy");
               setActive(true);
             }}
@@ -199,6 +198,14 @@ const PromptExtraOptions = ({
           >
             <Copy className="w-4.5 h-4.5" />
           </div>
+          {active && (
+            <motion.div
+              id="overlay-prompt-options-name"
+              className="absolute w-max top-10 right-0 py-2 px-3 h-2 rounded-full bg-black/90 flex justify-center items-center tracking-tighter"
+            >
+              <p className="switzer-500 text-white text-xs">{overlayText}</p>
+            </motion.div>
+          )}
         </div>
       ) : null}
     </div>

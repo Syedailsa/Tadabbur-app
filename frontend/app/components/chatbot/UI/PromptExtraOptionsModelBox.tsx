@@ -9,7 +9,7 @@ const PromptExtraOptionsModelBox = () => {
     hidePromptExtraOptionsModelBox,
     setHidePromptExtraOptionsModelBox,
     wsRef,
-    messages,
+    message_id,
     index,
     sessionID,
   } = useContext(PromptExtraOptionsContext);
@@ -70,6 +70,14 @@ const PromptExtraOptionsModelBox = () => {
         <div
           onClick={() => {
             setHidePromptExtraOptionsModelBox(true);
+            wsRef?.current.send(
+              JSON.stringify({
+                type: "report",
+                index: index,
+                message_id: message_id,
+                session_id: sessionID,
+              })
+            );
           }}
           className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-pointer"
         >

@@ -1,7 +1,6 @@
 import { easeIn, easeInOut, motion } from "framer-motion";
 import { ChatContext, ChatRecord } from "@/app/context/chatbot/ChatContext";
 import { useContext, useEffect, useRef, useState } from "react";
-import { dummyChatHistory } from "@/static/data";
 import ChatHistory from "../../../../icons/history_icon.svg";
 
 const formatDateToDMY = (dateString: string | null): string => {
@@ -24,10 +23,6 @@ const ChatHisoryDialoguseBox = () => {
   } = useContext(ChatContext);
   const [translatePic, setTranslatePic] = useState<boolean | null>(null);
   const dialogueRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setChatHistory(dummyChatHistory);
-  }, []);
 
   useEffect(() => {
     if (!openChatHistoryDialogueBox) return;
@@ -107,37 +102,45 @@ const ChatHisoryDialoguseBox = () => {
                 </p>
               </div>
               <motion.div className="grid grid-cols-1 gap-2 px-1 overflow-y-auto h-45">
-                {chatHistory?.map((chat: ChatRecord, index: number) => (
-                  <motion.div
-                    whileHover={{ scale: 1.01 }}
-                    onClick={() => {
-                      setSelectedSessionID(chat.session_id);
-                      setOpenChatHistoryDialogueBox(false);
-                      wsRef.current?.send(
-                        JSON.stringify({
-                          type: "get_chat",
-                          session_id: chat.session_id,
-                        })
-                      );
-                    }}
-                    whileTap={{ scale: 0.98, transition: { duration: 0.5 } }}
-                    transition={{ duration: 0.2 }}
-                    key={chat.session_id || index}
-                    className="w-full bg-black cursor-pointer shadow-md h-max border border-black/10 rounded-md px-2 py-1 flex flex-col gap-y-1"
-                  >
-                    <div className="flex justify-between">
-                      <p className="switzer-500 text-sm text-white tracking-tight">
-                        {chat.title}
+                {chatHistory ? (
+                  chatHistory?.map((chat: ChatRecord, index: number) => (
+                    <motion.div
+                      whileHover={{ scale: 1.01 }}
+                      onClick={() => {
+                        setSelectedSessionID(chat.session_id);
+                        setOpenChatHistoryDialogueBox(false);
+                        wsRef.current?.send(
+                          JSON.stringify({
+                            type: "get_chat",
+                            session_id: chat.session_id,
+                          })
+                        );
+                      }}
+                      whileTap={{ scale: 0.98, transition: { duration: 0.5 } }}
+                      transition={{ duration: 0.2 }}
+                      key={chat.session_id || index}
+                      className="w-full bg-black cursor-pointer shadow-md h-max border border-black/10 rounded-md px-2 py-1 flex flex-col gap-y-1"
+                    >
+                      <div className="flex justify-between">
+                        <p className="switzer-500 text-sm text-white tracking-tight">
+                          {chat.title}
+                        </p>
+                        <p className="switzer-500 text-sm text-white/70 tracking-tight">
+                          {formatDateToDMY(chat.created_at)}
+                        </p>
+                      </div>
+                      <p className="switzer-500 text-sm text-white/70">
+                        {chat.description}
                       </p>
-                      <p className="switzer-500 text-sm text-white/70 tracking-tight">
-                        {formatDateToDMY(chat.created_at)}
-                      </p>
-                    </div>
-                    <p className="switzer-500 text-sm text-white/70">
-                      {chat.description}
+                    </motion.div>
+                  ))
+                ) : (
+                  <div>
+                    <p className="switzer-500 text-sm text-black/70">
+                      No chat history.
                     </p>
-                  </motion.div>
-                ))}
+                  </div>
+                )}
               </motion.div>
             </div>
           </div>
