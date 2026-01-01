@@ -6,7 +6,8 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { ReactNode, useContext, useEffect, useRef, useState } from "react";
 import ChatProvider from "./providers/chatbot/ChatProvider";
-import DownArrow from "../icons/arrow-down-head.svg";
+// import DownArrow from "../icons/arrow-down-head.svg";
+import SimpleAudioDialog from "./components/chatbot/UI/AudioDialogBox";
 
 import {
   motion,
@@ -18,7 +19,7 @@ import {
 import { ModelList } from "@/static/data";
 import BottomOptions from "./components/chatbot/UI/BottomOptions";
 import ExtraOptions from "./components/chatbot/UI/ExtraOptions";
-import PromptSuggestion from "../icons/prompt_suggestion.svg";
+// import PromptSuggestion from "../icons/prompt_suggestion.svg";
 import { defaultPrompts } from "@/static/data";
 import ModelBox from "./components/chatbot/UI/ModelBox";
 import Controls from "./components/chatbot/UI/Controls";
@@ -32,11 +33,11 @@ import { PromptExtraOptionsContext } from "./context/chatbot/PromptExtraOptionsC
 export default function ChatPage() {
   const [messages, setMessages] = useState<
     | {
-        message_id: string;
-        role: "user" | "assistant";
-        content: string;
-        feedback: "liked" | "disliked" | "reported" | null;
-      }[]
+      message_id: string;
+      role: "user" | "assistant";
+      content: string;
+      feedback: "liked" | "disliked" | "reported" | null;
+    }[]
     | null
   >(null);
 
@@ -134,6 +135,25 @@ export default function ChatPage() {
           break;
 
         case "audio_response":
+          setAudioRequest({
+            surah: data.surah_name,
+            ayah_number: data.ayah_number,
+            audio_url: data.audio_url,
+            all_urls: data.all_urls,
+            text_response: data.text_response,
+          });
+          setShowAudioDialog(true);
+
+          // Also add the text message to chat
+          setMessages((prev) => [
+            ...(prev || []),
+            {
+              message_id: data.message_id,
+              role: "assistant",
+              content: data.text_response,
+              feedback: null,
+            },
+          ]);
           break;
 
         case "session_id":
@@ -366,12 +386,10 @@ export default function ChatPage() {
             <Controls wsRef={wsRef} />
           </div>
           <div
-            className={`w-full ${
-              messages && messages?.length > 0 ? "h-max" : "h-full"
-            }
-             px-4 mt-12 lg:w-2/3 chat-box flex flex-col gap-y-4 ${
-               !messages ? "justify-center items-center" : ""
-             }`}
+            className={`w-full ${messages && messages?.length > 0 ? "h-max" : "h-full"
+              }
+             px-4 mt-12 lg:w-2/3 chat-box flex flex-col gap-y-4 ${!messages ? "justify-center items-center" : ""
+              }`}
           >
             <AnimatePresence>
               {!messages && (
@@ -428,7 +446,7 @@ export default function ChatPage() {
                                   <div className="w-full flex flex-col px-3 pt-3 pb-6 gap-y-1">
                                     <div className="flex gap-x-3">
                                       <div className="p-1 h-max border border-black/5 rounded-md">
-                                        <PromptSuggestion className="w-5 h-5 fill-current text-green-700" />
+                                        {/* <PromptSuggestion className="w-5 h-5 fill-current text-green-700" /> */}
                                       </div>
                                       <div className="default-prompt-text-box">
                                         <div className="heading-text">
@@ -620,7 +638,7 @@ export default function ChatPage() {
                         repeatType: "loop",
                       }}
                     >
-                      <DownArrow className="mt-[0.32rem] w-4 h-4 -rotate-90" />
+                      {/* <DownArrow className="mt-[0.32rem] w-4 h-4 -rotate-90" /> */}
                     </motion.div>
                   </motion.div>
                 )}
@@ -661,6 +679,18 @@ export default function ChatPage() {
           </div>
         </div>
       </ChatProvider>
+
+      
+      {showAudioDialog && audioRequest && (
+        <SimpleAudioDialog
+          isOpen={showAudioDialog}
+          onClose={() => {
+            setShowAudioDialog(false);
+            setAudioRequest(null);
+          }}
+          audioData={audioRequest}
+        />
+      )}
     </div>
   );
 }

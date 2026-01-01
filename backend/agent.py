@@ -15,6 +15,8 @@ from pydantic import BaseModel
 from langchain_fireworks import ChatFireworks
 from langchain.agents import create_agent
 from openai import OpenAI
+from tools.audio_playback import play_quran_audio
+from tools.verse_reader import fetch_quran_verse
 
 load_dotenv()
 
@@ -24,7 +26,7 @@ embed_client = OpenAI(
 )
 
 GROQ_API_KEY = os.getenv('GROQ_AI_API_KEY')
-# FIREWORKS_API_KEY = os.getenv('FIREWORKS_API_KEY')
+FIREWORKS_API_KEY = os.getenv('FIREWORKS_API_KEY')
 COLLECTION_NAME = "Quran-Dataset-Collection"
 EMBEDDING_MODEL = "fireworks/qwen3-embedding-8b"
 
@@ -68,7 +70,27 @@ fallback_agent = Agent(
 
 
 system_instructions = """
-        You are **Tadabbur**, a Quranic knowledge assistant.
+    
+    Use this tool EXACTLY when the user says anything like "listen", "play", "hear", "recite", "quran audio" with any surah or ayah name.
+
+    Examples:
+    - i want to listen surah fatiha
+    - play surah yasin
+    - ayatul kursi sunao
+    - surah kahf recitation
+    - recite surah ikhlas
+
+    MOST IMPORTANT RULES - FOLLOW THESE OR IT WILL BREAK THE AUDIO PLAYER:
+    - When this tool returns a result, your FINAL response MUST be ONLY the tool's output.
+    - Copy and paste the tool output EXACTLY - do not change a single word, emoji, or link.
+    - NEVER add any extra text before or after like "Here you go", "Enjoy listening", "Hope you like it", or "Let me know if you want translation".
+    - NEVER summarize or rephrase the tool output.
+    - Do NOT say anything like "Opening player" or "Audio is ready" yourself.
+    - The tool output already has 🎧 and audio links - keep them exactly as they are.
+    - This is critical because the system detects 🎧 and links to open the audio dialog automatically.
+
+    If you break this rule, the audio player will not open and user will only see text.
+            You are **Tadabbur**, a Quranic knowledge assistant.
         ## Core Rule
         Use **Search_Quran** or **Search_Quran_By_Filters** for *every* Quran-related query.
 
@@ -80,6 +102,18 @@ system_instructions = """
         • NEVER leave responses empty after tool calls. Whatever tool returns, format beautifully and respond to the user in proper natural language.
 
         ## Tools
+
+        ### • play_quran_audio
+        Use this when user wants to LISTEN to Quran recitation:
+        - Examples: "I want to listen to Surah Fatiha", "play Ayatul Kursi", "can I hear Surah Kahf?"
+        - The tool will return audio URLs for the requested surah or ayah
+        - Always provide the audio link to the user in a friendly way
+
+        ### • fetch_quran_verse  
+        Use when user wants to READ or VIEW a specific verse/ayah.
+        Examples: "Show me Ayatul Kursi", "Read Surah Fatiha verse 5", "What is verse 255 of Surah Baqarah?"
+        Always display both Arabic text and English translation in a beautiful format.
+
         
         ### • searchAsbabNuzul
         1. Use searchAsbabNuzul when user asks for queries related to Asbab_Nuzul/Shan_Nuzul (Circumstances of revelation). Use it for searching through user provided references like surah name, verse number, etc as well as doing semantic searches by forming a query, dervied from user's question or query.
@@ -205,9 +239,9 @@ system_instructions = """
 )
 
 
-model = ChatGroq(
-    api_key = GROQ_API_KEY, 
-    model = "openai/gpt-oss-120b",
+model = ChatFireworks(
+    api_key = FIREWORKS_API_KEY, 
+    model = "accounts/fireworks/models/gpt-oss-120b",
     temperature = 0,
     
 )
@@ -216,5 +250,5 @@ main_agent = create_agent(
     name = "QuranTadabburAgent",
     model = model,
     system_prompt = system_instructions,
-    tools = [Search_Quran_By_filters, searchAsbabNuzul],
+    tools = [Search_Quran_By_filters, searchAsbabNuzul, play_quran_audio, fetch_quran_verse],
 )
