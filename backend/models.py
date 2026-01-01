@@ -85,7 +85,7 @@ class ProfileUpdate(BaseModel):
     """Update profile with specific fields only"""
     firstname: Optional[str] = Field(None, min_length=3, max_length=50)
     lastName: Optional[str] = None
-    dateofBirth: Optional[date] = None
+    dateOfBirth: Optional[str] = None  # Changed
     address: Optional[str] = None
     phoneNumber: Optional[str] = Field(None, alias="contact")   # Accept 'contact' in request
     email: Optional[EmailStr] = None

@@ -545,8 +545,8 @@ async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current
             # 5. DATE OF BIRTH
             if req.dateofBirth:
                 updates.append(f"date_of_birth = ${len(values) + 1}")
-                values.append(req.dateofBirth)
-                updated_fields.append("dateofBirth")
+                values.append(req.dateOfBirth)
+                updated_fields.append("dateOfBirth")
 
             # 6. GENDER
             if req.gender:
@@ -560,11 +560,11 @@ async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current
                 values.append(req.bio)
                 updated_fields.append("bio")
 
-            # 8. LAST NAME
-            if req.lastName is not None:
-                updates.append(f"last_name = ${len(values) + 1}")
-                values.append(req.lastName)
-                updated_fields.append("lastName")
+            # # 8. LAST NAME
+            # if req.lastName is not None:
+            #     updates.append(f"last_name = ${len(values) + 1}")
+            #     values.append(req.lastName)
+            #     updated_fields.append("lastName")
 
             # 9. ADDRESS
             if req.address is not None:
