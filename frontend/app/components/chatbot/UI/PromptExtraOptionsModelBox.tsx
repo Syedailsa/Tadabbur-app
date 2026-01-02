@@ -9,6 +9,7 @@ const PromptExtraOptionsModelBox = () => {
     hidePromptExtraOptionsModelBox,
     setHidePromptExtraOptionsModelBox,
     wsRef,
+    messages,
     message_id,
     index,
     sessionID,
@@ -37,15 +38,15 @@ const PromptExtraOptionsModelBox = () => {
       case "read_aloud":
         // logic needs to be build
         break;
-      case "report_content":
-        wsRef?.current.send(
-          JSON.stringify({
-            type: "report_content",
-            index: index,
-            session_id: sessionID,
-          })
-        );
-        break;
+      // case "report_content":
+      //   wsRef?.current.send(
+      //     JSON.stringify({
+      //       type: "report_content",
+      //       index: index,
+      //       session_id: sessionID,
+      //     })
+      //   );
+      //   break;
       default:
         break;
     }
@@ -74,6 +75,7 @@ const PromptExtraOptionsModelBox = () => {
               JSON.stringify({
                 type: "report",
                 index: index,
+                message: messages[index],
                 message_id: message_id,
                 session_id: sessionID,
               })

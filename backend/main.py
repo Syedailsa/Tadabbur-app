@@ -3,20 +3,21 @@ import json
 from dotenv import load_dotenv
 from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header
-from supabase import create_client, Client
-from supabase.client import ClientOptions
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Any, Any, Any, List, Optional
 import asyncio # --- ADDED: Required for background tasks
-from langchain.messages import HumanMessage, AIMessage
+from langchain.messages import HumanMessage, AIMessage, SystemMessage
 from agents import Runner
 from agents import InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered
 from title_agent import title_agent
+from collections import defaultdict
 import agent as agent_module
+from utils.submit_feedback import submit_feedback
 import story_agent as story_module
 import logging
 import secrets
+from config.db import get_supabase_client
 import random
 import string
 from agents import ItemHelpers  # used to extract message text from items (STREAMING)
@@ -26,9 +27,6 @@ from speech_to_text import SpeechToTextEngine
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-TADABBUR_PROJECT_URL = os.getenv('TADABBUR_PROJECT_URL')
-TADABBUR_API_KEY = os.getenv('TADABBUR_API_KEY')
 
 # ------------------- APP CONFIG -------------------
 app = FastAPI(title="Tadabbur Agent API")
@@ -46,7 +44,7 @@ API_KEY = os.getenv("CHAT_API_KEY")
 # ------------------- OPTIONAL HTTP ENDPOINT -------------------
 # === SESSION CODE START ===
 DB_PATH = "chat.db"
-
+supabase_client = None
 
 
 def generate_short_id() -> str:
@@ -72,11 +70,16 @@ def generate_session_id() -> str:
 
 def get_chat_messages(session_id: str, supabase_client) -> List[str]:
     """Get all messages of a specific session"""
-    if not session_id:
+    if not session_id or not supabase_client:
+        print("Session id or supabase client none, so returning...")
         return []
-    chat_messages = supabase_client.table('chat_messages').select('message_id','role','message').order('created_at').eq('session_id', session_id).execute().data
+        
+    chat_messages = supabase_client.table('chat_messages').select('message_id', 'role', 'message').in_("role", ["user", "assistant"]).eq('session_id', session_id).order('created_at').execute().data
+
+    
+    print("chat messages", chat_messages)
     chat_messages = [
-    {'role': msg['role'], 'content': msg['message']}
+    {'message_id': msg['message_id'], 'role': msg['role'], 'content': msg['message']}
     for msg in chat_messages
     ]
     return chat_messages
@@ -87,9 +90,27 @@ def get_message_ids(session_id: str, supabase_client) -> list[str | None]:
     if not session_id:
         return []
 
-    message_ids = supabase_client.table('chat_messages').select('message_id').order('created_at').eq('session_id', session_id).execute().data
+    message_ids = supabase_client.table('chat_messages').select('message_id').eq('session_id', session_id).order('created_at').execute().data
     print(f"All message IDs for session {session_id}, {message_ids}")
     return message_ids
+
+
+def group_by_category(system_rules):
+    # Group by category
+    grouped_by_category = defaultdict(list)
+
+    for item in system_rules:
+        grouped_by_category[item['category']].append(item['rule'])
+
+    # Convert to your desired format
+    result = []
+    for category, rules in grouped_by_category.items():
+        result.append({
+            "category": category,
+            "rules": rules
+    })
+    return result
+
 
 # ------------------- OPTIONAL HTTP ENDPOINT -------------------
 class Message(BaseModel):
@@ -178,19 +199,10 @@ async def websocket_chat(websocket: WebSocket):
     logger.info("WebSocket connected successfully")
 
     try:
-        print("Connecting to Database for saving user messages")
-        supabase_client: Client = create_client(
-            TADABBUR_PROJECT_URL,
-            TADABBUR_API_KEY,
-            options=ClientOptions(
-                postgrest_client_timeout=10,
-                storage_client_timeout=10,
-                schema="public",
-            )
-        )
-        print("✅ Supabase Client connected successfully!")
+
+        supabase_client = get_supabase_client()
     except Exception as e:
-        print("Some error occured while connecting to supabase", e)
+        print("Some error occured initiating supabase connection", e)
 
     # initialize the conversation history and message_IDs set
     conversation_history = []
@@ -410,26 +422,25 @@ async def websocket_chat(websocket: WebSocket):
                 })
                 continue
 
-            # if data.get("type") == "like" or "dislike" or "report":
-            #     type = data.get("type")
-            #     session_id = data.get('session_id')
-            #     message_id = data.get('message_id')
-            #     if not session_id or message_id:
-            #         continue
-            #     try:
-            #         print("Submitting user feedback")
-            #         supabase_client.table("chat_messages").update({"feedback": type}).eq("session_id", session_id).eq("message_id", message_id).execute()
-            #         print("✅ Successfully submitted user feedback!")
-            #     except Exception as e:
-            #         print("Failed to submit user feedback")
-            #     # the main system injection flow here
-                
-            #     # Fetch the user prompt for the above assistant response
-            #     try:
-            #         supabase_client.table('chat_messages').select("")
-            #     except Exception as e:
-            #         print("Failed to fetch the user prompt for the assistant response", e)
-            #     continue
+            if data.get("type") in ["like", "dislike", "report"]:
+                type = data.get("type")
+                session_id = data.get('session_id')
+                message_id = data.get('message_id')
+                message = data.get("message")
+                if not session_id or not message_id or not message:
+                    continue
+                try:
+                    print("Submitting user feedback")
+                    submit_feedback(type, message)
+
+                    supabase_client.table("chat_messages").update({"feedback": type}).eq("session_id", session_id).eq("message_id", message_id).execute()
+
+                    print("✅ Successfully submitted user feedback!")
+                except Exception as e:
+                    print("Failed to submit user feedback",e)
+                    continue
+
+                continue
             # === MAIN CHAT MESSAGE ===
 
             if data.get("type") == "user_message":
@@ -458,21 +469,76 @@ async def websocket_chat(websocket: WebSocket):
                     print("Some error occured while inserting user messages", e)
 
                 logger.info(f"[{current_agent_name}] Session: {session_id} | Message: {message} ...")
+                dynamic_system_instruction_string = ""
+                try:
+                    # fetch those rules whose weight exceeds 0.8 and build the dynamic system instructions
+                    print("Fetching rules with weights >= 0.8")
+                    system_rules = supabase_client.table('chat_rules').select('rule','category').gte('weight', 0.7).execute().data                    
+                    if system_rules:
+                        dynamic_system_instruction_string += "## GUIDELINES \n"
+                        system_rules = group_by_category(system_rules)
+
+                        for record in system_rules:
+                            category = record["category"]
+                            rules = record["rules"]
+
+                            dynamic_system_instruction_string += f'\n {category}_Rules \n'
+
+                            # iterate over all rules and add below corresponding category in the instruction string
+
+                            for i, rule in enumerate(rules):
+                                dynamic_system_instruction_string += f'{i + 1}. {rule} \n'
+
+                        if dynamic_system_instruction_string != "":
+                            print("Dynamic system instructions string", dynamic_system_instruction_string)
+                            # save system message in db
+                            try:
+                                # make a unique message_id
+                                dynamic_system_message_id = generate_short_id()
+                                while dynamic_system_message_id in unique_message_ids:
+                                    dynamic_system_message_id = generate_short_id()
+                                    unique_message_ids.add(dynamic_system_message_id)
+                                supabase_client.table('chat_messages').insert({
+                                    "message_id": dynamic_system_message_id,
+                                    "session_id": session_id,
+                                    "role": "system",
+                                    "message": dynamic_system_instruction_string,
+                                }).execute()
+                                print("✅ System message saved successfully!")
+                            except Exception as e:
+                                print("Some error occured while inserting System messages", e)
+                            
+                            # the rules injection logic in system message here
+                        else:
+                            print("No system instructions, continuing...")
+                            continue
+                except Exception as e:
+                    print("Some error occured while building system instructions", e)
+
                 try:
                     # append user message to conversation history
-                    conversation_history.append(HumanMessage(message))
+                    conversation_history.append({"role": "user", "content": message, "id": message_id})
+                    messages = (
+                        [{"role": "system", "content": dynamic_system_instruction_string}]
+                        if dynamic_system_instruction_string
+                        else []
+                    ) + conversation_history
+
                     response = active_agent.invoke(
-                        {"messages": conversation_history},
+                        {"messages": messages},
                     )
                     response = response['messages'][-1].content
-                    # append assistant message to conversation history
-                    conversation_history.append(AIMessage(response or ""))
+                    
                     # generate a message id for response message
                     response_message_id = generate_short_id()
                     while response_message_id in unique_message_ids:
                         response_message_id = generate_short_id()
-
                     unique_message_ids.add(response_message_id)
+
+                    # append assistant message to conversation history
+                    conversation_history.append({"role": "assistant", "content": response or "", "id": response_message_id})
+
+                    
 
                     try:
                         supabase_client.table('chat_messages').insert({
@@ -492,9 +558,9 @@ async def websocket_chat(websocket: WebSocket):
                         # build a conversation string from user & assistant messages
                         for message in conversation_history:
                             if isinstance(message, HumanMessage):
-                                conversation_string += f"User message: {message.content} \n"
+                                conversation_string += f"User message: {message['content']} \n"
                             else:
-                                conversation_string += f"Assistant message: {message.content} \n"
+                                conversation_string += f"Assistant message: {message['content']} \n"
                         if conversation_string:
                             try:
                                 agent_response = title_agent.invoke(conversation_string)
@@ -547,6 +613,8 @@ async def websocket_chat(websocket: WebSocket):
 
                 except WebSocketDisconnect:
                     logger.info("Client disconnected")
+                    print("Closing websocket...")
+                    websocket.close()
                     break
 
 
@@ -559,6 +627,7 @@ async def websocket_chat(websocket: WebSocket):
 
     except WebSocketDisconnect:
         logger.info("WebSocket closed")
+        
 
     except Exception as e:
         logger.exception("WebSocket error")

@@ -1,5 +1,5 @@
 import os
-from agents import Agent, ModelSettings, OpenAIChatCompletionsModel, RunConfig, Runner, AsyncOpenAI, GuardrailFunctionOutput, RunContextWrapper, TResponseInputItem, input_guardrail, output_guardrail
+from agents import Agent, AsyncOpenAI
 from langchain_groq import ChatGroq
 from langgraph.checkpoint.memory import InMemorySaver
 # from story_agent import story_agent
@@ -15,6 +15,8 @@ from pydantic import BaseModel
 from langchain_fireworks import ChatFireworks
 from langchain.agents import create_agent
 from openai import OpenAI
+from utils.submit_feedback import submit_feedback
+
 
 load_dotenv()
 
@@ -78,6 +80,7 @@ system_instructions = """
         • If the tool returns “not available”, respond honestly.  
         • Do NOT call more than one tool for a single question.
         • NEVER leave responses empty after tool calls. Whatever tool returns, format beautifully and respond to the user in proper natural language.
+        • Call a maximum of 5 tool calls.
 
         ## Tools
         
@@ -190,6 +193,24 @@ system_instructions = """
         If you reach the limit, stop and respond: 
         "I am unable to make further tool calls for this request."
 
+        ### Feedback
+
+        You will receive feedback on your responses through these mechanisms:
+        - **Like**: The user appreciated your response
+        - **Dislike**: The user found your response unsatisfactory
+        - **Report**: The user flagged your response as problematic
+
+        **CRITICAL RULES:**
+        1. When receiving feedback, DO NOT regenerate, modify, or comment on the original response
+        2. DO NOT acknowledge the feedback directly in conversation
+        3. Use the feedback internally to adjust your future responses for this user
+        4. Feedback is for improving future interactions, not revising past ones
+
+        **How to apply feedback:**
+        - Adjust your tone, depth, and approach based on patterns of likes/dislikes
+        - If reported, be more cautious with similar topics in future
+        - Continuously adapt to this user's preferences while maintaining safety guidelines
+
         ### • Context
         Strictly use the following context and name definitions for calling tools and answering user queries.
         - QuranMetaData: {QuranMetaData}
@@ -213,7 +234,7 @@ model = ChatGroq(
 )
 
 main_agent = create_agent(
-    name = "QuranTadabburAgent",
+    name = "Quran Tadabbur Agent",
     model = model,
     system_prompt = system_instructions,
     tools = [Search_Quran_By_filters, searchAsbabNuzul],

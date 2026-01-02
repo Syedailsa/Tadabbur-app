@@ -14,8 +14,9 @@ const PromptExtraOptions = ({
   messageType: string | null;
 }) => {
   const {
-    messages,
     index,
+    messages,
+    setMessages,
     message_id,
     wsRef,
     hidePromptExtraOptionsModelBox,
@@ -29,12 +30,8 @@ const PromptExtraOptions = ({
   const [isCopied, setIsCopied] = useState<boolean | null>(null);
   const [overlayText, setOverlayText] = useState<string | null>(null);
   const [active, setActive] = useState<boolean | null>(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
 
-  // useEffect(() => {
-  //   console.log("Feedback", feedback);
-  // }, [feedback]);
-
+  const feedback = messages?.[index]?.feedback || null;
   type OptionType = "copy" | "resend" | "like" | "dislike";
   const handleOptionClick = ({ type }: { type: OptionType }) => {
     switch (type) {
@@ -52,20 +49,35 @@ const PromptExtraOptions = ({
           JSON.stringify({
             type: "like",
             index: index,
+            message: messages[index],
             message_id: message_id,
             session_id: sessionID,
           })
         );
+
+        if (messages && setMessages) {
+          const updatedMessages = [...messages];
+          updatedMessages[index].feedback = "liked";
+          setMessages(updatedMessages);
+        }
+
         break;
       case "dislike":
         wsRef?.current.send(
           JSON.stringify({
             type: "dislike",
             index: index,
+            message: messages[index],
             message_id: message_id,
             session_id: sessionID,
           })
         );
+
+        if (messages && setMessages) {
+          const updatedMessages = [...messages];
+          updatedMessages[index].feedback = "dislike";
+          setMessages(updatedMessages);
+        }
         break;
       case "resend":
         ask(messages[index - 1].content);
@@ -108,7 +120,6 @@ const PromptExtraOptions = ({
             }}
             onClick={() => {
               handleOptionClick({ type: "like" });
-              setFeedback("liked");
             }}
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
           >
@@ -129,13 +140,12 @@ const PromptExtraOptions = ({
             }}
             onClick={() => {
               handleOptionClick({ type: "dislike" });
-              setFeedback("disliked");
             }}
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
           >
             <ThumbsDown
               className={`w-4 h-4 ${
-                feedback === "disliked" ? "fill-red-400" : ""
+                feedback === "dislike" ? "fill-red-400" : ""
               }`}
             />
           </div>

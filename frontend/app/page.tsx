@@ -4,10 +4,16 @@ import type React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
-import { ReactNode, useContext, useEffect, useRef, useState } from "react";
+import {
+  ReactNode,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import ChatProvider from "./providers/chatbot/ChatProvider";
 import DownArrow from "../icons/arrow-down-head.svg";
-
 import {
   motion,
   easeInOut,
@@ -83,6 +89,13 @@ export default function ChatPage() {
   const generateShortId = (): string =>
     Math.random().toString(36).substring(2, 8);
 
+  const handleUserInput = useCallback((e: React.FormEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLDivElement;
+    const text = target.textContent?.trim() ?? "";
+    setShowPlaceholder(text === "");
+  }, []);
+
+  // In your element
   useEffect(() => {
     const websocket = new WebSocket("ws://localhost:8000/ws/chat");
     wsRef.current = websocket;
@@ -279,6 +292,9 @@ export default function ChatPage() {
         ...(prev || []),
         { message_id: messageID, role: "user", content: input, feedback: null },
       ];
+
+      // Set the streaming index to the upcoming new message
+      setStreamingMessageIndex(updated.length);
       return updated;
     });
 
@@ -636,11 +652,7 @@ export default function ChatPage() {
           >
             <div
               ref={inputRef}
-              onInput={(e) => {
-                const target = e.target as HTMLDivElement;
-                const text = target.textContent.trim() ?? "";
-                setShowPlaceholder(text === "");
-              }}
+              onInput={handleUserInput}
               onKeyDown={(e) => {
                 handleInput(e);
               }}
