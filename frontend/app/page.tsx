@@ -4,16 +4,12 @@ import type React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
-import {
-  ReactNode,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  useCallback,
-} from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import ChatProvider from "./providers/chatbot/ChatProvider";
 import DownArrow from "../icons/arrow-down-head.svg";
+import DisclaimerIcon from "../icons/disclaimer.svg";
+import UndoArrow from "../icons/refresh.svg";
+
 import {
   motion,
   easeInOut,
@@ -29,11 +25,12 @@ import { defaultPrompts } from "@/static/data";
 import ModelBox from "./components/chatbot/UI/ModelBox";
 import Controls from "./components/chatbot/UI/Controls";
 import PromptExtraOptions from "./components/chatbot/UI/PrompExtraOptions";
-
+import generateShortId from "@/utils/generateShortId";
 import { generateNewSessionId } from "./session/session";
 import { ChatHisoryDialoguseBox } from "./components/chatbot/UI/ChatHistoryDialogueBox";
 import { ChatRecord } from "./context/chatbot/ChatContext";
 import { PromptExtraOptionsContext } from "./context/chatbot/PromptExtraOptionsContext";
+import ReportContentDialogueBox from "./components/chatbot/UI/ReportContentDialogueBox";
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<
@@ -74,6 +71,10 @@ export default function ChatPage() {
   const [showQuranPlayer, setShowQuranPlayer] = useState(false);
   const [chatHistory, setChatHistory] = useState<ChatRecord[] | null>(null);
   const messageScrollFlag = useRef<boolean | null>(false);
+
+  const [hideReportContentDialogueBox, setHideReportContentDialogueBox] =
+    useState<boolean | null>(true);
+  const [reportedIndex, setReportedIndex] = useState<number[] | null>([]);
   const controls = useAnimationControls();
 
   function chunkText(text: string, size = 4) {
@@ -85,16 +86,6 @@ export default function ChatPage() {
     }
     return chunks;
   }
-
-  const generateShortId = (): string =>
-    Math.random().toString(36).substring(2, 8);
-
-  const handleUserInput = useCallback((e: React.FormEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLDivElement;
-    const text = target.textContent?.trim() ?? "";
-    setShowPlaceholder(text === "");
-  }, []);
-
   // In your element
   useEffect(() => {
     const websocket = new WebSocket("ws://localhost:8000/ws/chat");
@@ -110,6 +101,7 @@ export default function ChatPage() {
           model: "kimi-k2-instruct-0905",
         })
       );
+      setReportedIndex([]);
     };
 
     wsRef.current.onerror = (error) => {
@@ -266,6 +258,14 @@ export default function ChatPage() {
           const message = data.content ?? "Thinking to enhance response";
           // setLoadingMessage(message);
           break;
+        case "report":
+          const report_status = data.status;
+          if (report_status !== "acknowledged") {
+            break;
+          }
+          const reported_index = data.index ?? null;
+          setReportedIndex((prev) => [...(prev ?? []), reported_index]);
+          break;
         default:
           break;
       }
@@ -273,7 +273,7 @@ export default function ChatPage() {
   }, []);
 
   const ask = async (input: string) => {
-    if (streamingMessageIndex !== null) return;
+    if (streamingMessageIndex !== null || !input.trim()) return;
     setError(null);
     messageScrollFlag.current = false;
     setLoading(true);
@@ -344,12 +344,16 @@ export default function ChatPage() {
     index: number | null;
     message_id: string | null;
   }
+
   const PromptExtraOptionsProvider: React.FC<
     PromptExtraOptionsProviderProps
   > = ({ children, index, message_id }) => {
     const [hidePromptExtraOptionsModelBox, setHidePromptExtraOptionsModelBox] =
       useState<boolean | null>(true);
 
+    const [hideResendPromptDialogue, setHideResendPromptDialogue] = useState<
+      boolean | null
+    >(true);
     return (
       <PromptExtraOptionsContext.Provider
         value={{
@@ -359,9 +363,13 @@ export default function ChatPage() {
           message_id,
           hidePromptExtraOptionsModelBox,
           setHidePromptExtraOptionsModelBox,
+          hideReportContentDialogueBox,
+          setHideReportContentDialogueBox,
           sessionID,
           wsRef,
           ask,
+          hideResendPromptDialogue,
+          setHideResendPromptDialogue,
         }}
       >
         {children}
@@ -491,99 +499,153 @@ export default function ChatPage() {
                   </div>
                 ) : (
                   <div key={index}>
-                    <div className="w-max min-w-40 max-w-full switzer-500 mt-2 py-2 px-3 rounded-md bg-white shadow-md">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        rehypePlugins={[rehypeRaw]}
-                        components={{
-                          // HEADERS
-                          h1: ({ node, ...props }) => (
-                            <h1 className="text-3xl font-bold" {...props} />
-                          ),
-                          h2: ({ node, ...props }) => (
-                            <h2 className="text-2xl font-semibold" {...props} />
-                          ),
-                          h3: ({ node, ...props }) => (
-                            <h3 className="text-xl font-semibold" {...props} />
-                          ),
+                    {reportedIndex && !reportedIndex.includes(index) ? (
+                      <div className="w-max min-w-40 max-w-full switzer-500 mt-2 py-2 px-3 rounded-md bg-white shadow-md">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          rehypePlugins={[rehypeRaw]}
+                          components={{
+                            // HEADERS
+                            h1: ({ node, ...props }) => (
+                              <h1 className="text-3xl font-bold" {...props} />
+                            ),
+                            h2: ({ node, ...props }) => (
+                              <h2
+                                className="text-2xl font-semibold"
+                                {...props}
+                              />
+                            ),
+                            h3: ({ node, ...props }) => (
+                              <h3
+                                className="text-xl font-semibold"
+                                {...props}
+                              />
+                            ),
 
-                          // PARAGRAPH
-                          p: ({ node, ...props }) => (
-                            <p
-                              className="leading-7 my-2 text-gray-800"
-                              {...props}
-                            />
-                          ),
+                            // PARAGRAPH
+                            p: ({ node, ...props }) => (
+                              <p
+                                className="leading-7 my-2 text-gray-800"
+                                {...props}
+                              />
+                            ),
 
-                          // STRONG ( **bold** )
-                          strong: ({ node, ...props }) => (
-                            <strong
-                              className="font-bold text-black"
-                              {...props}
-                            />
-                          ),
+                            // STRONG ( **bold** )
+                            strong: ({ node, ...props }) => (
+                              <strong
+                                className="font-bold text-black"
+                                {...props}
+                              />
+                            ),
 
-                          // EMPHASIS ( *italic* )
-                          em: ({ node, ...props }) => (
-                            <em className="italic text-gray-700" {...props} />
-                          ),
+                            // EMPHASIS ( *italic* )
+                            em: ({ node, ...props }) => (
+                              <em className="italic text-gray-700" {...props} />
+                            ),
 
-                          // LINE BREAK
-                          br: ({ node, ...props }) => <br />,
+                            // LINE BREAK
+                            br: ({ node, ...props }) => <br />,
 
-                          // LINKS
-                          a: ({ node, ...props }) => (
-                            <a
-                              className="text-blue-600 underline"
-                              target="_blank"
-                              rel="noreferrer"
-                              {...props}
-                            />
-                          ),
+                            // LINKS
+                            a: ({ node, ...props }) => (
+                              <a
+                                className="text-blue-600 underline"
+                                target="_blank"
+                                rel="noreferrer"
+                                {...props}
+                              />
+                            ),
 
-                          // LISTS
-                          ul: ({ node, ...props }) => (
-                            <ul className="list-disc pl-6" {...props} />
-                          ),
-                          ol: ({ node, ...props }) => (
-                            <ol className="list-decimal pl-6" {...props} />
-                          ),
-                          li: ({ node, ...props }) => (
-                            <li className="my-1" {...props} />
-                          ),
-                          blockquote: ({ node, ...props }) => (
-                            <blockquote
-                              className="border-l-4 border-gray-400 pl-4 italic my-3"
-                              {...props}
-                            />
-                          ),
+                            // LISTS
+                            ul: ({ node, ...props }) => (
+                              <ul className="list-disc pl-6" {...props} />
+                            ),
+                            ol: ({ node, ...props }) => (
+                              <ol className="list-decimal pl-6" {...props} />
+                            ),
+                            li: ({ node, ...props }) => (
+                              <li className="my-1" {...props} />
+                            ),
+                            blockquote: ({ node, ...props }) => (
+                              <blockquote
+                                className="border-l-4 border-gray-400 pl-4 italic my-3"
+                                {...props}
+                              />
+                            ),
 
-                          // HORIZONTAL RULE
-                          hr: () => <hr className="my-4 border-gray-300" />,
+                            // HORIZONTAL RULE
+                            hr: () => <hr className="my-4 border-gray-300" />,
 
-                          // IMAGES
-                          img: ({ node, ...props }) => (
-                            <img
-                              className="rounded-md my-2"
-                              alt=""
-                              {...props}
-                            />
-                          ),
-                        }}
-                      >
-                        {message.content}
-                      </ReactMarkdown>
-                    </div>
-                    {streamingMessageIndex != index && (
-                      <div>
-                        <PromptExtraOptionsProvider
-                          message_id={message.message_id}
-                          index={index}
+                            // IMAGES
+                            img: ({ node, ...props }) => (
+                              <img
+                                className="rounded-md my-2"
+                                alt=""
+                                {...props}
+                              />
+                            ),
+                          }}
                         >
-                          <PromptExtraOptions messageType={"assistant"} />
-                        </PromptExtraOptionsProvider>
+                          {message.content}
+                        </ReactMarkdown>
+                      </div>
+                    ) : (
+                      // reportedmessage component here
+                      <div className="flex flex-col gap-y-1.5 w-[90%] max-w-120 ">
+                        <div className="h-max rounded-md shadow-md min-h-25 border border-red-200/10 px-2 pt-2 pb-3">
+                          <div className="mb-0.5 w-full flex justify-between">
+                            <p
+                              id="report-title"
+                              className="text-red-800 switzer-500 text-[1.1rem] tracking-[-0.04rem]"
+                            >
+                              This response is reported
+                            </p>
+                            <DisclaimerIcon className="w-5 h-5 fill-current text-red-700/90" />
+                          </div>
+
+                          <p
+                            id="report-description"
+                            className="switzer-500 text-black/60 tracking-tight"
+                          >
+                            This response promotes violence or self-harm and
+                            goes against our community policies.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-x-2 px-1">
+                          <div id="learn-more-box" className="ml-auto">
+                            <p className="inter-500 text-[0.9rem] text-red-700/80 cursor-pointer hover:text-red-700 tracking-tight">
+                              Learn More about guidelines
+                            </p>
+                          </div>
+                          <div className="ml-1 w-[0.5px] h-3.5 bg-black/40"></div>
+                          <div
+                            onClick={() => {
+                              setReportedIndex((prev) => {
+                                if (!prev) return prev;
+                                return prev.filter((i) => i !== index);
+                              });
+                            }}
+                            id="undo-report-box"
+                            className="undo-report-box flex justify-center items-center gap-x-2 flex-row-reverse px-2 py-1 hover:bg-black/5 rounded-md cursor-pointer"
+                          >
+                            <p className="switzer-500 text-[0.9rem]">Undo</p>
+                            <UndoArrow className="w-3.5 h-3.5" />
+                          </div>
+                        </div>
                       </div>
                     )}
+                    {streamingMessageIndex != index &&
+                      reportedIndex &&
+                      !reportedIndex.includes(index) && (
+                        <div>
+                          <PromptExtraOptionsProvider
+                            message_id={message.message_id}
+                            index={index}
+                          >
+                            <PromptExtraOptions messageType={"assistant"} />
+                          </PromptExtraOptionsProvider>
+                        </div>
+                      )}
                   </div>
                 )
               )}
@@ -652,7 +714,11 @@ export default function ChatPage() {
           >
             <div
               ref={inputRef}
-              onInput={handleUserInput}
+              onInput={(e) => {
+                const target = e.target as HTMLDivElement;
+                const text = target.textContent.trim() ?? "";
+                setShowPlaceholder(text === "");
+              }}
               onKeyDown={(e) => {
                 handleInput(e);
               }}
@@ -672,6 +738,11 @@ export default function ChatPage() {
             <ModelBox modelList={ModelList} />
           </div>
         </div>
+
+        <ReportContentDialogueBox
+          hideReportContentDialogueBox={hideReportContentDialogueBox}
+          setHideReportContentDialogueBox={setHideReportContentDialogueBox}
+        />
       </ChatProvider>
     </div>
   );

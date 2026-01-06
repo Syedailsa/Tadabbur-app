@@ -7,6 +7,7 @@ import ThumbsDown from "../../../../icons/thumbs-down.svg";
 import Copy from "../../../../icons/copy.svg";
 import Refresh from "../../../../icons/refresh.svg";
 import MoreOptions from "../../../../icons/more_options.svg";
+import ResendPromptDialogueBox from "./ResendPromptDialogueBox";
 
 const PromptExtraOptions = ({
   messageType,
@@ -22,7 +23,8 @@ const PromptExtraOptions = ({
     hidePromptExtraOptionsModelBox,
     setHidePromptExtraOptionsModelBox,
     sessionID,
-    ask,
+    hideResendPromptDialogue,
+    setHideResendPromptDialogue,
   } = useContext(PromptExtraOptionsContext);
   const [overlayTranslateAmount, setOverlayTranslateAmount] = useState<
     number | null
@@ -80,7 +82,7 @@ const PromptExtraOptions = ({
         }
         break;
       case "resend":
-        ask(messages[index - 1].content);
+        setHideResendPromptDialogue((prev: boolean | null) => !prev);
         break;
       default:
         break;
@@ -188,6 +190,7 @@ const PromptExtraOptions = ({
             </motion.div>
           )}
           {!hidePromptExtraOptionsModelBox && <PromptExtraOptionsModelBox />}
+          {!hideResendPromptDialogue && <ResendPromptDialogueBox />}
         </div>
       ) : messageType === "user" ? (
         <div className="flex gap-x-1.5 pr-1 pl-2 pb-2 pt-1 relative">

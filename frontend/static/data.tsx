@@ -171,4 +171,86 @@ const defaultPrompts = [
   },
 ];
 
-export { ModelList, chatMessages, dummyChatHistory, defaultPrompts };
+// Option 1: With TypeScript interfaces and mapped options
+interface RadioOption {
+  id: string;
+  value: string;
+  label: string;
+  rule: string | null;
+}
+const reportOptions: RadioOption[] = [
+  {
+    id: "offensive",
+    value: "offensive",
+    label: "The response is offensive",
+    rule: "Do not generate content that is offensive, insulting, or demeaning to any individual or group.",
+  },
+  {
+    id: "great",
+    value: "great",
+    label: "The response violates ethical standards",
+    rule: "Do not generate content that violates ethical, moral, or professional standards.",
+  },
+  {
+    id: "inaccurate",
+    value: "inaccurate",
+    label: "The content provided is unauthentic and false",
+    rule: "Do not generate false, fabricated, or unverifiable information presented as fact.",
+  },
+  {
+    id: "harmful",
+    value: "harmful",
+    label: "The response could cause harm or is dangerous",
+    rule: "Do not generate content that could cause physical, psychological, or societal harm.",
+  },
+  {
+    id: "violence",
+    value: "violence",
+    label: "The response promotes violence or self-harm",
+    rule: "Do not generate content that promotes, glorifies, or instructs violence or self-harm.",
+  },
+  {
+    id: "spam",
+    value: "spam",
+    label: "This appears to be spam or advertising",
+    rule: "Do not generate unsolicited promotional, spammy, or advertising content.",
+  },
+  {
+    id: "copyright",
+    value: "copyright",
+    label: "This infringes on copyright or intellectual property",
+    rule: "Do not generate content that infringes copyright or intellectual property rights.",
+  },
+  {
+    id: "privacy",
+    value: "privacy",
+    label: "This violates someone's privacy or contains personal information",
+    rule: "Do not generate or disclose private, personal, or sensitive information.",
+  },
+  {
+    id: "harassment",
+    value: "harassment",
+    label: "This is harassment, bullying, or targeted abuse",
+    rule: "Do not generate content that harasses, bullies, or targets individuals or groups.",
+  },
+  {
+    id: "misinformation",
+    value: "misinformation",
+    label: "This contains misinformation or fake news",
+    rule: "Do not generate misleading, deceptive, or false information intended to misinform.",
+  },
+  {
+    id: "other",
+    value: "other",
+    label: "Other",
+    rule: null,
+  },
+];
+
+export {
+  ModelList,
+  chatMessages,
+  dummyChatHistory,
+  defaultPrompts,
+  reportOptions,
+};

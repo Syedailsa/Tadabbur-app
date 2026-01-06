@@ -27,6 +27,10 @@ const ChatProvider: React.FC<ChatProviderProps> = ({
   const [openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox] = useState<
     boolean | null
   >(false);
+  const [reportedMessageInfo, setReportedMessageInfo] = useState<{
+    index: number;
+    messageID: number;
+  } | null>(null);
 
   return (
     <ChatContext.Provider
@@ -46,6 +50,8 @@ const ChatProvider: React.FC<ChatProviderProps> = ({
         setOpenChatHistoryDialogueBox,
         chatHistory,
         setChatHistory,
+        reportedMessageInfo,
+        setReportedMessageInfo,
       }}
     >
       {children}
