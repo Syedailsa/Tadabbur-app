@@ -29,6 +29,7 @@ import { audioScheduler } from "./../../utils/AudioScheduler";
 
 import { generateNewSessionId } from "./../../session/session";
 import { ChatHisoryDialoguseBox } from "./../../components/chatbot/UI/ChatHistoryDialogueBox";
+import QuranAudioDialog from "./../../components/chatbot/UI/AudioDialogBox";
 import { ChatRecord } from "./../../context/chatbot/ChatContext";
 import { PromptExtraOptionsContext } from "./../../context/chatbot/PromptExtraOptionsContext";
 
@@ -544,6 +545,18 @@ export default function ChatPage() {
                 wsRef={wsRef}
             >
                 <ChatHisoryDialoguseBox />
+                {/* =========== ADD THE AUDIO DIALOG HERE =========== */}
+                {showAudioDialog && audioRequest && (
+                  <QuranAudioDialog
+                    isOpen={showAudioDialog}
+                    onClose={() => setShowAudioDialog(false)}
+                    parsedRequest={audioRequest.parsed_request}
+                    originalMessage={audioRequest.original_message}
+                    availableReciters={audioRequest.available_reciters}
+                    wsRef={wsRef}
+                  />
+                )}
+                {/* ================================================ */}
                 <div className="w-full h-full flex flex-col items-center overflow-y-auto">
                 <div className="absolute top-0 p-2 w-full">
                     <div className="pointer-events-auto">

@@ -1,16 +1,18 @@
-
 """
 Quran Audio Playback Tool
 Provides audio URLs for Quran recitation
 """
 
+import asyncio
 import httpx
 from typing import Optional, Dict, Any
-from agents import function_tool
 import re
+import logging
+from langchain_core.tools import tool
+
+logger = logging.getLogger(__name__)
 
 QURAN_API_BASE = "https://api.alquran.cloud/v1"
-
 # Available reciters
 RECITERS = {
     "alafasy": {"name": "Mishary Rashid Alafasy", "identifier": "ar.alafasy"},
@@ -158,8 +160,8 @@ def get_available_reciters():
         for key, value in RECITERS.items()
     ]
 
-@function_tool
-async def play_quran_audio(
+
+def get_quran_audio(
     surah: Optional[int] = None,
     ayah: Optional[int] = None,
     reciter: str = "alafasy"
@@ -186,11 +188,11 @@ async def play_quran_audio(
         reciter_info = RECITERS["alafasy"]  # Default fallback
     
     try:
-        async with httpx.AsyncClient() as client:
+        with httpx.Client() as client:
             # If specific ayah requested
             if ayah:
                 url = f"{QURAN_API_BASE}/ayah/{surah}:{ayah}/{reciter_info['identifier']}"
-                response = await client.get(url, timeout=10.0)
+                response = client.get(url, timeout=30.0)
                 
                 if response.status_code != 200:
                     raise QuranAPIError(f"API returned status {response.status_code}")
@@ -219,7 +221,7 @@ async def play_quran_audio(
             # If full surah requested
             else:
                 url = f"{QURAN_API_BASE}/surah/{surah}/{reciter_info['identifier']}"
-                response = await client.get(url, timeout=15.0)
+                response = client.get(url, timeout=30.0)
                 
                 if response.status_code != 200:
                     raise QuranAPIError(f"API returned status {response.status_code}")
@@ -259,8 +261,8 @@ async def play_quran_audio(
     except KeyError as e:
         raise QuranAPIError(f"Invalid API response: {str(e)}")
 
-@function_tool
-async def parse_quran_audio_request(user_input: str) -> Optional[Dict[str, Any]]:
+
+def parse_quran_audio_request(user_input: str) -> Optional[Dict[str, Any]]:
     """
     Parse natural language audio requests
     
@@ -294,3 +296,72 @@ async def parse_quran_audio_request(user_input: str) -> Optional[Dict[str, Any]]
         return result
     
     return None
+
+@tool
+def play_quran_audio(query: str) -> str:
+    """
+    Play Quran audio recitation for requested surah or ayah.
+    
+    Use this tool when user wants to listen to Quran.
+    
+    Args:
+        query: User's request (e.g., "Surah Fatiha", "Ayatul Kursi")
+    
+    Returns:
+        Audio URL and details
+    """
+    print("\n" + "="*60)
+    print("calling play_quran_audio (ASYNC)")
+    print(f"📥 user:  {query}")
+    print("="*60 + "\n")
+
+    logging.info(f"[AUDIO_TOOL] Tool called with query: {query}")
+
+    try:
+        # CHANGE: Use await directly instead of asyncio.run()
+        parsed = parse_quran_audio_request(query)
+        logging.info(f"[AUDIO_TOOL] Parsed result: {parsed}")
+
+        if not parsed:
+            return "I couldn't understand which surah you want to listen to."
+
+        # Get audio
+        logging.info(f"[AUDIO_TOOL] Fetching audio for surah={parsed['surah']}")
+        
+        # CHANGE: Use await directly instead of asyncio.run()
+        result = get_quran_audio(
+            surah=parsed["surah"],
+            ayah=parsed.get("ayah"),
+            reciter="alafasy"
+        )
+
+        if not result.get("success"):
+            return f"Sorry, couldn't fetch audio: {result.get('error', 'Unknown error')}"
+
+        # Format response
+        if result["type"] == "single_ayah":
+            return f"""
+                Here is the audio for **Surah {result['surah']['englishName']}**, Ayah {result['ayah']['number']}:
+
+                🎧 **Audio URL:** {result['ayah']['audio_url']}
+
+                📖 **Arabic Text:** {result['ayah']['text']}
+
+                🎙️ **Reciter:** {result['reciter']['name']}
+                """.strip()
+        else:
+            urls = "\n".join([f"  - Ayah {a['number']}: {a['audio_url']}" for a in result['ayahs'][:5]])
+            return f"""
+Here is the audio for **Surah {result['surah']['englishName']}**:
+
+🎙️ **Reciter:** {result['reciter']['name']}
+
+🎧 **Audio links:**
+{urls}
+
+(Total: {result['surah']['numberOfAyahs']} ayahs)
+""".strip()
+
+    except Exception as e:
+        logging.exception(f"[AUDIO_TOOL] Exception: {str(e)}")
+        return f"Error fetching audio: {str(e)}"

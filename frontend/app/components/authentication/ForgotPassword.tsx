@@ -14,14 +14,12 @@ export default function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   
-  // Form Data
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
 
-  const API_URL = "http://localhost:8000/auth"; // Adjust if needed
+  const API_URL = "http://localhost:8000/auth"; 
 
-  // 1. Send Email
   const handleSendEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -42,7 +40,6 @@ export default function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
     }
   };
 
-  // 2. Verify OTP
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -63,7 +60,6 @@ export default function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
     }
   };
 
-  // 3. Change Password
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);

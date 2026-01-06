@@ -18,6 +18,8 @@ from langchain_core.tools import StructuredTool
 from langchain_fireworks import ChatFireworks
 from langchain.agents import create_agent
 from openai import OpenAI
+from tools.audio_playback import play_quran_audio
+# from tools.verse_reader import fetch_quran_verse
 
 load_dotenv()
 
@@ -125,6 +127,21 @@ child_system_instructions = """
         • If a topic is too mature or complex, simplify it gently or steer the conversation to a positive lesson.
 
         ## Tools
+
+        ### • play_quran_audio
+        Use this when user wants to LISTEN to Quran recitation:
+        - Examples: "I want to listen to Surah Fatiha", "play Ayatul Kursi", "can I hear Surah Kahf?"
+        - The tool will return audio URLs for the requested surah or ayah
+        - Always provide the audio link to the user in a friendly way
+
+        Use this tool play_quran_audio EXACTLY when the user says anything like "listen", "play", "hear", "recite", "quran audio" with any surah or ayah name.
+
+        Examples:
+        - i want to listen surah fatiha
+        - play surah yasin
+        - ayatul kursi sunao
+        - surah kahf recitation
+        - recite surah ikhlas
         
         ### • searchAsbabNuzul
         1. Use searchAsbabNuzul when user asks for queries related to Asbab_Nuzul/Shan_Nuzul (Circumstances of revelation). Use it for searching through user provided references like surah name, verse number, etc as well as doing semantic searches by forming a query, dervied from user's question or query.
@@ -273,6 +290,21 @@ standard_system_instructions = """
         • NEVER leave responses empty after tool calls. Whatever tool returns, format beautifully and respond to the user in proper natural language.
 
         ## Tools
+
+        ### • play_quran_audio
+        Use this when user wants to LISTEN to Quran recitation:
+        - Examples: "I want to listen to Surah Fatiha", "play Ayatul Kursi", "can I hear Surah Kahf?"
+        - The tool will return audio URLs for the requested surah or ayah
+        - Always provide the audio link to the user in a friendly way
+
+        Use this tool play_quran_audio EXACTLY when the user says anything like "listen", "play", "hear", "recite", "quran audio" with any surah or ayah name.
+
+        Examples:
+        - i want to listen surah fatiha
+        - play surah yasin
+        - ayatul kursi sunao
+        - surah kahf recitation
+        - recite surah ikhlas
         
         ### • searchAsbabNuzul
         1. Use searchAsbabNuzul when user asks for queries related to Asbab_Nuzul/Shan_Nuzul (Circumstances of revelation). Use it for searching through user provided references like surah name, verse number, etc as well as doing semantic searches by forming a query, dervied from user's question or query.
@@ -446,7 +478,7 @@ def get_agent_by_user_age( age: int , username: str ):
         name="QuranTadabburAgent",
         model=model,
         system_prompt=formatted_system_prompt,
-        tools=[Search_Quran_By_filters, searchAsbabNuzul, final_response_tool],
+        tools=[Search_Quran_By_filters, searchAsbabNuzul, final_response_tool, play_quran_audio],
     )
 
 main_agent = get_agent_by_user_age(age=25, username="DefaultUser")  
