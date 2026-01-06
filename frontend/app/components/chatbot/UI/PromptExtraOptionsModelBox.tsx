@@ -1,5 +1,6 @@
 import { useContext, useEffect, useRef } from "react";
 import { PromptExtraOptionsContext } from "@/app/context/chatbot/PromptExtraOptionsContext";
+import { audioScheduler } from "@/app/utils/AudioScheduler"; 
 import ReadAloud from "../../../../icons/read_aloud.svg";
 import Flag from "../../../../icons/flag.svg";
 import { motion } from "framer-motion";
@@ -12,6 +13,7 @@ const PromptExtraOptionsModelBox = () => {
     message_id,
     index,
     sessionID,
+    content
   } = useContext(PromptExtraOptionsContext);
 
   const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -35,9 +37,22 @@ const PromptExtraOptionsModelBox = () => {
   const handleOptionClick = ({ type }: { type: OptionType }) => {
     switch (type) {
       case "read_aloud":
-        // logic needs to be build
+        setHidePromptExtraOptionsModelBox(true);
+        if (wsRef?.current?.readyState === WebSocket.OPEN) {
+            
+            // ⚡ FORCE RESET AUDIO ENGINE ⚡
+            audioScheduler.reset();
+
+            wsRef.current.send(JSON.stringify({
+                type: "tts_request",
+                text: content,
+                message_id: message_id,
+                session_id: sessionID
+            }));
+        }
         break;
       case "report_content":
+        setHidePromptExtraOptionsModelBox(true);
         wsRef?.current.send(
           JSON.stringify({
             type: "report_content",
@@ -59,26 +74,14 @@ const PromptExtraOptionsModelBox = () => {
     >
       <div className="w-full h-full flex flex-col items-center">
         <div
-          onClick={() => {
-            setHidePromptExtraOptionsModelBox(true);
-          }}
+          onClick={() => handleOptionClick({ type: "read_aloud" })}
           className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-pointer"
-        >
+        > 
           <ReadAloud className="ml-2 w-5 h-5 fill-current text-black/80" />
           <p className="ml-2 switzer-500 text-[0.94rem]">Read aloud</p>
         </div>
         <div
-          onClick={() => {
-            setHidePromptExtraOptionsModelBox(true);
-            wsRef?.current.send(
-              JSON.stringify({
-                type: "report",
-                index: index,
-                message_id: message_id,
-                session_id: sessionID,
-              })
-            );
-          }}
+          onClick={() => handleOptionClick({ type: "report_content" })}
           className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-pointer"
         >
           <Flag className="ml-2 w-5 h-5 " />

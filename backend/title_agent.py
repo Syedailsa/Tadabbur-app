@@ -8,7 +8,7 @@ from prompts.title_agent_instructions import system_prompt
 from langchain_groq import ChatGroq
 
 load_dotenv()
-GROQ_API_KEY = os.getenv('GROQ_AI_API_KEY')
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 
 
 if not GROQ_API_KEY:

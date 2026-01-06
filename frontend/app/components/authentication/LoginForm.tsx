@@ -1,0 +1,74 @@
+import React from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import axios from 'axios';
+
+const loginSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(1, "Password is required"),
+});
+
+type LoginInputs = z.infer<typeof loginSchema>;
+
+interface LoginProps {
+  onSuccess: (data: any) => void;
+}
+
+export default function LoginForm({ onSuccess }: LoginProps) {
+  const [serverError, setServerError] = React.useState<string | null>(null);
+
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginInputs>({
+    resolver: zodResolver(loginSchema),
+  });
+
+  const onSubmit = async (data: LoginInputs) => {
+    setServerError(null);
+    try {
+      const res = await axios.post('http://localhost:8000/auth/login', data);
+      onSuccess(res.data);
+    } catch (error: any) {
+      setServerError(error.response?.data?.detail || "Invalid email or password");
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      {serverError && (
+        <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded">
+          {serverError}
+        </div>
+      )}
+      
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+        <input
+          type="email"
+          {...register("email")}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="john@example.com"
+        />
+        {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email.message}</p>}
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+        <input
+          type="password"
+          {...register("password")}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="••••••"
+        />
+        {errors.password && <p className="text-xs text-red-500 mt-1">{errors.password.message}</p>}
+      </div>
+
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        className="w-full py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
+      >
+        {isSubmitting ? 'Signing in...' : 'Sign In'}
+      </button>
+    </form>
+  );
+}
