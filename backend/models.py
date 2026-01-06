@@ -7,7 +7,8 @@ from datetime import datetime, date
 # ==================== AUTH MODELS ====================
 
 class SignupRequest(BaseModel):
-    firstname: str = Field(..., min_length=3, max_length=50)
+    firstname: str = Field(..., min_length=1, max_length=20)
+    lastName: Optional[str] = None
     email: EmailStr
     password: str = Field(..., min_length=8)
 
@@ -30,6 +31,8 @@ class AuthResponse(BaseModel):
     loginTime: datetime
     user_id: str
     firstname: str
+    lastName: Optional[str] = None
+    # lastName: str 
 
 # ==================== NOTIFICATION MODELS ====================
 
@@ -80,6 +83,22 @@ class BookmarkDeleteRequest(BaseModel):
     bookmarkId: str
     
 # ==================== USER PROFILE MODELS ====================
+class UserProfileResponse(BaseModel):
+    """
+    Production-ready profile response
+    Single profileImageUrl field - simple and clear!
+    """
+    id: str
+    firstname: str
+    email: str
+    profileImageUrl: Optional[str] = Field(None, description="URL to fetch profile image: /users/image/{id}")
+    bio: Optional[str] = None
+    lastName: Optional[str] = None
+    dateofBirth: Optional[date] = None
+    address: Optional[str] = None
+    phoneNumber: Optional[str] = None
+    gender: Optional[str] = None
+    createdAt: datetime
 
 class ProfileUpdate(BaseModel):
     """Update profile with specific fields only"""
@@ -100,9 +119,7 @@ class UserProfile(BaseModel):
     id: str
     firstname: str
     email: str
-    profilePicture: Optional[str] = Field(None, alias= "image")
-    image_url: Optional[str] = Field(None, alias="imageUrl")
-    image_data: Optional[str] = Field(None, description="Base64 encoded image data")  # Actual image bytes
+    profileImageUrl: Optional[str] = Field(None, description="URL to fetch profile image: /users/image/{id}")
     bio: Optional[str] = None
     lastName: Optional[str] = None
     dateofBirth: Optional[date] = None
@@ -112,17 +129,16 @@ class UserProfile(BaseModel):
     createdAt: datetime
 
 class EditProfileRequest(BaseModel):
-    """Edit Profile - Fields that can be updated"""
-    email: Optional[EmailStr] = None
-    image: Optional[str] = Field(None, description="Profile picture URL")
-    imageUrl: Optional[str] = Field(None, description="Image URL for uploaded images")
+    """Simple edit request - no image field needed"""
     firstname: Optional[str] = Field(None, min_length=3, max_length=50)
-    lastName: Optional[str] = Field(None, description="Last name")  # Changed from last_name
-    phoneNumber: Optional[str] = Field(None, description="Phone number")  # Changed from contact
-    dateofBirth: Optional[date] = None  # Changed from dateOfBirth
-    gender: Optional[Literal["Male", "Female", "Other"]] = None
-    bio: Optional[str] = Field(None, description="User bio")
+    lastName: Optional[str] = None
+    dateofBirth: Optional[date] = None
     address: Optional[str] = None
+    phoneNumber: Optional[str] = None
+    email: Optional[EmailStr] = None
+    bio: Optional[str] = None
+    gender: Optional[str] = None
+    imageUrl: Optional[str] = None
 
 class EditProfileResponse(BaseModel):
     message: str
@@ -130,7 +146,15 @@ class EditProfileResponse(BaseModel):
     updatedFields: list
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
+class ImageUploadRequest(BaseModel):
+    image_data: str = Field(..., description="Base64 encoded image")
+    filename: str
 
+class ImageUploadResponse(BaseModel):
+    message: str
+    status: str = "success"
+    profileImageUrl: str = Field(..., description="URL to fetch the image")
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 # ==================== FEEDBACK MODELS ====================
 
@@ -173,20 +197,222 @@ class ErrorResponse(BaseModel):
     status: str = "error"
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-# ==================== IMAGE UPLOAD MODELS ====================
-
-class ImageUploadRequest(BaseModel):
-    """Request model for image upload"""
-    image_data: str = Field(..., description="Base64 encoded image data")
-    filename: str = Field(..., description="Original filename")
-
-class ImageUploadResponse(BaseModel):
-    """Response model for image upload"""
-    message: str
-    status: str = "success"
-    image_url: str = Field(..., description="URL path to the uploaded image")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
 class ImageDeleteRequest(BaseModel):
     """Request model for image deletion"""
     image_url: str = Field(..., description="URL path of the image to delete")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# from pydantic import BaseModel, EmailStr, Field, validator
+# from typing import Optional, Literal
+# from datetime import datetime, date
+
+# # ==================== AUTH MODELS ====================
+
+# class SignupRequest(BaseModel):
+#     firstname: str = Field(..., min_length=1, max_length=20)
+#     lastName: Optional[str] = Field(None, max_length=50)  # ✅ Optional
+#     email: EmailStr
+#     password: str = Field(..., min_length=8)
+
+#     @validator('firstname')
+#     def firstname_alphanumeric(cls, v):
+#         if not v.replace('_', '').isalnum():
+#             raise ValueError('Firstname must be alphanumeric')
+#         return v
+
+# class LoginRequest(BaseModel):
+#     email: EmailStr
+#     password: str
+
+# class GoogleSignInRequest(BaseModel):
+#     token: str = Field(..., description="Google OAuth token")
+
+# class AuthResponse(BaseModel):
+#     token: str
+#     message: str
+#     loginTime: datetime
+#     user_id: str
+#     firstname: str
+#     lastName: Optional[str] = None  # ✅ FIXED: Made Optional
+
+# # ==================== NOTIFICATION MODELS ====================
+
+# class NotificationCreate(BaseModel):
+#     title: str = Field(..., max_length=200)
+#     message: str = Field(..., max_length=1000)
+#     recipientId: str
+
+# class NotificationResponse(BaseModel):
+#     id: str
+#     title: str
+#     message: str
+#     time: datetime
+#     is_read: bool = False
+
+# class MarkNotificationReadRequest(BaseModel):
+#     notification_id: Optional[str] = None
+#     mark_all: Optional[bool] = False
+
+# # ==================== BOOKMARK MODELS ====================
+
+# class BookmarkCreate(BaseModel):
+#     surah_name_eng: str = Field(..., description="Surah name in English")
+#     type: Literal["surah", "story"] = Field(..., description="Type of bookmark: 'surah' or 'story'")
+#     surah_name_arb: str = Field(..., description="Surah name in Arabic")
+#     surah_no: int = Field(..., ge=1, le=114, description="Surah number (1-114)")
+#     ayah_no: int = Field(..., ge=1, description="Ayah number")
+#     total_ayah: int = Field(..., ge=1, description="Total ayahs in surah")
+#     ayah: str = Field(..., description="Arabic text of the ayah")
+
+# class BookmarkResponse(BaseModel):
+#     message: str
+#     bookmarkId: str
+#     time: datetime
+
+# class BookmarkItem(BaseModel):
+#     bookmarkId: str
+#     surahNameEng: str
+#     surahNameArb: str
+#     surahNo: int
+#     type: Literal["surah", "story"]
+#     ayahNo: int
+#     totalAyah: int
+#     ayah: str
+#     time: datetime
+
+# class BookmarkDeleteRequest(BaseModel):
+#     bookmarkId: str
+    
+# # ==================== USER PROFILE MODELS ====================
+
+# class UserProfileResponse(BaseModel):
+#     """Production-ready profile response"""
+#     id: str
+#     firstname: str
+#     email: str
+#     profileImageUrl: Optional[str] = Field(None, description="URL to fetch profile image: /users/image/{id}")
+#     bio: Optional[str] = None
+#     lastName: Optional[str] = None
+#     dateofBirth: Optional[date] = None
+#     address: Optional[str] = None
+#     phoneNumber: Optional[str] = None
+#     gender: Optional[str] = None
+#     createdAt: datetime
+
+# class EditProfileRequest(BaseModel):
+#     """Simple edit request - no image field needed"""
+#     firstname: Optional[str] = Field(None, min_length=3, max_length=50)
+#     lastName: Optional[str] = Field(None, max_length=50)
+#     dateofBirth: Optional[date] = None
+#     address: Optional[str] = None
+#     phoneNumber: Optional[str] = None
+#     email: Optional[EmailStr] = None
+#     bio: Optional[str] = None
+#     gender: Optional[str] = None
+#     imageUrl: Optional[str] = None
+
+# class EditProfileResponse(BaseModel):
+#     message: str
+#     status: str = "success"
+#     updatedFields: list
+#     timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+# class ImageUploadRequest(BaseModel):
+#     image_data: str = Field(..., description="Base64 encoded image")
+#     filename: str
+
+# class ImageUploadResponse(BaseModel):
+#     message: str
+#     status: str = "success"
+#     profileImageUrl: str = Field(..., description="URL to fetch the image")
+#     timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+# # ==================== FEEDBACK MODELS ====================
+
+# class FeedbackCreate(BaseModel):
+#     userId: str
+#     message: str = Field(..., max_length=2000)
+#     rating: Literal["like", "dislike"]
+
+# class FeedbackResponse(BaseModel):
+#     id: str
+#     message: str
+#     status: str
+#     createdAt: datetime
+
+# # ==================== QURAN CONTENT MODELS ====================
+
+# class SurahResponse(BaseModel):
+#     id: int
+#     name: str
+#     transliteration: str
+#     total_ayahs: int
+#     revelation_type: str
+
+# class AyahResponse(BaseModel):
+#     ayah_number: int
+#     text_arabic: str
+#     text_translation: str
+#     surah_id: int
+#     surah_name: str
+
+# # ==================== COMMON RESPONSE MODELS ====================
+
+# class SuccessResponse(BaseModel):
+#     message: str
+#     status: str = "success"
+#     timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+# class ErrorResponse(BaseModel):
+#     error: str
+#     status: str = "error"
+#     timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+# class ImageDeleteRequest(BaseModel):
+#     """Request model for image deletion"""
+#     image_url: str = Field(..., description="URL path of the image to delete")
+
+# class UserProfile(BaseModel):
+#     """Alias for UserProfileResponse"""
+#     id: str
+#     firstname: str
+#     email: str
+#     profileImageUrl: Optional[str] = Field(None, description="URL to fetch profile image: /users/image/{id}")
+#     bio: Optional[str] = None
+#     lastName: Optional[str] = None
+#     dateofBirth: Optional[date] = None
+#     address: Optional[str] = None
+#     phoneNumber: Optional[str] = None
+#     gender: Optional[str] = None
+#     createdAt: datetime
+
+# class ProfileUpdate(BaseModel):
+#     """Update profile with specific fields only"""
+#     firstname: Optional[str] = Field(None, min_length=3, max_length=50)
+#     lastName: Optional[str] = Field(None, max_length=50)
+#     dateOfBirth: Optional[date] = None
+#     address: Optional[str] = None
+#     phoneNumber: Optional[str] = Field(None, alias="contact")
+#     email: Optional[EmailStr] = None
+#     profilePicture: Optional[str] = Field(None, alias="image")
+#     image_url: Optional[str] = Field(None, alias="imageUrl")
+#     bio: Optional[str] = None
+
+#     class Config:
+#         populate_by_name = True
