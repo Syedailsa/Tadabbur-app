@@ -1,5 +1,6 @@
 import os
 import json
+import asyncio
 from dotenv import load_dotenv
 from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header
@@ -10,16 +11,17 @@ import asyncio # --- ADDED: Required for background tasks
 from langchain.messages import HumanMessage, AIMessage, SystemMessage
 from agents import Runner
 from agents import InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered
-from title_agent import title_agent
+from tadabbur_agents.report_rule_generator import report_rule_generator
 from collections import defaultdict
 import agent as agent_module
 from utils.submit_feedback import submit_feedback
+from utils.generate_title_description import generate_title_description
+from utils.save_system_message import save_system_message_to_db
+from utils.generate_short_id import generate_short_id
 import story_agent as story_module
 import logging
 import secrets
 from config.db import get_supabase_client
-import random
-import string
 from agents import ItemHelpers  # used to extract message text from items (STREAMING)
 load_dotenv()
 # --- IMPORT NEW STT CLASS ---
@@ -45,11 +47,6 @@ API_KEY = os.getenv("CHAT_API_KEY")
 # === SESSION CODE START ===
 DB_PATH = "chat.db"
 supabase_client = None
-
-
-def generate_short_id() -> str:
-    # This is the closest equivalent to Math.random().toString(36)
-    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
 
 def generate_session_id() -> str:
     """Generate unique session ID: sess_ + 12 hex chars"""
@@ -94,22 +91,24 @@ def get_message_ids(session_id: str, supabase_client) -> list[str | None]:
     print(f"All message IDs for session {session_id}, {message_ids}")
     return message_ids
 
-
 def group_by_category(system_rules):
-    # Group by category
     grouped_by_category = defaultdict(list)
 
     for item in system_rules:
-        grouped_by_category[item['category']].append(item['rule'])
+        grouped_by_category[item['category']].append({
+            "text": item['rule'],
+            "hard_rule": item['hard_rule']
+        })
 
-    # Convert to your desired format
     result = []
     for category, rules in grouped_by_category.items():
         result.append({
             "category": category,
             "rules": rules
-    })
+        })
+
     return result
+
 
 
 # ------------------- OPTIONAL HTTP ENDPOINT -------------------
@@ -149,8 +148,6 @@ async def chat(req: ChatRequest, authorization: str | None = Header(None)):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
 
 
 # Utility: normalize agent names to avoid minor mismatches (STREAMING)
@@ -309,7 +306,16 @@ async def websocket_chat(websocket: WebSocket):
             # Handle CHAT HISTORY request
             if data.get("type") == "chat_history":
                 try:
-                    chat_sessions = supabase_client.table('chat_sessions').select('session_id', 'title', 'description', 'created_at').execute().data
+                    # first get all unique session IDs from chat_messages
+                    all_session_ids = supabase_client.table("chat_messages").select("session_id").execute().data
+                    # unique session_ids as a list
+                    unique_session_ids = list({
+                        record["session_id"]
+                        for record in all_session_ids
+                    })
+
+                    chat_sessions = supabase_client.table('chat_sessions').select('session_id', 'title', 'description', 'created_at').in_('session_id', unique_session_ids).execute().data
+
                     print("All sessions", chat_sessions)
                     await websocket.send_json({
                         "type": "chat_history",
@@ -347,6 +353,8 @@ async def websocket_chat(websocket: WebSocket):
                     chat_history = get_chat_messages(session_id, supabase_client)
                     # get message ids for this session
                     message_ids = get_message_ids(session_id, supabase_client)
+                    # convert message IDs to a list
+                    message_ids = [record['message_id'] for record in message_ids]
                     unique_message_ids = set(message_ids)
                     # override conversation_history with new_chat_history
                     conversation_history = chat_history or []
@@ -422,17 +430,65 @@ async def websocket_chat(websocket: WebSocket):
                 })
                 continue
 
-            if data.get("type") in ["like", "dislike", "report"]:
+            if data.get("type") == "report":
+                variant = data.get("variant", "")
+                message_id = data.get("message_id", "")
+                feedback = data.get("feedback", "")
+                index = data.get("index")
+
+                if not variant or not message_id or not feedback or not index:
+                    print("No variant/message ID/feedback/index, can't proceed to report content")
+                    await websocket.send_json({
+                    "type": "report",
+                    "status": "not-acknowledged"
+                })
+                    continue
+
+                if variant == "custom":
+                    reported_assistant_message = next(
+                    (msg for msg in conversation_history if msg["id"] == message_id),
+                    None
+                    )
+                    if reported_assistant_message:
+                        response = report_rule_generator.invoke({"assistant_response": reported_assistant_message, "report_reason": feedback})
+                    else:
+                        print(f"No assistant message found for message_id {message_id}, can't report message. Proceeding...")
+                elif variant == "normal":
+                    rule = data.get("rule")
+                    if not rule:
+                        print("No rule reported content, Can't Report message. Proceeding...")
+                    # insert rule in the feedback system
+                    for i in range(8):
+                        try:
+                            supabase_client.table('chat_rules').insert({"rule": rule, "hard_rule": True}).execute()
+                            break  # Success, exit the loop
+                        except Exception as e:
+                            print("Some error occurred while inserting a hard rule:", e)
+                            print(f"Trying again, total tries {i+1}/8")
+
+                    pass
+                print(f"Content at {message_id} and index {index} is successfully reported!")
+                await websocket.send_json({
+                    "type": "report",
+                    "index": index,
+                    "status": "acknowledged"
+                })
+
+                continue
+
+            if data.get("type") in ["like", "dislike"]:
                 type = data.get("type")
                 session_id = data.get('session_id')
                 message_id = data.get('message_id')
                 message = data.get("message")
                 if not session_id or not message_id or not message:
+                    print("No message or session ID, can't proceed to feedback submission")
                     continue
                 try:
                     print("Submitting user feedback")
-                    submit_feedback(type, message)
-
+                    # create a new task with a thread to optimize operations
+                    asyncio.create_task(asyncio.to_thread(submit_feedback, type, message))
+                    
                     supabase_client.table("chat_messages").update({"feedback": type}).eq("session_id", session_id).eq("message_id", message_id).execute()
 
                     print("✅ Successfully submitted user feedback!")
@@ -467,46 +523,64 @@ async def websocket_chat(websocket: WebSocket):
                     print("✅ User message saved successfully!")
                 except Exception as e:
                     print("Some error occured while inserting user messages", e)
+                    raise
 
                 logger.info(f"[{current_agent_name}] Session: {session_id} | Message: {message} ...")
                 dynamic_system_instruction_string = ""
                 try:
                     # fetch those rules whose weight exceeds 0.8 and build the dynamic system instructions
                     print("Fetching rules with weights >= 0.8")
-                    system_rules = supabase_client.table('chat_rules').select('rule','category').gte('weight', 0.7).execute().data                    
+                    system_rules = supabase_client.table('chat_rules').select('rule','category', 'hard_rule').or_("weight.gte.0.7,hard_rule.eq.True").execute().data
+                    hard_rules_injected = False
                     if system_rules:
-                        dynamic_system_instruction_string += "## GUIDELINES \n"
                         system_rules = group_by_category(system_rules)
+                        print("System rules after being grouped by category", system_rules)
+                        dynamic_system_instruction_string += f"## STRICT GUIDELINES"
 
+                        # iterate and build strict guidelines
                         for record in system_rules:
                             category = record["category"]
                             rules = record["rules"]
-
+                            hard_rule_count = 1
+                            for rule in rules:
+                                rule = rule["rule"]
+                                hard_rule = rule["hard_rule"]
+                                if not rule:
+                                    print("Rule is not present, can't add to system instruction")
+                                    continue
+                                if hard_rule:
+                                    dynamic_system_instruction_string += f"{hard_rule_count}.  {rule} \n"
+                                    hard_rule_count += 1
+                                    hard_rules_injected = True
+                        
+                        if not hard_rules_injected:
+                            dynamic_system_instruction_string = f'## GUIDELINES \n'
+                        else:
+                            dynamic_system_instruction_string += f"## GUIDELINES \n"
+                        # now build soft guidelines
+                        for record in system_rules:
+                            category = record["category"]
+                            rules = record["rules"]
+                            soft_rule_count += 1
                             dynamic_system_instruction_string += f'\n {category}_Rules \n'
-
+                            for rule in rules:
+                                rule = rule['rule']
+                                hard_rule = rule["hard_rule"]
+                                if not rule:
+                                    print("Rule is not present, can't add to system instruction")
+                                    continue
+                                if not hard_rule:        
+                                    dynamic_system_instruction_string += f'{soft_rule_count}. {rule} \n'
+                                    soft_rule_count += 1
+                            
                             # iterate over all rules and add below corresponding category in the instruction string
-
-                            for i, rule in enumerate(rules):
-                                dynamic_system_instruction_string += f'{i + 1}. {rule} \n'
 
                         if dynamic_system_instruction_string != "":
                             print("Dynamic system instructions string", dynamic_system_instruction_string)
                             # save system message in db
-                            try:
-                                # make a unique message_id
-                                dynamic_system_message_id = generate_short_id()
-                                while dynamic_system_message_id in unique_message_ids:
-                                    dynamic_system_message_id = generate_short_id()
-                                    unique_message_ids.add(dynamic_system_message_id)
-                                supabase_client.table('chat_messages').insert({
-                                    "message_id": dynamic_system_message_id,
-                                    "session_id": session_id,
-                                    "role": "system",
-                                    "message": dynamic_system_instruction_string,
-                                }).execute()
-                                print("✅ System message saved successfully!")
-                            except Exception as e:
-                                print("Some error occured while inserting System messages", e)
+
+                            # use a different thread to optimize performance
+                            asyncio.create_task(asyncio.to_thread(save_system_message_to_db, session_id,  dynamic_system_instruction_string,  unique_message_ids, supabase_client))
                             
                             # the rules injection logic in system message here
                         else:
@@ -514,6 +588,7 @@ async def websocket_chat(websocket: WebSocket):
                             continue
                 except Exception as e:
                     print("Some error occured while building system instructions", e)
+                    raise
 
                 try:
                     # append user message to conversation history
@@ -538,8 +613,6 @@ async def websocket_chat(websocket: WebSocket):
                     # append assistant message to conversation history
                     conversation_history.append({"role": "assistant", "content": response or "", "id": response_message_id})
 
-                    
-
                     try:
                         supabase_client.table('chat_messages').insert({
                             "message_id": response_message_id,
@@ -553,31 +626,14 @@ async def websocket_chat(websocket: WebSocket):
 
                     # generate title and description for the current chat history if there are 2 user/assistant messages each
                     # run the below logic in a seperate thread
-                    if (len(conversation_history) == 2):
-                        conversation_string = ""
-                        # build a conversation string from user & assistant messages
-                        for message in conversation_history:
-                            if isinstance(message, HumanMessage):
-                                conversation_string += f"User message: {message['content']} \n"
-                            else:
-                                conversation_string += f"Assistant message: {message['content']} \n"
-                        if conversation_string:
-                            try:
-                                agent_response = title_agent.invoke(conversation_string)
-                                title = agent_response.title or "Title"
-                                description = agent_response.description or "Description of chat session"
-                                # insert title and description in session table
-                                try:
-                                    print("🔃 Inserting title and description in session record")
-                                    supabase_client.table('chat_sessions').update({"title": title, "description": description}).eq("session_id", session_id).execute()
-                                    print("✅ Successfully insert title and description")
-                                except Exception as e:
-                                    print("Some error occured while inserting title and description in session table", e)
-                            except Exception as e:
-                                print("Some error occured while generating title and description", e)
-                        else:
-                            print("No conversation string so not generating title and description.")
-
+                    asyncio.create_task(
+                        asyncio.to_thread(
+                            generate_title_description,
+                            conversation_history,
+                            session_id,
+                            supabase_client
+                        )
+                    )
                     if response:
                         await websocket.send_json({
                             "type": "assistance_response",
@@ -585,14 +641,6 @@ async def websocket_chat(websocket: WebSocket):
                             "content": response,
                             "final": True
                         })
-
-
-                    # === FINAL RESPONSE & CLEANUP ===
-                    # await websocket.send_json({
-                    #     "type": "assistance_response",
-                    #     "content": final_text.strip() if final_text.strip() else "I'm not sure how to respond to that."
-                    # })
-
 
                     await websocket.send_json({"type": "streaming_end"})
                     await websocket.send_json({"type": "run_complete"})
@@ -619,10 +667,10 @@ async def websocket_chat(websocket: WebSocket):
 
 
                 except Exception as e:
-                    logger.exception("Streaming error")
                     await websocket.send_json({"type": "assistance_response", "content": "Sorry, something went wrong."})
                     await websocket.send_json({"type": "streaming_end"})
                     await websocket.send_json({"type": "run_complete"})
+                    raise
 
 
     except WebSocketDisconnect:
@@ -637,13 +685,3 @@ async def websocket_chat(websocket: WebSocket):
             await stt_engine.stop()
             stt_task.cancel()
             # --------------------------
-
-
-# ------------------- APP RUNNER -------------------
-
-
-if __name__ == "__main__":
-    import uvicorn
-    # IMPORTANT: Run without --reload for Windows asyncio subprocess support
-    # uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True) <-- REPLACED
-    uvicorn.run("main:app", host="0.0.0.0", port=8000)

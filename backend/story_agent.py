@@ -22,7 +22,7 @@ from langchain.agents import create_agent
 GROQ_API_KEY = os.getenv('GROQ_AI_API_KEY')
 load_dotenv()
 
-FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY")
+FIREWORKS_API_KEY = os.getenv("FIREWORKS_AI_API_KEY")
 
 # Initialize Fireworks client
 external_client = AsyncOpenAI(

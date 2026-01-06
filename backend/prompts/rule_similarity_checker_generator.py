@@ -28,7 +28,6 @@ existing_rule: False
 new_rule: <a single new prescriptive rule derived from the trait>
 weight_increment: None
 
-
 The new rule MUST:
 - Be imperative (e.g., “Include…”, “Avoid…”, “Always…”)
 - Echo the trait’s intent
@@ -62,5 +61,4 @@ Trait:
 Output:
 existing_rule: False
 new_rule: Do not apologize for missing data.
-
 """
