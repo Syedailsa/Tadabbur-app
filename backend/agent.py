@@ -1,8 +1,7 @@
 import json
 import os
 from agents import Agent, ModelSettings, OpenAIChatCompletionsModel, RunConfig, Runner, AsyncOpenAI, GuardrailFunctionOutput, RunContextWrapper, TResponseInputItem, input_guardrail, output_guardrail
-# from langchain_groq import ChatGroq
-from langchain_fireworks import ChatFireworks
+from langchain_groq import ChatGroq
 from langgraph.checkpoint.memory import InMemorySaver
 # from story_agent import story_agent
 # from tafseer_agent import Tafsir_Agent
@@ -15,11 +14,11 @@ from typing import List, Optional
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from langchain_core.tools import StructuredTool
-from langchain_fireworks import ChatFireworks
+# from langchain_fireworks import ChatFireworks
 from langchain.agents import create_agent
 from openai import OpenAI
 from tools.audio_playback import play_quran_audio
-# from tools.verse_reader import fetch_quran_verse
+from tools.verse_reader import fetch_quran_verse
 
 load_dotenv()
 
@@ -128,6 +127,10 @@ child_system_instructions = """
 
         ## Tools
 
+        ### • fetch_quran_verse
+        Use this tool to get specific Quranic verses when the user asks for them.
+        - Examples: "What is Surah Al-Fatiha Show me?", "Show me Ayatul Kursi""
+
         ### • play_quran_audio
         Use this when user wants to LISTEN to Quran recitation:
         - Examples: "I want to listen to Surah Fatiha", "play Ayatul Kursi", "can I hear Surah Kahf?"
@@ -263,6 +266,10 @@ child_system_instructions = """
         You may call tools at most 2 times per user query. 
         If you reach the limit, stop and respond: 
         "I am unable to make further tool calls for this request."
+
+        "## PRIORITY RULE: When Uploaded Files & Context are present\n"
+        "  • If the user's message contains a section marked 'SYSTEM: The user has attached a file...', "
+        "  • you MUST use that provided text to answer the question. "
 
         ### • Context
         Strictly use the following context and name definitions for calling tools and answering user queries.
@@ -291,6 +298,10 @@ standard_system_instructions = """
 
         ## Tools
 
+        ### • fetch_quran_verse
+        Use this tool to get specific Quranic verses when the user asks for them.
+        - Examples: "What is Surah Al-Fatiha Show me?", "Show me Ayatul Kursi""
+
         ### • play_quran_audio
         Use this when user wants to LISTEN to Quran recitation:
         - Examples: "I want to listen to Surah Fatiha", "play Ayatul Kursi", "can I hear Surah Kahf?"
@@ -427,6 +438,10 @@ standard_system_instructions = """
         If you reach the limit, stop and respond: 
         "I am unable to make further tool calls for this request."
 
+        "## PRIORITY RULE: When Uploaded Files & Context are present\n"
+        "  • If the user's message contains a section marked 'SYSTEM: The user has attached a file...', "
+        "  • you MUST use that provided text to answer the question. "
+
         ### • Context
         Strictly use the following context and name definitions for calling tools and answering user queries.
         - QuranMetaData: {QuranMetaData}
@@ -438,21 +453,14 @@ standard_system_instructions = """
         **Default language:** English (unless the user requests another)."""
 
 try:
-    model = ChatFireworks(
-        api_key=FIREWORKS_API_KEY,
-        model="accounts/fireworks/models/gpt-oss-120b",
+    model = ChatGroq(
+        api_key=GROQ_API_KEY,
+        model="openai/gpt-oss-120b",
         temperature=0,
     )
 except Exception as e:
     print("Error initializing ChatFireworks model:", e)
     raise e
-
-# main_agent = create_agent(
-#     name = "QuranTadabburAgent",
-#     model = model,
-#     system_prompt = standard_system_instructions,
-#     tools = [Search_Quran_By_filters, searchAsbabNuzul, final_response_tool],
-# )
 
 def get_agent_by_user_age( age: int , username: str ):
     """
@@ -478,7 +486,7 @@ def get_agent_by_user_age( age: int , username: str ):
         name="QuranTadabburAgent",
         model=model,
         system_prompt=formatted_system_prompt,
-        tools=[Search_Quran_By_filters, searchAsbabNuzul, final_response_tool, play_quran_audio],
+        tools=[Search_Quran_By_filters, searchAsbabNuzul, final_response_tool, play_quran_audio, fetch_quran_verse],
     )
 
 main_agent = get_agent_by_user_age(age=25, username="DefaultUser")  

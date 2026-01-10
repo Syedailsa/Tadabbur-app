@@ -6,6 +6,7 @@ interface ChatProviderProps {
   wsRef: React.Ref<WebSocket>;
   chatHistory: ChatRecord[] | null;
   setChatHistory: React.Dispatch<React.SetStateAction<ChatRecord[] | null>>;
+  sessionID: string | null;
 }
 
 const ChatProvider: React.FC<ChatProviderProps> = ({
@@ -13,6 +14,7 @@ const ChatProvider: React.FC<ChatProviderProps> = ({
   wsRef,
   chatHistory,
   setChatHistory,
+  sessionID,
 }) => {
   const [hideExtraOptions, setHideExtraOptions] = useState<boolean>(true);
   const [selectedModel, setSelectedModel] = useState<string | null>(
@@ -46,6 +48,7 @@ const ChatProvider: React.FC<ChatProviderProps> = ({
         setOpenChatHistoryDialogueBox,
         chatHistory,
         setChatHistory,
+        sessionID,
       }}
     >
       {children}

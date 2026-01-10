@@ -699,7 +699,6 @@ async def delete_profile_image(user: dict = Depends(get_current_user)):
         logger.error(f"Image deletion error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to delete image")
 
-
 # ==================== FEEDBACK ROUTER ====================
 
 feedback_router = APIRouter(prefix="/feedback", tags=["Feedback"])

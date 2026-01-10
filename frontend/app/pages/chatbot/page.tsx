@@ -30,6 +30,7 @@ import { audioScheduler } from "./../../utils/AudioScheduler";
 import { generateNewSessionId } from "./../../session/session";
 import { ChatHisoryDialoguseBox } from "./../../components/chatbot/UI/ChatHistoryDialogueBox";
 import QuranAudioDialog from "./../../components/chatbot/UI/AudioDialogBox";
+import QuranVerseDialog from "@/app/components/chatbot/UI/QuranVerseDialog";
 import { ChatRecord } from "./../../context/chatbot/ChatContext";
 import { PromptExtraOptionsContext } from "./../../context/chatbot/PromptExtraOptionsContext";
 
@@ -44,6 +45,8 @@ export default function ChatPage() {
       }[]
     | null
   >(null);
+  const committedTextRef = useRef<string>(""); 
+  const tempSpeechRef = useRef<string>(""); 
 
   const [userData, setUserData] = useState<RegistrationData | null>(null);
   const inputRef = useRef<HTMLDivElement | null>(null);
@@ -109,6 +112,47 @@ export default function ChatPage() {
 //         }
 //     }
 //   }, []);
+
+  useEffect(() => {
+    const handleMicStart = () => {
+        tempSpeechRef.current = ""; 
+
+        if (inputRef.current && inputRef.current.innerText.trim().length > 0) {
+            committedTextRef.current = inputRef.current.innerText.trim() + " "; 
+        } else {
+            committedTextRef.current = "";
+        }
+    };
+
+    const handleMicStop = () => {
+        const finalText = (committedTextRef.current + tempSpeechRef.current).trim();
+        
+        if (inputRef.current) {
+            inputRef.current.innerText = finalText;
+            
+            const range = document.createRange();
+            const sel = window.getSelection();
+            if(inputRef.current.lastChild) {
+                range.selectNodeContents(inputRef.current);
+                range.collapse(false);
+                sel?.removeAllRanges();
+                sel?.addRange(range);
+            }
+            setShowPlaceholder(finalText === ""); 
+            
+            committedTextRef.current = finalText;
+            tempSpeechRef.current = "";
+        }
+    };
+
+    window.addEventListener("tadabbur-mic-start", handleMicStart);
+    window.addEventListener("tadabbur-mic-stop", handleMicStop);
+
+    return () => {
+        window.removeEventListener("tadabbur-mic-start", handleMicStart);
+        window.removeEventListener("tadabbur-mic-stop", handleMicStop);
+    };
+  }, []);
 
   const StructuredResponse = ({ data }: { data: QuranResponse }) => {
     return (
@@ -243,7 +287,6 @@ export default function ChatPage() {
       const type = data.type;
       switch (type) {
         case "open_audio_dialog":
-          // This is triggered when user asks to listen to Quran
           setAudioRequest({
             parsed_request: data.parsed_request,
             original_message: data.original_message,
@@ -253,10 +296,21 @@ export default function ChatPage() {
           setShowAudioDialog(true);
           break;
 
+        case "stt_chunk":
+          if (inputRef.current && inputRef.current.innerText.trim() === "") {
+             committedTextRef.current = "";
+          }
+          tempSpeechRef.current = data.text;
+          break;
+
+        case "stt_final":
+          committedTextRef.current += data.text + " ";
+          tempSpeechRef.current = ""; 
+          break;
+
         case "tts_audio_chunk":
           const audioBase64 = data.audio;
           if (audioBase64) {
-             // Just delegate to the stable scheduler
              audioScheduler.scheduleChunk(audioBase64);
           }
           break;
@@ -278,12 +332,11 @@ export default function ChatPage() {
           const isNew = session_id != sessionID;
           if (isNew) {
             setSessionID(session_id);
-            // Use functional update to ensure we're working with latest state
             setMessages((prevMessages) => {
               if (prevMessages && prevMessages.length > 0) {
                 return null;
               }
-              return prevMessages; // Return unchanged if no messages
+              return prevMessages; 
             });
           }
           break;
@@ -299,7 +352,6 @@ export default function ChatPage() {
         case "chat_history":
           const chat_history = data.chat_history;
           const history_status = data.status;
-          // handle chat history
           if (history_status === "acknowledged") {
             setChatHistory(chat_history);
           }
@@ -320,29 +372,25 @@ export default function ChatPage() {
           setLoadingMessage(null);
 
           messageScrollFlag.current = false;
-          // Start a new message
           setMessages((prev) => {
             const updated = [...(prev || [])];
 
-            // Add a new assistant message with empty content
             updated.push({
               message_id: message_id,
               role: "assistant",
-              content: "", // Start empty
+              content: "", 
               feedback: null,
             });
 
-            // Set the streaming index to this new message
             setStreamingMessageIndex(updated.length - 1);
             return updated;
           });
 
           setLoading(false);
 
-          const chunk_array = chunkText(reply, 4); // 4 words per chunk
+          const chunk_array = chunkText(reply, 4); 
           (async () => {
             for (const chunk of chunk_array) {
-              // smaller delay → faster
               await new Promise((resolve) => setTimeout(resolve, 2));
 
               setMessages((prev) => {
@@ -409,6 +457,9 @@ export default function ChatPage() {
 
   const ask = async (input: string) => {
     if (streamingMessageIndex !== null) return;
+    committedTextRef.current = "";
+    tempSpeechRef.current = "";
+    if (inputRef.current) inputRef.current.innerText = ""; 
     setError(null);
     messageScrollFlag.current = false;
     setLoading(true);
@@ -543,9 +594,9 @@ export default function ChatPage() {
                 chatHistory={chatHistory}
                 setChatHistory={setChatHistory}
                 wsRef={wsRef}
+                sessionID={sessionID}
             >
-                <ChatHisoryDialoguseBox />
-                {/* =========== ADD THE AUDIO DIALOG HERE =========== */}
+                <ChatHisoryDialoguseBox /> 
                 {showAudioDialog && audioRequest && (
                   <QuranAudioDialog
                     isOpen={showAudioDialog}
@@ -556,7 +607,16 @@ export default function ChatPage() {
                     wsRef={wsRef}
                   />
                 )}
-                {/* ================================================ */}
+                {showQuranVerseDialog && verseRequest && (
+                  <QuranVerseDialog
+                    isOpen={showQuranVerseDialog}
+                    onClose={() => setShowQuranVerseDialog(false)}
+                    parsedRequest={verseRequest.parsed_request}
+                    originalMessage={verseRequest.original_message}
+                    note={verseRequest.note}
+                    wsRef={wsRef}
+                  />
+                )}
                 <div className="w-full h-full flex flex-col items-center overflow-y-auto">
                 <div className="absolute top-0 p-2 w-full">
                     <div className="pointer-events-auto">
@@ -854,6 +914,7 @@ export default function ChatPage() {
                         const target = e.target as HTMLDivElement;
                         const text = target.textContent.trim() ?? "";
                         setShowPlaceholder(text === "");
+                        committedTextRef.current = target.innerText;
                     }}
                     onKeyDown={(e) => {
                         handleInput(e);

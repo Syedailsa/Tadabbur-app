@@ -19,6 +19,7 @@ export interface ChatContextType {
   setSelectedSessionID: React.Dispatch<React.SetStateAction<string>>;
   openChatHistoryDialogueBox: boolean;
   setOpenChatHistoryDialogueBox: React.Dispatch<React.SetStateAction<boolean>>;
+  sessionID: string | null;
 }
 const ChatContext = createContext<ChatContextType | any>(null);
 

@@ -51,13 +51,21 @@ export default function QuranVerseDialog({
   wsRef,
   note
 }: QuranVerseDialogProps) {
-  const [currentSurah, setCurrentSurah] = useState(parsedRequest.surah);
-  const [currentAyah, setCurrentAyah] = useState(parsedRequest.ayah);
+  const [currentSurah, setCurrentSurah] = useState(parsedRequest?.surah ?? 1);
+  const [currentAyah, setCurrentAyah] = useState(parsedRequest?.ayah ?? 1);
   const [verseData, setVerseData] = useState<VerseData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [inputSurah, setInputSurah] = useState(parsedRequest.surah.toString());
-  const [inputAyah, setInputAyah] = useState(parsedRequest.ayah.toString());
+  const [inputSurah, setInputSurah] = useState(parsedRequest?.surah?.toString() ?? "1");
+  const [inputAyah, setInputAyah] = useState(parsedRequest?.ayah?.toString() ?? "1");
+
+  // const [currentSurah, setCurrentSurah] = useState(parsedRequest.surah);
+  // const [currentAyah, setCurrentAyah] = useState(parsedRequest.ayah);
+  // const [verseData, setVerseData] = useState<VerseData | null>(null);
+  // const [loading, setLoading] = useState(false);
+  // const [error, setError] = useState<string | null>(null);
+  // const [inputSurah, setInputSurah] = useState(parsedRequest.surah.toString());
+  // const [inputAyah, setInputAyah] = useState(parsedRequest.ayah.toString());
   const [copied, setCopied] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [includeAudio, setIncludeAudio] = useState(false);
@@ -65,15 +73,17 @@ export default function QuranVerseDialog({
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    if (isOpen) {
-      setCurrentSurah(parsedRequest.surah);
-      setCurrentAyah(parsedRequest.ayah);
-      setInputSurah(parsedRequest.surah.toString());
-      setInputAyah(parsedRequest.ayah.toString());
-      fetchVerse(parsedRequest.surah, parsedRequest.ayah);
-    } else {
-      // Cleanup audio when dialog closes
+    if (isOpen && parsedRequest) {
+      const safeSurah = parsedRequest.surah ?? 1;
+      const safeAyah = parsedRequest.ayah ?? 1;
+
+      setCurrentSurah(safeSurah);
+      setCurrentAyah(safeAyah);
+      setInputSurah(safeSurah.toString());
+      setInputAyah(safeAyah.toString());
       
+      fetchVerse(safeSurah, safeAyah);
+    } else {
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current = null;
@@ -498,7 +508,7 @@ export default function QuranVerseDialog({
                 </div>
               </div>
 
-              {/* Action Buttons */}
+              {/* Action Buttons
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={copyToClipboard}
@@ -514,7 +524,7 @@ export default function QuranVerseDialog({
                   <Share2 className="w-5 h-5" />
                   Share
                 </button>
-              </div>
+              </div> */}
             </div>
           ) : null}
         </div>

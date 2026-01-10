@@ -39,4 +39,5 @@ dependencies = [
     "pygame>=2.6.1",
     "pyjwt>=2.10.1",
     "sqlalchemy[asyncio]>=2.0.44",
+    "pypdf>=6.5.0",
 ]
