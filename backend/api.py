@@ -1,3 +1,4 @@
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile
 from datetime import datetime, timedelta
 from models import BookmarkDeleteRequest
@@ -5,6 +6,8 @@ from typing import List
 import base64
 import logging
 from fastapi.responses import StreamingResponse
+import os
+from supabase import create_client, Client
 
 # Local imports
 
@@ -19,6 +22,18 @@ from database import get_db_connection
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# ==================== SUPABASE SETUP ====================
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_STORAGE_BUCKET = os.getenv("SUPABASE_STORAGE_BUCKET", "profile-images")
+
+# Initialize Supabase client
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+logger.info(f"Supabase client created: {supabase is not None}")
+
+profile_router = APIRouter(prefix="/users", tags=["User Profile"])
 
 # ==================== AUTH ROUTER ====================
 
@@ -361,7 +376,6 @@ async def delete_bookmark(req: BookmarkDeleteRequest, user: dict = Depends(get_c
     return SuccessResponse(message="Bookmark deleted", timestamp=datetime.utcnow())
 
 
-
 # ==================== PROFILE ROUTER ====================
 
 profile_router = APIRouter(prefix="/users", tags=["User Profile"])
@@ -527,7 +541,6 @@ async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current
         timestamp=datetime.utcnow()
     )
 
-
 # ==================== IMAGE ENDPOINTS ====================
 
 from fastapi import File, UploadFile
@@ -538,119 +551,157 @@ async def upload_profile_image(
     user: dict = Depends(get_current_user)
 ):
     """
-    Upload profile image (Multipart/Form-Data)
-    - Stores image binary in Database (user_images table)
-    - Updates user profile with URL link
+        ✅ Upload profile image to Supabase Storage
+        
+        Flow:
+        1. Validate file type & size
+        2. Upload to Supabase Storage bucket
+        3. Get public CDN URL
+        4. Save URL in database (not image data!)
+        5. Return URL to frontend
     """
     try:
         # 1. Validate file type
-        if file.content_type not in ["image/jpeg", "image/png", "image/webp"]:
-            raise HTTPException(status_code=400, detail="Invalid file type. Only JPG, PNG, and WebP are allowed.")
-        
-        # 2. Read file data
+        allowed_types = ["image/jpeg", "image/png", "image/webp", "image/jpg"]
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid file type. Only JPG, PNG, and WebP are allowed."
+            )
+
+        # 2. Read and validate file size
         MAX_SIZE = 5 * 1024 * 1024  # 5MB
         image_data = await file.read()
-        
+
         if len(image_data) > MAX_SIZE:
             raise HTTPException(status_code=400, detail="Image too large (max 5MB)")
-            
-        async with get_db_connection() as conn:
-            # Delete old image from user_images table if exists
-            old_image_url = await conn.fetchval(
-                f"SELECT image_url FROM {'google_users' if await conn.fetchval('SELECT 1 FROM google_users WHERE user_id = $1', user['user_id']) else 'users'} WHERE user_id = $1",
-                user['user_id']
-            )
-            
-            if old_image_url and "/users/image/" in old_image_url:
-                try:
-                    old_id = int(old_image_url.split("/")[-1])
-                    await conn.execute("DELETE FROM user_images WHERE id = $1", old_id)
-                except:
-                    pass
 
-            # Insert new image into DB
-            image_id = await conn.fetchval("""
-                INSERT INTO user_images (user_id, image_name, image_data, content_type, image_size, created_at)
-                VALUES ($1, $2, $3, $4, $5, NOW())
-                RETURNING id
-            """, user['user_id'], file.filename, image_data, file.content_type, len(image_data))
-            
-            # Update profile with URL
-            image_url = f"/users/image/{image_id}"
+        logger.info(f"File size: {len(image_data)} bytes, content-type: {file.content_type}")
+
+        # 3. Generate unique filename
+        file_ext = file.filename.split('.')[-1].lower()
+        unique_filename = f"{user['user_id']}/{uuid.uuid4()}.{file_ext}"
+
+        logger.info(f"Uploading to Supabase: {unique_filename}")
+        
+        async with get_db_connection() as conn:
+            # 4. Check if user is Google user
             is_google = await conn.fetchval(
                 "SELECT 1 FROM google_users WHERE user_id = $1", 
                 user['user_id']
             )
             
+            # 5. Get old image URL to delete
+            old_image_url = await conn.fetchval(
+                f"SELECT profile_image_url FROM {'google_users' if is_google else 'users'} WHERE user_id = $1",
+                user['user_id']
+            )
+            
+            # 6. Delete old image from Supabase Storage if exists
+            if old_image_url and SUPABASE_STORAGE_BUCKET in old_image_url:
+                try:
+                    # Extract path from URL
+                    # Format: https://...supabase.co/storage/v1/object/public/profile-images/user_id/uuid.ext
+                    old_path = old_image_url.split(f'{SUPABASE_STORAGE_BUCKET}/')[-1]
+                    
+                    supabase.storage.from_(SUPABASE_STORAGE_BUCKET).remove([old_path])
+                    logger.info(f"🗑️ Deleted old image: {old_path}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to delete old image: {str(e)}")
+            
+            # 7. Upload to Supabase Storage
+            try:
+                response = supabase.storage.from_(SUPABASE_STORAGE_BUCKET).upload(
+                    path=unique_filename,
+                    file=image_data,
+                    file_options={
+                        "content-type": file.content_type,
+                        "cache-control": "3600",
+                        "upsert": "true"  # Replace if exists
+                    }
+                )
+                logger.info(f"Uploaded to Supabase: {unique_filename}")
+            except Exception as e:
+                logger.error(f"Supabase upload failed: {str(e)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to upload to Supabase Storage: {str(e)}"
+                )
+
+            # 8. Get public URL
+            public_url = supabase.storage.from_(SUPABASE_STORAGE_BUCKET).get_public_url(unique_filename)
+
+            logger.info(f"Public URL: {public_url}")
+
+            # 9. Save URL in database (not image data!)
             if is_google:
                 await conn.execute(
-                    "UPDATE google_users SET image_url = $1 WHERE user_id = $2",
-                    image_url, user['user_id']
+                    "UPDATE google_users SET profile_image_url = $1 WHERE user_id = $2",
+                    public_url, user['user_id']
                 )
             else:
                 await conn.execute(
-                    "UPDATE users SET image_url = $1, updated_at = NOW() WHERE user_id = $2",
-                    image_url, user['user_id']
+                    "UPDATE users SET profile_image_url = $1, updated_at = NOW() WHERE user_id = $2",
+                    public_url, user['user_id']
                 )
-        
-        logger.info(f"Image uploaded to DB: user={user['user_id']}, image_id={image_id}")
+
+            logger.info(f"Database updated with URL for user {user['user_id']}")
         
         return ImageUploadResponse(
             message="Profile image uploaded successfully",
             status="success",
-            profileImageUrl=image_url,
+            profileImageUrl=public_url,  # Return full CDN URL
             timestamp=datetime.utcnow()
         )
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ UPLOAD ERROR DEBUG: {str(e)}") # Added for debugging
-        logger.error(f"Image upload error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Image upload failed")
+        logger.exception(f"❌ Upload error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Image upload failed: {str(e)}")
 
 
-@profile_router.get("/image/{image_id}")
-async def get_profile_image(image_id: int, user: dict = Depends(get_current_user)):
+@profile_router.get("/image/{user_id}")
+async def get_profile_image_redirect(user_id: str):
     """
-    Fetch profile image
- 
+    Get user's profile image URL (redirects to Supabase CDN)
+    
+    This is a helper endpoint - in production, frontend should use
+    the profileImageUrl directly from GET /users/me
     """
     try:
         async with get_db_connection() as conn:
-            result = await conn.fetchrow(
-                """SELECT image_data, content_type, image_name, user_id 
-                   FROM user_images WHERE id = $1""", 
-                image_id
+            # Check Google users first
+            image_url = await conn.fetchval(
+                "SELECT profile_image_url FROM google_users WHERE user_id = $1",
+                user_id
             )
             
-            if not result:
-                raise HTTPException(status_code=404, detail="Image not found")
+            if not image_url:
+                # Check regular users
+                image_url = await conn.fetchval(
+                    "SELECT profile_image_url FROM users WHERE user_id = $1",
+                    user_id
+                )
             
-            # Verify ownership
-            if result['user_id'] != user['user_id']:
-                raise HTTPException(status_code=403, detail="Access denied")
+            if not image_url:
+                raise HTTPException(status_code=404, detail="No profile image found")
             
-            return StreamingResponse(
-                iter([result['image_data']]),
-                media_type=result['content_type'],
-                headers={
-                    "Content-Disposition": f"inline; filename={result['image_name']}",
-                    "Cache-Control": "public, max-age=31536000"  # Cache for 1 year
-                }
-            )
+            # Return JSON with URL (or redirect)
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(url=image_url)
             
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error serving image {image_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to serve image")
+        logger.error(f"Error fetching image URL: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch image")
 
 
 @profile_router.delete("/delete-image", response_model=SuccessResponse)
 async def delete_profile_image(user: dict = Depends(get_current_user)):
     """
-    Delete current profile image
+    ✅ Delete profile image from Supabase Storage
     """
     try:
         async with get_db_connection() as conn:
@@ -661,37 +712,43 @@ async def delete_profile_image(user: dict = Depends(get_current_user)):
             
             # Get current image URL
             image_url = await conn.fetchval(
-                f"SELECT image_url FROM {'google_users' if is_google else 'users'} WHERE user_id = $1",
+                f"SELECT profile_image_url FROM {'google_users' if is_google else 'users'} WHERE user_id = $1",
                 user['user_id']
             )
             
-            if not image_url or not image_url.startswith('/users/image/'):
+            if not image_url:
                 raise HTTPException(status_code=404, detail="No profile image to delete")
             
-            # Extract image ID and delete
-            image_id = int(image_url.split('/')[-1])
-            result = await conn.execute(
-                "DELETE FROM user_images WHERE id = $1 AND user_id = $2", 
-                image_id, user['user_id']
-            )
+            # Extract path from Supabase URL
+            if SUPABASE_STORAGE_BUCKET in image_url:
+                try:
+                    image_path = image_url.split(f'{SUPABASE_STORAGE_BUCKET}/')[-1]
+                    logger.info(f"Deleting from Supabase: {image_path}")
+
+                    # Delete from Supabase Storage
+                    supabase.storage.from_(SUPABASE_STORAGE_BUCKET).remove([image_path])
+                    logger.info(f"Deleted from Supabase: {image_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete from Supabase: {str(e)}")
             
-            if result == "DELETE 1":
-                # Clear from profile
-                if is_google:
-                    await conn.execute(
-                        "UPDATE google_users SET image_url = NULL WHERE user_id = $1",
-                        user['user_id']
-                    )
-                else:
-                    await conn.execute(
-                        "UPDATE users SET image_url = NULL, updated_at = NOW() WHERE user_id = $1",
-                        user['user_id']
-                    )
-                
-                logger.info(f"Image deleted: user={user['user_id']}, image_id={image_id}")
-                return SuccessResponse(message="Profile image deleted successfully")
+            # Clear from database
+            if is_google:
+                await conn.execute(
+                    "UPDATE google_users SET profile_image_url = NULL WHERE user_id = $1",
+                    user['user_id']
+                )
             else:
-                raise HTTPException(status_code=404, detail="Image not found")
+                await conn.execute(
+                    "UPDATE users SET profile_image_url = NULL, updated_at = NOW() WHERE user_id = $1",
+                    user['user_id']
+                )
+            
+            logger.info(f"✅ Profile image deleted for user {user['user_id']}")
+            
+            return SuccessResponse(
+                message="Profile image deleted successfully",
+                timestamp=datetime.utcnow()
+            )
             
     except HTTPException:
         raise

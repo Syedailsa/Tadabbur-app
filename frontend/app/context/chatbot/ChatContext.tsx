@@ -1,4 +1,4 @@
-import React, { createContext } from "react";
+import React, { createContext, Dispatch, SetStateAction } from "react";
 
 export interface ChatRecord {
   session_id: string | null;
@@ -20,6 +20,10 @@ export interface ChatContextType {
   openChatHistoryDialogueBox: boolean;
   setOpenChatHistoryDialogueBox: React.Dispatch<React.SetStateAction<boolean>>;
   sessionID: string | null;
+  messages: any;
+  setMessages: Dispatch<SetStateAction<any>>;
+  attachedFile: File | null;
+  setAttachedFile: Dispatch<SetStateAction<File | null>>;
 }
 const ChatContext = createContext<ChatContextType | any>(null);
 

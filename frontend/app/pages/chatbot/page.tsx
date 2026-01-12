@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 // import DownArrow from "./../../icons/arrow-down-head.svg";
 import RegistrationForm, { RegistrationData } from "./../../components/chatbot/UI/ReactForm"; 
 import ProtectedRoute from "@/app/utils/ProtectedRoutes";
+import AttachIcon from "@/icons/attach_icon.svg";
 import {
   motion,
   easeInOut,
@@ -33,6 +34,7 @@ import QuranAudioDialog from "./../../components/chatbot/UI/AudioDialogBox";
 import QuranVerseDialog from "@/app/components/chatbot/UI/QuranVerseDialog";
 import { ChatRecord } from "./../../context/chatbot/ChatContext";
 import { PromptExtraOptionsContext } from "./../../context/chatbot/PromptExtraOptionsContext";
+import WaveForm from "@/app/components/chatbot/UI/WaveForm";
 
 export default function ChatPage() {
   const router = useRouter();
@@ -49,6 +51,7 @@ export default function ChatPage() {
   const tempSpeechRef = useRef<string>(""); 
 
   const [userData, setUserData] = useState<RegistrationData | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
   const inputRef = useRef<HTMLDivElement | null>(null);
   const [showPlaceholder, setShowPlaceholder] = useState<boolean | null>(true);
   const [greeting, setGreeting] = useState<string | null>(
@@ -70,6 +73,7 @@ export default function ChatPage() {
   const [messageIDs, setMessageIDs] = useState<string[] | null>(null);
   const [showAudioDialog, setShowAudioDialog] = useState(false);
   const [audioRequest, setAudioRequest] = useState<any>(null);
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
 
   const [showQuranVerseDialog, setShowQuranVerseDialog] = useState(false);
   const [verseRequest, setVerseRequest] = useState<any>(null);
@@ -115,6 +119,9 @@ export default function ChatPage() {
 
   useEffect(() => {
     const handleMicStart = () => {
+
+        setIsRecording(true);
+
         tempSpeechRef.current = ""; 
 
         if (inputRef.current && inputRef.current.innerText.trim().length > 0) {
@@ -125,6 +132,9 @@ export default function ChatPage() {
     };
 
     const handleMicStop = () => {
+
+        setIsRecording(false);
+
         const finalText = (committedTextRef.current + tempSpeechRef.current).trim();
         
         if (inputRef.current) {
@@ -499,10 +509,55 @@ export default function ChatPage() {
     }
   };
 
-  const handleInput = (e: React.KeyboardEvent<HTMLDivElement>) => {
+  const uploadFile = async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("session_id", sessionID || "default_session"); 
+
+    try {
+        const response = await fetch("http://localhost:8000/api/upload", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const err = await response.json();
+          alert(`Upload failed: ${err.detail}`);
+          return;
+        }
+
+        const data = await response.json();
+        
+        // Add the file message to the chat UI immediately
+        setMessages((prev: any) => [
+          ...(prev || []),
+          {
+            message_id: data.message_id, 
+            role: "user",
+            content: `📂 Attached file: ${file.name}`,
+            feedback: null
+          }
+        ]);
+        
+    } catch (error) {
+        console.error("Upload error:", error);
+        alert("Failed to upload file.");
+    }
+  };
+
+  const handleInput = async (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (!inputRef.current) return;
-    if (e.key === "Enter") {
+    
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
+      
+      // Handle File Upload
+      if (attachedFile) {
+        await uploadFile(attachedFile);
+        setAttachedFile(null); // Clear the file after sending
+      }
+
+      // Handle Text Message
       const input = inputRef.current?.innerText;
       if (input.trim() != "") {
         ask(input);
@@ -595,6 +650,10 @@ export default function ChatPage() {
                 setChatHistory={setChatHistory}
                 wsRef={wsRef}
                 sessionID={sessionID}
+                attachedFile={attachedFile}
+                setAttachedFile={setAttachedFile}
+                messages={messages}
+                setMessages={setMessages}
             >
                 <ChatHisoryDialoguseBox /> 
                 {showAudioDialog && audioRequest && (
@@ -903,11 +962,34 @@ export default function ChatPage() {
                     <div ref={messagesEndRef}></div>
                 </div>
                 </div>
-                <div className="mr-1.5 bg-gray-50 px-4 mt-4 py-4 w-full lg:w-2/3 input-box">
+                <div className="mr-1.5 bg-gray-50 px-2 mt-4 py-2 w-full lg:w-2/3 input-box">
+
+                <AnimatePresence>
+                    {isRecording && (
+                        <div className="absolute bottom-20 left-0 w-full px-4 z-20">
+                            <WaveForm />
+                        </div>
+                    )}
+                </AnimatePresence>
+
                 <div
-                    className="flex flex-col relative border border-black/10 px-3 py-2 rounded-lg h-40 shadow-md
+                    className="flex flex-col relative border border-black/10 px-3 py-2 rounded-lg h-40 shadow-md bg-white
                 "
                 >
+                    {attachedFile && (
+                        <div className="absolute top-2 right-2 bg-gray-100 border border-gray-200 px-3 py-3 rounded-full text-xs flex items-center gap-x-2 z-10">
+                            <span className="flex font-bold text-gray-700"> 
+                              <AttachIcon className="fill-current text-black w-4 h-4" /> 
+                              {attachedFile.name}
+                            </span>
+                            <button 
+                                onClick={() => setAttachedFile(null)}
+                                className="text-gray-400 hover:text-red-500 font-bold px-1"
+                            >
+                                ✕
+                            </button>
+                        </div>
+                    )}
                     <div
                     ref={inputRef}
                     onInput={(e) => {

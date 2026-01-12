@@ -16,8 +16,10 @@ const BottomOptions = () => {
     setHideModelBox,
     active,
     setActive,
+    setAttachedFile,
     setInput,
     sessionID, 
+    setMessages,
   } = useContext(ChatContext);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -95,48 +97,20 @@ const BottomOptions = () => {
     window.dispatchEvent(new Event("tadabbur-mic-stop"));
   };
 
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
-    console.log("📂 File selected:", file.name);
-    console.log("🆔 Current Session ID:", sessionID);
 
     if (file.type !== "application/pdf" && file.type !== "text/plain") {
       alert("Only PDF and TXT files are allowed.");
       return;
     }
 
-    const formData = new FormData();
-    formData.append("file", file);
-    
-    const activeSession = sessionID || "default_session";
-    formData.append("session_id", activeSession); 
+    console.log("📂 File selected:", file.name);
+    setAttachedFile(file);
 
-    try {
-      console.log(`🚀 Uploading to session: ${activeSession}`);
-      
-      const response = await fetch("http://localhost:8000/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const err = await response.json();
-        console.error("❌ Upload failed:", err);
-        alert(`Upload failed: ${err.detail}`);
-        return;
-      }
-
-      const data = await response.json();
-      console.log("✅ Upload successful:", data);
-      alert("File uploaded successfully! Ask me about it.");
-      
-      if (fileInputRef.current) fileInputRef.current.value = "";
-
-    } catch (error) {
-      console.error("❌ Network error:", error);
-      alert("Failed to upload file.");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
     }
   };
 
