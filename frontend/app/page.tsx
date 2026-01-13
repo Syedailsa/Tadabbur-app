@@ -939,7 +939,6 @@ export default function ChatPage() {
             setShowAudioDialog(false);
             setAudioRequest(null);
           }}
-          audioData={audioRequest}
         />
       )}
     </div>

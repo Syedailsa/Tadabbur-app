@@ -1,4 +1,3 @@
-
 from rapidfuzz import process, fuzz
 
 def normalize_surah(name:str, array:list) -> str | None:

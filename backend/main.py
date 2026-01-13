@@ -302,6 +302,7 @@ async def websocket_chat(websocket: WebSocket):
     logger.info("WebSocket connected successfully")
 
     try:
+
         supabase_client = get_supabase_client()
     except Exception as e:
         print("Some error occured initiating supabase connection", e)
@@ -588,26 +589,53 @@ async def websocket_chat(websocket: WebSocket):
                         (msg for msg in conversation_history if msg["id"] == message_id),
                         None
                         )
-                        if reported_assistant_message:    
-                            # insert the new rule
-                            try:
-                                # insert hard rule in a different thread for optimization
-                                await asyncio.to_thread(insert_report_rule, rule, supabase_client, message_id, reported_assistant_message, feedback)
-                                await websocket.send_json({
-                                    "type": "report",
-                                    "message_id": message_id,
-                                    "status": "acknowledged"
-                                })
-                                ack_sent = True
-                                print(f"Message with {message_id} is successfully reported!")
-                            except Exception as e:
-                                await websocket.send_json({
-                                "type": "report",
-                                "status": "not-acknowledged"
-                                })
-                                ack_sent = True
-                            continue
-                                
+                        if reported_assistant_message:
+                            # first fetch existing rules
+                            print("Fetching all existing hard rules....")
+                            existing_rules = supabase_client.table('chat_rules').select("rule_id", "rule").eq("hard_rule", True).execute().data
+
+                            print("All existing hard rules", existing_rules)
+                            
+                            response = report_rule_generator.invoke({"existing_rules": existing_rules,"assistant_response": reported_assistant_message, "report_reason": feedback})
+
+                            existing_rule = response.existing_rule
+                            if existing_rule:
+                                print("Similar in intent rule already exists, returning...")
+                                continue
+                            else:
+                                report_relevance = response.report_relevance
+                                if report_relevance == "relevant":
+                                    rule = response.report_rule
+                                    rule_id = response.rule_id
+
+                                    if not rule:
+                                        print("No rule, continuing...")
+                                        continue
+                                    if rule_id:
+                                        # first delete the conflicting rule
+                                        supabase_client.table('chat_rules').delete().eq("rule_id", rule_id).execute()
+                                    
+                                    # insert the new rule
+                                    try:
+                                        # insert hard rule in a different thread for optimization
+                                        await asyncio.to_thread(insert_report_rule,rule, supabase_client, message_id)
+                                        await websocket.send_json({
+                                            "type": "report",
+                                            "message_id": message_id,
+                                            "status": "acknowledged"
+                                        })
+                                        ack_sent = True
+                                        print(f"Message with {message_id} is successfully reported!")
+                                    except Exception as e:
+                                        await websocket.send_json({
+                                        "type": "report",
+                                        "status": "not-acknowledged"
+                                        })
+                                        ack_sent = True
+                                    continue
+                                else:
+                                    print("Nor valid response reason")
+                                    continue
                         else:
                             print(f"No assistant message found for message_id {message_id}, can't report message. Proceeding...")
                                 
@@ -787,6 +815,7 @@ async def websocket_chat(websocket: WebSocket):
                     )
 
                     response = response['messages'][-1].content
+                    
                     # generate a message id for response message
                     response_message_id = generate_uuid()
                     while response_message_id in unique_message_ids:

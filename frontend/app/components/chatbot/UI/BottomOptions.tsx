@@ -16,10 +16,14 @@ const BottomOptions = () => {
     setHideModelBox,
     active,
     setActive,
+    setAttachedFile,
     setInput,
+    sessionID, 
+    setMessages,
   } = useContext(ChatContext);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const isMicActive = active[2];
@@ -35,7 +39,6 @@ const BottomOptions = () => {
     try {
       console.log("🎤 Mic Request...");
 
-      // Notify ChatPage to reset text (Frontend visual reset)
       window.dispatchEvent(new Event("tadabbur-mic-start"));
 
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -49,9 +52,7 @@ const BottomOptions = () => {
         return;
       }
 
-      // --- ADDED: Send Start Command to Backend (Resets Backend STT Engine) ---
       wsRef.current.send(JSON.stringify({ type: "start_mic" }));
-      // ------------------------------------------------------------------------
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
@@ -89,15 +90,39 @@ const BottomOptions = () => {
         .forEach((track) => track.stop());
     }
 
-    // --- ADDED: Send Stop Command (Kills Backend Engine to prevent ghost text) ---
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "stop_mic" }));
     }
-    // ---------------------------------------------------------------------------
+
+    window.dispatchEvent(new Event("tadabbur-mic-stop"));
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (file.type !== "application/pdf" && file.type !== "text/plain") {
+      alert("Only PDF and TXT files are allowed.");
+      return;
+    }
+
+    console.log("📂 File selected:", file.name);
+    setAttachedFile(file);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   return (
     <div className="w-full flex gap-x-1 mt-auto items-center">
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleFileChange} 
+        style={{ display: 'none' }} 
+        accept=".pdf,.txt"
+      />
       <motion.div
         whileTap={{ backgroundColor: "#0000003D" }}
         whileHover={{ backgroundColor: "#0000000D" }}
@@ -166,7 +191,6 @@ const BottomOptions = () => {
           </span>
         </motion.div>
 
-        {/* --- MIC ICON --- */}
         <motion.div
           id="mic-icon-box"
           whileTap={{ backgroundColor: "#0000003D" }}
@@ -193,6 +217,7 @@ const BottomOptions = () => {
           whileHover={{ backgroundColor: "#0000000D" }}
           className="rounded-full w-9 h-9 cursor-pointer flex justify-center items-center"
           id="attach-files-box"
+          onClick={() => fileInputRef.current?.click()} 
         >
           <AttachIcon className="fill-current text-black w-5 h-5" />
         </motion.div>

@@ -51,6 +51,7 @@ export default function QuranVerseDialog({
   wsRef,
   note
 }: QuranVerseDialogProps) {
+<<<<<<< HEAD
   const [currentSurah, setCurrentSurah] = useState(parsedRequest.surah);
   const [currentAyah, setCurrentAyah] = useState(parsedRequest.ayah);
   const [verseData, setVerseData] = useState<VerseData | null>(null);
@@ -58,6 +59,23 @@ export default function QuranVerseDialog({
   const [error, setError] = useState<string | null>(null);
   const [inputSurah, setInputSurah] = useState(parsedRequest.surah.toString());
   const [inputAyah, setInputAyah] = useState(parsedRequest.ayah.toString());
+=======
+  const [currentSurah, setCurrentSurah] = useState(parsedRequest?.surah ?? 1);
+  const [currentAyah, setCurrentAyah] = useState(parsedRequest?.ayah ?? 1);
+  const [verseData, setVerseData] = useState<VerseData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [inputSurah, setInputSurah] = useState(parsedRequest?.surah?.toString() ?? "1");
+  const [inputAyah, setInputAyah] = useState(parsedRequest?.ayah?.toString() ?? "1");
+
+  // const [currentSurah, setCurrentSurah] = useState(parsedRequest.surah);
+  // const [currentAyah, setCurrentAyah] = useState(parsedRequest.ayah);
+  // const [verseData, setVerseData] = useState<VerseData | null>(null);
+  // const [loading, setLoading] = useState(false);
+  // const [error, setError] = useState<string | null>(null);
+  // const [inputSurah, setInputSurah] = useState(parsedRequest.surah.toString());
+  // const [inputAyah, setInputAyah] = useState(parsedRequest.ayah.toString());
+>>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
   const [copied, setCopied] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [includeAudio, setIncludeAudio] = useState(false);
@@ -65,6 +83,7 @@ export default function QuranVerseDialog({
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
+<<<<<<< HEAD
     if (isOpen) {
       setCurrentSurah(parsedRequest.surah);
       setCurrentAyah(parsedRequest.ayah);
@@ -73,6 +92,19 @@ export default function QuranVerseDialog({
       fetchVerse(parsedRequest.surah, parsedRequest.ayah);
     } else {
       // Cleanup audio when dialog closes
+=======
+    if (isOpen && parsedRequest) {
+      const safeSurah = parsedRequest.surah ?? 1;
+      const safeAyah = parsedRequest.ayah ?? 1;
+
+      setCurrentSurah(safeSurah);
+      setCurrentAyah(safeAyah);
+      setInputSurah(safeSurah.toString());
+      setInputAyah(safeAyah.toString());
+      
+      fetchVerse(safeSurah, safeAyah);
+    } else {
+>>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current = null;
@@ -497,7 +529,11 @@ export default function QuranVerseDialog({
                 </div>
               </div>
 
+<<<<<<< HEAD
               {/* Action Buttons */}
+=======
+              {/* Action Buttons
+>>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={copyToClipboard}
@@ -513,7 +549,11 @@ export default function QuranVerseDialog({
                   <Share2 className="w-5 h-5" />
                   Share
                 </button>
+<<<<<<< HEAD
               </div>
+=======
+              </div> */}
+>>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
             </div>
           ) : null}
         </div>
