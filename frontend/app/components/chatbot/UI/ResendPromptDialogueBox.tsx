@@ -7,6 +7,7 @@ import ShortText from "../../../../icons/short_text.svg";
 import LongText from "../../../../icons/long_text.svg";
 import Reference from "../../../../icons/reference.svg";
 import Engaging from "../../../../icons/engage_icon.svg";
+import { ChatMessage } from "../interfaces/ChatMessage";
 
 const ResendPromptDialogueBox = () => {
   const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -14,10 +15,15 @@ const ResendPromptDialogueBox = () => {
   const [customPrompt, setCustomPrompt] = useState<string>("");
   const [hidePlaceholder, setHidePlaceholder] = useState<boolean>(false);
   const {
+    parent_index,
+    assistant_index,
     hideResendPromptDialogue,
     setHideResendPromptDialogue,
     index,
     messages,
+    setMessages,
+    message_id,
+    reply_to_message_id,
     ask,
   } = useContext(PromptExtraOptionsContext);
 
@@ -94,15 +100,53 @@ const ResendPromptDialogueBox = () => {
           return (
             <div
               onClick={() => {
+                console.log("reply_to_message_id", reply_to_message_id);
+                console.log("message_id", message_id);
                 if (option.text === "Regenerate") {
-                  const user_message_index = index - 1;
+                  const user_message_index = parent_index;
                   if (user_message_index === null || user_message_index < 0)
                     return;
                   console.log("User message", messages[user_message_index]);
-                  ask(messages[user_message_index]?.content);
+
+                  // save the assistant messsages before deleting the message object
+                  const old_assistant_responses =
+                    messages?.[parent_index]?.responses;
+                  // remove the message object only with the user's message id
+                  setMessages((prev: ChatMessage[]) =>
+                    prev.filter(
+                      (m: any) => m.message_id !== reply_to_message_id
+                    )
+                  );
+                  ask(
+                    messages[user_message_index]?.content,
+                    null,
+                    true,
+                    reply_to_message_id,
+                    old_assistant_responses
+                  );
                 } else {
                   if (!option.prompt) return;
-                  ask(option?.prompt);
+                  const user_message_index = parent_index;
+
+                  // save the assistant messsages before deleting the message object
+                  const old_assistant_responses =
+                    messages?.[parent_index]?.responses;
+                  const number_of_assistant_responses =
+                    messages?.[parent_index]?.number_of_responses;
+
+                  // remove the user and assistant message
+                  setMessages((prev: ChatMessage[]) =>
+                    prev.filter(
+                      (m: any) => m.message_id !== reply_to_message_id
+                    )
+                  );
+                  ask(
+                    messages[user_message_index]?.content,
+                    option?.prompt,
+                    true,
+                    reply_to_message_id,
+                    old_assistant_responses
+                  );
                 }
                 setHideResendPromptDialogue(true);
               }}
@@ -121,11 +165,11 @@ const ResendPromptDialogueBox = () => {
 
 const options = [
   { icon: "Regenerate", text: "Regenerate" },
-  { icon: "ShortText", text: "Too short", prompt: "Response is too short" },
-  { icon: "LongText", text: "Too long", prompt: "Response is too long" },
+  { icon: "ShortText", text: "Too short", prompt: "Give a longer response" },
+  { icon: "LongText", text: "Too long", prompt: "Give a shorter response" },
   {
     icon: "Reference",
-    text: "Give references",
+    text: "Include references",
     prompt: "Include references in the response",
   },
   {

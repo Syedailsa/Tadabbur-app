@@ -176,74 +176,63 @@ interface RadioOption {
   id: string;
   value: string;
   label: string;
-  rule: string | null;
 }
+
 const reportOptions: RadioOption[] = [
   {
     id: "offensive",
-    value: "offensive",
+    value: "the response is offensive",
     label: "The response is offensive",
-    rule: "Do not generate content that is offensive, insulting, or demeaning to any individual or group.",
   },
   {
-    id: "great",
-    value: "great",
+    id: "ethical",
+    value: "the response violates ethical standards",
     label: "The response violates ethical standards",
-    rule: "Do not generate content that violates ethical, moral, or professional standards.",
   },
   {
     id: "inaccurate",
-    value: "inaccurate",
-    label: "The content provided is unauthentic and false",
-    rule: "Do not generate false, fabricated, or unverifiable information presented as fact.",
+    value: "the response is inaccurate",
+    label: "The response is inaccurate",
   },
   {
     id: "harmful",
-    value: "harmful",
-    label: "The response could cause harm or is dangerous",
-    rule: "Do not generate content that could cause physical, psychological, or societal harm.",
+    value: "the response is harmful",
+    label: "The response is harmful",
   },
   {
     id: "violence",
-    value: "violence",
+    value: "the response promotes violence or self-harm",
     label: "The response promotes violence or self-harm",
-    rule: "Do not generate content that promotes, glorifies, or instructs violence or self-harm.",
   },
   {
     id: "spam",
-    value: "spam",
+    value: "the response is spam or advertising",
     label: "This appears to be spam or advertising",
-    rule: "Do not generate unsolicited promotional, spammy, or advertising content.",
   },
   {
     id: "copyright",
-    value: "copyright",
+    value: "the response infringes on copyright or intellectual property",
     label: "This infringes on copyright or intellectual property",
-    rule: "Do not generate content that infringes copyright or intellectual property rights.",
   },
   {
     id: "privacy",
-    value: "privacy",
+    value: "the response violates privacy or contains personal information",
     label: "This violates someone's privacy or contains personal information",
-    rule: "Do not generate or disclose private, personal, or sensitive information.",
   },
   {
     id: "harassment",
-    value: "harassment",
+    value: "the response is harassment or bullying",
     label: "This is harassment, bullying, or targeted abuse",
-    rule: "Do not generate content that harasses, bullies, or targets individuals or groups.",
   },
   {
     id: "misinformation",
-    value: "misinformation",
+    value: "the response contains misinformation",
     label: "This contains misinformation or fake news",
-    rule: "Do not generate misleading, deceptive, or false information intended to misinform.",
   },
   {
     id: "other",
-    value: "other",
+    value: "other reason",
     label: "Other",
-    rule: null,
   },
 ];
 

@@ -9,7 +9,9 @@ import ChatProvider from "./providers/chatbot/ChatProvider";
 import DownArrow from "../icons/arrow-down-head.svg";
 import DisclaimerIcon from "../icons/disclaimer.svg";
 import UndoArrow from "../icons/refresh.svg";
-
+// import DownArrow from "../icons/arrow-down-head.svg";
+import SimpleAudioDialog from "./components/chatbot/UI/AudioDialogBox";
+import { AssistantMessage } from "./components/chatbot/interfaces/ChatMessage";
 import {
   motion,
   easeInOut,
@@ -20,29 +22,22 @@ import {
 import { ModelList } from "@/static/data";
 import BottomOptions from "./components/chatbot/UI/BottomOptions";
 import ExtraOptions from "./components/chatbot/UI/ExtraOptions";
-import PromptSuggestion from "../icons/prompt_suggestion.svg";
+// import PromptSuggestion from "../icons/prompt_suggestion.svg";
 import { defaultPrompts } from "@/static/data";
 import ModelBox from "./components/chatbot/UI/ModelBox";
 import Controls from "./components/chatbot/UI/Controls";
 import PromptExtraOptions from "./components/chatbot/UI/PrompExtraOptions";
-import generateShortId from "@/utils/generateShortId";
+import generateUUID from "@/utils/generateShortId";
 import { generateNewSessionId } from "./session/session";
 import { ChatHisoryDialoguseBox } from "./components/chatbot/UI/ChatHistoryDialogueBox";
 import { ChatRecord } from "./context/chatbot/ChatContext";
 import { PromptExtraOptionsContext } from "./context/chatbot/PromptExtraOptionsContext";
 import ReportContentDialogueBox from "./components/chatbot/UI/ReportContentDialogueBox";
+import { ChatMessage } from "./components/chatbot/interfaces/ChatMessage";
+import groupChatMessages from "@/utils/groupChatMessages";
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<
-    | {
-        message_id: string;
-        role: "user" | "assistant";
-        content: string;
-        feedback: "liked" | "disliked" | "reported" | null;
-      }[]
-    | null
-  >(null);
-
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const inputRef = useRef<HTMLDivElement | null>(null);
   const [showPlaceholder, setShowPlaceholder] = useState<boolean | null>(true);
   const [greeting, setGreeting] = useState<string | null>(
@@ -60,8 +55,8 @@ export default function ChatPage() {
   const [streamingMessageIndex, setStreamingMessageIndex] = useState<
     number | null
   >(null);
+  const [messageIDs, setMessageIDs] = useState<(string | null)[] | null>(null);
 
-  const [messageIDs, setMessageIDs] = useState<string[] | null>(null);
   const [showAudioDialog, setShowAudioDialog] = useState(false);
   const [audioRequest, setAudioRequest] = useState<any>(null);
 
@@ -74,7 +69,12 @@ export default function ChatPage() {
 
   const [hideReportContentDialogueBox, setHideReportContentDialogueBox] =
     useState<boolean | null>(true);
-  const [reportedIndex, setReportedIndex] = useState<number[] | null>([]);
+  const currentMessageIDRef = useRef<string | null>(null);
+  const [reportedMessageIDs, setReportedMessageIDs] = useState<string[] | null>(
+    []
+  );
+
+  const oldMessagesRef = useRef<AssistantMessage[]>([]);
   const controls = useAnimationControls();
 
   function chunkText(text: string, size = 4) {
@@ -101,7 +101,7 @@ export default function ChatPage() {
           model: "kimi-k2-instruct-0905",
         })
       );
-      setReportedIndex([]);
+      setReportedMessageIDs([]);
     };
 
     wsRef.current.onerror = (error) => {
@@ -138,21 +138,68 @@ export default function ChatPage() {
           setShowQuranVerseDialog(true);
           break;
 
+        case "undo-report":
+          const id = data.message_id;
+          if (id) {
+            setReportedMessageIDs((prev) => {
+              if (!prev) return prev;
+              return prev.filter((i) => i !== id);
+            });
+          }
+          break;
+
         case "audio_response":
+          setAudioRequest({
+            surah: data.surah_name,
+            ayah_number: data.ayah_number,
+            audio_url: data.audio_url,
+            all_urls: data.all_urls,
+            text_response: data.text_response,
+          });
+          setShowAudioDialog(true);
+          const response_message_id = data.message_id;
+          const text_response = data.text_response;
+          // Also add the text message to chat
+
+          // have to review the logic here
+          // setMessages((prev) => {
+          //   if (!prev || prev.length == 0) {
+          //     return prev;
+          //   }
+          //   const updated = [...(prev || [])];
+          //   const lastUserMessage = updated.findLast((m) => m.role === "user");
+
+          //   if (lastUserMessage) {
+          //     lastUserMessage.number_of_responses = 1;
+          //     lastUserMessage.responses.push({
+          //       role: "assistant",
+          //       message_id: response_message_id,
+          //       content: text_response,
+          //       reply_to_message_id: reply_to_message_id,
+          //       feedback: null,
+          //     });
+          //   }
+          //   setStreamingMessageIndex(updated.length - 1);
+          //   return updated;
+          // });
+
           break;
 
         case "session_id":
           const session_id = data.session_id;
           const isNew = session_id != sessionID;
-          if (isNew) {
+          const session_status = data.status;
+          const message_ids = data.message_ids;
+          if (isNew && session_status === "acknowledged") {
             setSessionID(session_id);
             // Use functional update to ensure we're working with latest state
             setMessages((prevMessages) => {
               if (prevMessages && prevMessages.length > 0) {
-                return null;
+                return [];
               }
               return prevMessages; // Return unchanged if no messages
             });
+            setMessageIDs(message_ids);
           }
           break;
 
@@ -176,37 +223,80 @@ export default function ChatPage() {
         case "get_chat":
           const status = data.status;
           if (status === "acknowledged") {
-            setMessages(null);
-            const chat_history = data.chat_history;
-            setMessages(chat_history);
+            const messageIDs = data.unique_message_ids;
+            const chat_history = groupChatMessages(data.chat_history);
+            setMessages(chat_history || []);
+            setMessageIDs(messageIDs);
           }
           break;
 
         case "assistance_response":
           const reply: string = data.content ?? "No reply from server";
           const message_id: string = data.message_id;
-          setLoadingMessage(null);
+          // assign reply to message ID with order data.reply_to_message_id >> currentMessageIDRef.current >> null
+          const reply_to_message_id =
+            data.reply_to_message_id || currentMessageIDRef.current || null;
+          const resend_flag = data.resend_flag;
+
+          console.log("Current old messages", oldMessagesRef.current);
+
+          // check if oldMessages is present with resend flag
+          if (resend_flag) {
+            if (
+              !oldMessagesRef.current ||
+              oldMessagesRef.current.length === 0
+            ) {
+              console.log("No old messages so returning...");
+              break;
+            }
+          }
 
           messageScrollFlag.current = false;
-          // Start a new message
+          setLoadingMessage(null);
+
+          // Add a new assistant message
           setMessages((prev) => {
+            if (!prev || prev.length == 0) {
+              return prev;
+            }
             const updated = [...(prev || [])];
 
-            // Add a new assistant message with empty content
-            updated.push({
-              message_id: message_id,
-              role: "assistant",
-              content: "", // Start empty
-              feedback: null,
-            });
-
-            // Set the streaming index to this new message
+            // although streamingMessageIndex is already set in ask function, but setting again for safety
             setStreamingMessageIndex(updated.length - 1);
+            const lastUserMessage = updated.findLast((m) => m.role === "user");
+
+            if (lastUserMessage) {
+              if (!lastUserMessage.number_of_responses) {
+                lastUserMessage.number_of_responses = 1;
+              } else {
+                lastUserMessage.number_of_responses += 1;
+              }
+
+              // initialize a new responses array if resend flag is false otherwise assign to oldMessages
+
+              lastUserMessage.responses = resend_flag
+                ? oldMessagesRef.current
+                : [];
+
+              // assign message_id and reply_to_message_id this time
+              lastUserMessage.responses.push({
+                role: "assistant",
+                message_id: message_id,
+                content: "",
+                reply_to_message_id: reply_to_message_id,
+                feedback: null,
+              });
+
+              // set the number of active message index
+              lastUserMessage.active_message_index =
+                lastUserMessage.number_of_responses - 1;
+            }
+
             return updated;
           });
 
           setLoading(false);
-
+          setLoadingMessage(null);
           const chunk_array = chunkText(reply, 4); // 4 words per chunk
           (async () => {
             for (const chunk of chunk_array) {
@@ -214,18 +304,42 @@ export default function ChatPage() {
               await new Promise((resolve) => setTimeout(resolve, 2));
 
               setMessages((prev) => {
+                if (!prev || prev.length === 0) {
+                  return prev;
+                }
                 const updated = [...(prev || [])];
                 const streamIndex = streamingMessageIndex ?? updated.length - 1;
                 if (streamIndex >= 0 && streamIndex < updated.length) {
-                  updated[streamIndex].content =
-                    (updated[streamIndex].content || "") + " " + chunk;
+                  let lastAssistantMessageIdx = 0;
+                  if (updated[streamIndex].number_of_responses) {
+                    lastAssistantMessageIdx =
+                      updated[streamIndex].number_of_responses - 1;
+                  }
+
+                  updated[streamIndex].responses[
+                    lastAssistantMessageIdx
+                  ].content =
+                    (updated[streamIndex].responses[lastAssistantMessageIdx]
+                      .content || "") +
+                    " " +
+                    chunk;
                 } else {
-                  updated.push({
-                    message_id: message_id,
-                    role: "assistant",
-                    content: chunk,
-                    feedback: null,
-                  });
+                  // will have to review the logic here
+                  // maybe the fallback logic here is dead/unused each time
+                  const lastUserMessage = updated.findLast(
+                    (m) => m.role === "user"
+                  );
+
+                  if (lastUserMessage) {
+                    lastUserMessage.number_of_responses = 1;
+                    lastUserMessage.responses.push({
+                      message_id: message_id,
+                      role: "assistant",
+                      reply_to_message_id: reply_to_message_id,
+                      content: chunk,
+                      feedback: null,
+                    });
+                  }
                 }
                 return updated;
               });
@@ -240,14 +354,14 @@ export default function ChatPage() {
           switch (agent_type) {
             case "story-telling":
               setPlaceholder("Generate an Islamic story");
-              setMessages(null);
+              setMessages([]);
               setGreeting(
                 "Generate any Islamic story with the finest AI Models."
               );
               break;
             case "tafseer":
               setPlaceholder("Let's lean about the Quran");
-              setMessages(null);
+              setMessages([]);
               setGreeting(
                 "Assalam O Alaykum, I am Tadabbur, how may I help you today?"
               );
@@ -263,8 +377,14 @@ export default function ChatPage() {
           if (report_status !== "acknowledged") {
             break;
           }
-          const reported_index = data.index ?? null;
-          setReportedIndex((prev) => [...(prev ?? []), reported_index]);
+          const reported_message_id = data.message_id;
+          if (reported_message_id) {
+            setReportedMessageIDs((prev) => [
+              ...(prev ?? []),
+              reported_message_id,
+            ]);
+          }
+
           break;
         default:
           break;
@@ -272,39 +392,98 @@ export default function ChatPage() {
     };
   }, []);
 
-  const ask = async (input: string) => {
+  useEffect(() => {
+    console.log("All messages", messages);
+  }, [messages]);
+
+  const ask = async (
+    input: string,
+    guidelines: string | null = null,
+    resend_flag: boolean = false,
+    resend_message_id: string | null = null,
+    old_assistant_responses = []
+  ) => {
     if (streamingMessageIndex !== null || !input.trim()) return;
+
+    if (resend_flag) {
+      if (!old_assistant_responses || old_assistant_responses.length === 0) {
+        console.log("No old assistant responses, continuing....");
+        return;
+      }
+    }
     setError(null);
     messageScrollFlag.current = false;
     setLoading(true);
-    // generate a message ID for the user message
-    let messageID = generateShortId();
-    while (messageIDs?.includes(messageID)) {
-      messageID = generateShortId(); // Reassign the same variable
+    let messageID: string | null = null;
+
+    if (!resend_flag) {
+      // generate a message ID for the user message if its not a resend message
+      messageID = generateUUID();
+      while (messageIDs?.includes(messageID)) {
+        messageID = generateUUID(); // Reassign the same variable
+      }
+      setMessageIDs((prev) => {
+        return [...(prev || []), messageID];
+      });
+    } else {
+      messageID = resend_message_id;
     }
-    setMessageIDs((prev) => {
-      return [...(prev || []), messageID];
-    });
 
-    setMessages((prev: any) => {
+    if (!messageID) {
+      console.log("No message ID so returning");
+      return;
+    }
+
+    const userMessage: ChatMessage = {
+      message_id: messageID,
+      role: "user",
+      content: input,
+      // add a dummy response message for loading state
+      responses: [
+        {
+          role: "assistant",
+          message_id: "",
+          reply_to_message_id: "",
+          content: "",
+          feedback: null,
+        },
+      ],
+      number_of_responses: resend_flag ? old_assistant_responses.length : 0,
+      active_message_index: 0,
+    };
+    oldMessagesRef.current = resend_flag ? old_assistant_responses : [];
+
+    // lastUserMessage.responses.push({
+    //   role: "assistant",
+    //   message_id: message_id,
+    //   content: "",
+    //   reply_to_message_id: reply_to_message_id,
+    //   feedback: null,
+    // });
+
+    // // set the number of active message index
+    // lastUserMessage.active_message_index =
+    //   lastUserMessage.number_of_responses - 1;
+
+    setMessages((prev) => {
       // prev is already typed correctly from useState
-      const updated = [
-        ...(prev || []),
-        { message_id: messageID, role: "user", content: input, feedback: null },
-      ];
-
+      const updated = [...(prev || []), userMessage];
       // Set the streaming index to the upcoming new message
-      setStreamingMessageIndex(updated.length);
+      setStreamingMessageIndex(updated.length - 1);
       return updated;
     });
 
+    currentMessageIDRef.current = messageID;
     try {
       wsRef.current?.send(
         JSON.stringify({
           type: "user_message",
           message_id: messageID,
           role: "user",
+          system_instructions: guidelines || "",
           content: input,
+          resend_flag: resend_flag,
+          resend_message_id: resend_message_id || "",
         })
       );
       if (inputRef.current) {
@@ -341,26 +520,39 @@ export default function ChatPage() {
 
   interface PromptExtraOptionsProviderProps {
     children: ReactNode;
-    index: number | null;
+    parent_index: number | null;
+    assistant_index: number | null;
     message_id: string | null;
+    reply_to_message_id: string | null;
   }
 
   const PromptExtraOptionsProvider: React.FC<
     PromptExtraOptionsProviderProps
-  > = ({ children, index, message_id }) => {
+  > = ({
+    children,
+    message_id,
+    reply_to_message_id,
+    parent_index,
+    assistant_index,
+  }) => {
     const [hidePromptExtraOptionsModelBox, setHidePromptExtraOptionsModelBox] =
       useState<boolean | null>(true);
 
     const [hideResendPromptDialogue, setHideResendPromptDialogue] = useState<
       boolean | null
     >(true);
+    const [activeMessageIndex, setActiveMessageIndex] = useState<number | null>(
+      0
+    );
     return (
       <PromptExtraOptionsContext.Provider
         value={{
+          parent_index,
+          assistant_index,
           messages,
           setMessages,
-          index,
           message_id,
+          reply_to_message_id,
           hidePromptExtraOptionsModelBox,
           setHidePromptExtraOptionsModelBox,
           hideReportContentDialogueBox,
@@ -370,6 +562,8 @@ export default function ChatPage() {
           ask,
           hideResendPromptDialogue,
           setHideResendPromptDialogue,
+          activeMessageIndex,
+          setActiveMessageIndex,
         }}
       >
         {children}
@@ -398,7 +592,7 @@ export default function ChatPage() {
              }`}
           >
             <AnimatePresence>
-              {!messages && (
+              {messages?.length === 0 && (
                 <motion.div
                   // initial={{ opacity: 0, y: -20 }}
                   // animate={{ opacity: 1, y: 110 }}
@@ -452,7 +646,7 @@ export default function ChatPage() {
                                   <div className="w-full flex flex-col px-3 pt-3 pb-6 gap-y-1">
                                     <div className="flex gap-x-3">
                                       <div className="p-1 h-max border border-black/5 rounded-md">
-                                        <PromptSuggestion className="w-5 h-5 fill-current text-green-700" />
+                                        {/* <PromptSuggestion className="w-5 h-5 fill-current text-green-700" /> */}
                                       </div>
                                       <div className="default-prompt-text-box">
                                         <div className="heading-text">
@@ -479,231 +673,224 @@ export default function ChatPage() {
                 </motion.div>
               )}
             </AnimatePresence>
+
             <AnimatePresence mode="popLayout">
-              {messages?.map((message, index) =>
-                message.role === "user" ? (
-                  <div key={index}>
+              {/* first render user messages */}
+              {messages?.map((record, record_index) => {
+                return (
+                  <div key={record_index}>
                     <div>
                       <p className="ml-auto w-max min-w-40 max-w-[20rem] bg-neutral-900 text-white switzer-500 py-2 px-3 rounded-md shadow-md border border-black/5">
-                        {message.content}
+                        {record.content}
                       </p>
                     </div>
                     <div>
                       <PromptExtraOptionsProvider
-                        message_id={message.message_id}
-                        index={index}
+                        message_id={record.message_id}
+                        reply_to_message_id={null}
+                        parent_index={record_index}
+                        assistant_index={null}
                       >
                         <PromptExtraOptions messageType={"user"} />
                       </PromptExtraOptionsProvider>
                     </div>
-                  </div>
-                ) : (
-                  <div key={index}>
-                    {reportedIndex && !reportedIndex.includes(index) ? (
-                      <div className="w-max min-w-40 max-w-full switzer-500 mt-2 py-2 px-3 rounded-md bg-white shadow-md">
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          rehypePlugins={[rehypeRaw]}
-                          components={{
-                            // HEADERS
-                            h1: ({ node, ...props }) => (
-                              <h1 className="text-3xl font-bold" {...props} />
-                            ),
-                            h2: ({ node, ...props }) => (
-                              <h2
-                                className="text-2xl font-semibold"
-                                {...props}
-                              />
-                            ),
-                            h3: ({ node, ...props }) => (
-                              <h3
-                                className="text-xl font-semibold"
-                                {...props}
-                              />
-                            ),
-
-                            // PARAGRAPH
-                            p: ({ node, ...props }) => (
-                              <p
-                                className="leading-7 my-2 text-gray-800"
-                                {...props}
-                              />
-                            ),
-
-                            // STRONG ( **bold** )
-                            strong: ({ node, ...props }) => (
-                              <strong
-                                className="font-bold text-black"
-                                {...props}
-                              />
-                            ),
-
-                            // EMPHASIS ( *italic* )
-                            em: ({ node, ...props }) => (
-                              <em className="italic text-gray-700" {...props} />
-                            ),
-
-                            // LINE BREAK
-                            br: ({ node, ...props }) => <br />,
-
-                            // LINKS
-                            a: ({ node, ...props }) => (
-                              <a
-                                className="text-blue-600 underline"
-                                target="_blank"
-                                rel="noreferrer"
-                                {...props}
-                              />
-                            ),
-
-                            // LISTS
-                            ul: ({ node, ...props }) => (
-                              <ul className="list-disc pl-6" {...props} />
-                            ),
-                            ol: ({ node, ...props }) => (
-                              <ol className="list-decimal pl-6" {...props} />
-                            ),
-                            li: ({ node, ...props }) => (
-                              <li className="my-1" {...props} />
-                            ),
-                            blockquote: ({ node, ...props }) => (
-                              <blockquote
-                                className="border-l-4 border-gray-400 pl-4 italic my-3"
-                                {...props}
-                              />
-                            ),
-
-                            // HORIZONTAL RULE
-                            hr: () => <hr className="my-4 border-gray-300" />,
-
-                            // IMAGES
-                            img: ({ node, ...props }) => (
-                              <img
-                                className="rounded-md my-2"
-                                alt=""
-                                {...props}
-                              />
-                            ),
+                    {record?.responses?.map((ai_msg, ai_msg_idx) => {
+                      // loading circle logic here
+                      return loading && !loadingMessage && !ai_msg.content ? (
+                        <motion.div
+                          key={ai_msg_idx}
+                          animate={{ scale: [1, 1.2, 1] }}
+                          transition={{
+                            duration: 0.4,
+                            ease: easeInOut,
+                            repeat: Infinity,
+                            repeatType: "loop",
                           }}
-                        >
-                          {message.content}
-                        </ReactMarkdown>
-                      </div>
-                    ) : (
-                      // reportedmessage component here
-                      <div className="flex flex-col gap-y-1.5 w-[90%] max-w-120 ">
-                        <div className="h-max rounded-md shadow-md min-h-25 border border-red-200/10 px-2 pt-2 pb-3">
-                          <div className="mb-0.5 w-full flex justify-between">
-                            <p
-                              id="report-title"
-                              className="text-red-800 switzer-500 text-[1.1rem] tracking-[-0.04rem]"
+                          className="w-3 h-3 rounded-full bg-black"
+                        ></motion.div>
+                      ) : reportedMessageIDs &&
+                        !reportedMessageIDs.includes(ai_msg?.message_id) &&
+                        ai_msg_idx === record.active_message_index ? (
+                        <div key={ai_msg_idx}>
+                          <div className="w-max min-w-40 max-w-full switzer-500 mt-2 py-2 px-3 rounded-md bg-white shadow-md">
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              rehypePlugins={[rehypeRaw]}
+                              components={{
+                                // HEADERS
+                                h1: ({ node, ...props }) => (
+                                  <h1
+                                    className="text-3xl font-bold"
+                                    {...props}
+                                  />
+                                ),
+                                h2: ({ node, ...props }) => (
+                                  <h2
+                                    className="text-2xl font-semibold"
+                                    {...props}
+                                  />
+                                ),
+                                h3: ({ node, ...props }) => (
+                                  <h3
+                                    className="text-xl font-semibold"
+                                    {...props}
+                                  />
+                                ),
+
+                                // PARAGRAPH
+                                p: ({ node, ...props }) => (
+                                  <p
+                                    className="leading-7 my-2 text-gray-800"
+                                    {...props}
+                                  />
+                                ),
+
+                                // STRONG ( **bold** )
+                                strong: ({ node, ...props }) => (
+                                  <strong
+                                    className="font-bold text-black"
+                                    {...props}
+                                  />
+                                ),
+
+                                // EMPHASIS ( *italic* )
+                                em: ({ node, ...props }) => (
+                                  <em
+                                    className="italic text-gray-700"
+                                    {...props}
+                                  />
+                                ),
+
+                                // LINE BREAK
+                                br: ({ node, ...props }) => <br />,
+
+                                // LINKS
+                                a: ({ node, ...props }) => (
+                                  <a
+                                    className="text-blue-600 underline"
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    {...props}
+                                  />
+                                ),
+
+                                // LISTS
+                                ul: ({ node, ...props }) => (
+                                  <ul className="list-disc pl-6" {...props} />
+                                ),
+                                ol: ({ node, ...props }) => (
+                                  <ol
+                                    className="list-decimal pl-6"
+                                    {...props}
+                                  />
+                                ),
+                                li: ({ node, ...props }) => (
+                                  <li className="my-1" {...props} />
+                                ),
+                                blockquote: ({ node, ...props }) => (
+                                  <blockquote
+                                    className="border-l-4 border-gray-400 pl-4 italic my-3"
+                                    {...props}
+                                  />
+                                ),
+
+                                // HORIZONTAL RULE
+                                hr: () => (
+                                  <hr className="my-4 border-gray-300" />
+                                ),
+
+                                // IMAGES
+                                img: ({ node, ...props }) => (
+                                  <img
+                                    className="rounded-md my-2"
+                                    alt=""
+                                    {...props}
+                                  />
+                                ),
+                              }}
                             >
-                              This response is reported
-                            </p>
-                            <DisclaimerIcon className="w-5 h-5 fill-current text-red-700/90" />
+                              {ai_msg.content}
+                            </ReactMarkdown>
                           </div>
+                          {/* Place it here, inside the div */}
+                          {streamingMessageIndex != record_index &&
+                            reportedMessageIDs &&
+                            !reportedMessageIDs.includes(
+                              ai_msg?.message_id
+                            ) && (
+                              <div>
+                                <PromptExtraOptionsProvider
+                                  message_id={ai_msg?.message_id}
+                                  reply_to_message_id={
+                                    ai_msg?.reply_to_message_id
+                                  }
+                                  parent_index={record_index}
+                                  assistant_index={ai_msg_idx}
+                                >
+                                  <PromptExtraOptions
+                                    messageType={"assistant"}
+                                  />
+                                </PromptExtraOptionsProvider>
+                              </div>
+                            )}
+                        </div>
+                      ) : reportedMessageIDs &&
+                        reportedMessageIDs.includes(ai_msg?.message_id) ? (
+                        // reportedmessage component here
+                        <div
+                          key={ai_msg_idx}
+                          className="flex flex-col gap-y-1.5 w-[90%] max-w-120 "
+                        >
+                          <div className="h-max rounded-md shadow-md min-h-25 border border-red-200/10 px-2 pt-2 pb-3">
+                            <div className="mb-0.5 w-full flex justify-between">
+                              <p
+                                id="report-title"
+                                className="text-red-800 switzer-500 text-[1.1rem] tracking-[-0.04rem]"
+                              >
+                                This response is reported
+                              </p>
+                              <DisclaimerIcon className="w-5 h-5 fill-current text-red-700/90" />
+                            </div>
 
-                          <p
-                            id="report-description"
-                            className="switzer-500 text-black/60 tracking-tight"
-                          >
-                            This response promotes violence or self-harm and
-                            goes against our community policies.
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-x-2 px-1">
-                          <div id="learn-more-box" className="ml-auto">
-                            <p className="inter-500 text-[0.9rem] text-red-700/80 cursor-pointer hover:text-red-700 tracking-tight">
-                              Learn More about guidelines
+                            <p
+                              id="report-description"
+                              className="switzer-500 text-black/60 tracking-tight"
+                            >
+                              This response promotes violence or self-harm and
+                              goes against our community policies.
                             </p>
                           </div>
-                          <div className="ml-1 w-[0.5px] h-3.5 bg-black/40"></div>
-                          <div
-                            onClick={() => {
-                              setReportedIndex((prev) => {
-                                if (!prev) return prev;
-                                return prev.filter((i) => i !== index);
-                              });
-                            }}
-                            id="undo-report-box"
-                            className="undo-report-box flex justify-center items-center gap-x-2 flex-row-reverse px-2 py-1 hover:bg-black/5 rounded-md cursor-pointer"
-                          >
-                            <p className="switzer-500 text-[0.9rem]">Undo</p>
-                            <UndoArrow className="w-3.5 h-3.5" />
+                          <div className="flex items-center gap-x-2 px-1">
+                            <div id="learn-more-box" className="ml-auto">
+                              <p className="inter-500 text-[0.9rem] text-red-700/80 cursor-pointer hover:text-red-700 tracking-tight">
+                                Learn More about guidelines
+                              </p>
+                            </div>
+                            <div className="ml-1 w-[0.5px] h-3.5 bg-black/40"></div>
+                            <div
+                              onClick={() => {
+                                wsRef?.current?.send(
+                                  JSON.stringify({
+                                    type: "undo-report",
+                                    message_id: ai_msg.message_id,
+                                  })
+                                );
+                              }}
+                              id="undo-report-box"
+                              className="undo-report-box flex justify-center items-center gap-x-2 flex-row-reverse px-2 py-1 hover:bg-black/5 rounded-md cursor-pointer"
+                            >
+                              <p className="switzer-500 text-[0.9rem]">Undo</p>
+                              <UndoArrow className="w-3.5 h-3.5" />
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    )}
-                    {streamingMessageIndex != index &&
-                      reportedIndex &&
-                      !reportedIndex.includes(index) && (
-                        <div>
-                          <PromptExtraOptionsProvider
-                            message_id={message.message_id}
-                            index={index}
-                          >
-                            <PromptExtraOptions messageType={"assistant"} />
-                          </PromptExtraOptionsProvider>
-                        </div>
-                      )}
+                      ) : null;
+                    })}
                   </div>
-                )
-              )}
-
-              {/* Loading indicators - separate from messages array */}
-              <AnimatePresence mode="wait">
-                {loading && !loadingMessage && (
-                  <motion.div
-                    animate={{ scale: [1, 1.2, 1] }}
-                    transition={{
-                      duration: 0.8,
-                      ease: easeInOut,
-                      repeat: Infinity,
-                      repeatType: "loop",
-                    }}
-                    className="w-3 h-3 rounded-full bg-black"
-                  ></motion.div>
-                )}
-                {loadingMessage && (
-                  <motion.div
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{
-                      duration: 0.1,
-                      ease: easeInOut,
-                      type: "spring",
-                    }}
-                    exit={{ opacity: 0 }}
-                    className="w-max flex gap-x-1"
-                  >
-                    <motion.p
-                      className="space-grotesk-500 text-black/60 bg-linear-to-l from-black-40 via-bg-black/50 to-black/60 bg-size-[200%_100%] bg-clip-text"
-                      animate={{
-                        backgroundPosition: ["200% 0", "-200% 0"],
-                      }}
-                      transition={{
-                        duration: 3,
-                        ease: "linear",
-                        repeat: Infinity,
-                      }}
-                    >
-                      {loadingMessage}
-                    </motion.p>
-                    <motion.div
-                      animate={{ x: [-4, 6] }}
-                      transition={{
-                        duration: 1,
-                        ease: easeIn,
-                        repeat: Infinity,
-                        repeatType: "loop",
-                      }}
-                    >
-                      <DownArrow className="mt-[0.32rem] w-4 h-4 -rotate-90" />
-                    </motion.div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                );
+              })}
             </AnimatePresence>
+
             <div ref={messagesEndRef}></div>
           </div>
         </div>
@@ -744,6 +931,17 @@ export default function ChatPage() {
           setHideReportContentDialogueBox={setHideReportContentDialogueBox}
         />
       </ChatProvider>
+
+      {showAudioDialog && audioRequest && (
+        <SimpleAudioDialog
+          isOpen={showAudioDialog}
+          onClose={() => {
+            setShowAudioDialog(false);
+            setAudioRequest(null);
+          }}
+          audioData={audioRequest}
+        />
+      )}
     </div>
   );
 }

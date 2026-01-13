@@ -7,7 +7,8 @@ import { ChatContext } from "@/app/context/chatbot/ChatContext";
 
 const PromptExtraOptionsModelBox = () => {
   const {
-    index,
+    parent_index,
+    assistant_index,
     message_id,
     hidePromptExtraOptionsModelBox,
     setHidePromptExtraOptionsModelBox,
@@ -48,7 +49,7 @@ const PromptExtraOptionsModelBox = () => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.2, ease: easeInOut }}
-      className="absolute bottom-12 left-36 w-42 h-max rounded-xl bg-white shadow-md overflow-clip border border-black/5 px-1 pt-1 pb-2"
+      className="absolute bottom-12 left-36 w-42 h-max rounded-xl bg-white shadow-md overflow-clip border border-black/5 px-2 pt-1 pb-2"
     >
       <div className="w-full h-full flex flex-col items-center">
         <div
@@ -63,10 +64,8 @@ const PromptExtraOptionsModelBox = () => {
         <div
           onClick={() => {
             setHidePromptExtraOptionsModelBox(true);
-            setReportedMessageInfo({ index: index, messageID: message_id });
-            setHideReportContentDialogueBox((prev: boolean) => {
-              return !prev;
-            });
+            setReportedMessageInfo({ messageID: message_id });
+            setHideReportContentDialogueBox(false);
           }}
           className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-pointer"
         >

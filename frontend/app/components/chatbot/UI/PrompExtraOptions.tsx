@@ -1,6 +1,6 @@
-import { useContext, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { PromptExtraOptionsContext } from "@/app/context/chatbot/PromptExtraOptionsContext";
-import { motion } from "framer-motion";
+import { motion, number } from "framer-motion";
 import PromptExtraOptionsModelBox from "./PromptExtraOptionsModelBox";
 import ThumbsUp from "../../../../icons/thumbs-up.svg";
 import ThumbsDown from "../../../../icons/thumbs-down.svg";
@@ -8,14 +8,17 @@ import Copy from "../../../../icons/copy.svg";
 import Refresh from "../../../../icons/refresh.svg";
 import MoreOptions from "../../../../icons/more_options.svg";
 import ResendPromptDialogueBox from "./ResendPromptDialogueBox";
+import { ChatMessage } from "../interfaces/ChatMessage";
+import ArrowLeft from "../../../../icons/arrow-left-bold.svg";
 
 const PromptExtraOptions = ({
   messageType,
 }: {
-  messageType: string | null;
+  messageType: "user" | "assistant";
 }) => {
   const {
-    index,
+    parent_index,
+    assistant_index,
     messages,
     setMessages,
     message_id,
@@ -33,13 +36,22 @@ const PromptExtraOptions = ({
   const [overlayText, setOverlayText] = useState<string | null>(null);
   const [active, setActive] = useState<boolean | null>(false);
 
-  const feedback = messages?.[index]?.feedback || null;
+  const feedback =
+    messages?.[parent_index]?.responses?.[assistant_index]?.feedback || null;
+  const hasMultipleResponses =
+    messages?.[parent_index]?.number_of_responses > 1;
   type OptionType = "copy" | "resend" | "like" | "dislike";
   const handleOptionClick = ({ type }: { type: OptionType }) => {
     switch (type) {
       case "copy":
+        let content: string = "";
+        if (messageType === "assistant") {
+          content = messages[parent_index].responses[assistant_index].content;
+        } else if (messageType === "user") {
+          content = messages[parent_index].content;
+        }
         navigator.clipboard
-          .writeText(messages[index].content)
+          .writeText(content)
           .then(() => {
             console.log("Copied to clipboard!");
             setIsCopied(true);
@@ -50,8 +62,8 @@ const PromptExtraOptions = ({
         wsRef?.current.send(
           JSON.stringify({
             type: "like",
-            index: index,
-            message: messages[index],
+            message:
+              messages?.[parent_index]?.responses?.[assistant_index]?.content,
             message_id: message_id,
             session_id: sessionID,
           })
@@ -59,7 +71,8 @@ const PromptExtraOptions = ({
 
         if (messages && setMessages) {
           const updatedMessages = [...messages];
-          updatedMessages[index].feedback = "liked";
+          updatedMessages[parent_index].responses[assistant_index].feedback =
+            "like";
           setMessages(updatedMessages);
         }
 
@@ -68,8 +81,8 @@ const PromptExtraOptions = ({
         wsRef?.current.send(
           JSON.stringify({
             type: "dislike",
-            index: index,
-            message: messages[index],
+            message:
+              messages?.[parent_index]?.responses?.[assistant_index]?.content,
             message_id: message_id,
             session_id: sessionID,
           })
@@ -77,7 +90,8 @@ const PromptExtraOptions = ({
 
         if (messages && setMessages) {
           const updatedMessages = [...messages];
-          updatedMessages[index].feedback = "dislike";
+          updatedMessages[parent_index].responses[assistant_index].feedback =
+            "dislike";
           setMessages(updatedMessages);
         }
         break;
@@ -88,14 +102,76 @@ const PromptExtraOptions = ({
         break;
     }
   };
-
   return (
     <div>
       {messageType === "assistant" ? (
         <div className="flex gap-x-1.5 px-2 py-2 relative">
+          {messages?.[parent_index]?.number_of_responses > 1 && (
+            <div className="flex gap-x-1 items-center">
+              <motion.div
+                onClick={() => {
+                  const activeIndex =
+                    messages?.[parent_index]?.active_message_index;
+                  const number_of_responses =
+                    messages?.[parent_index]?.number_of_responses;
+
+                  // check if activeIndex is below zero
+                  if (activeIndex <= 0) {
+                    return;
+                  }
+                  setMessages((prev: ChatMessage[]) => {
+                    const messageArray = [...prev];
+                    const msg = messageArray[parent_index];
+                    if (msg && typeof msg.active_message_index === "number") {
+                      msg.active_message_index -= 1;
+                    }
+
+                    return messageArray;
+                  });
+                }}
+                whileTap={{ color: "#0000001a" }}
+                id="arrow-right"
+                className="p-1 hover:bg-black/5 cursor-pointer rounded-md"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </motion.div>
+              <p className="switzer-500">
+                {(messages[parent_index].active_message_index ?? 0) + 1}/
+                {messages[parent_index].number_of_responses ?? 0}
+              </p>
+
+              <motion.div
+                onClick={() => {
+                  const activeIndex =
+                    messages?.[parent_index]?.active_message_index;
+                  const number_of_responses =
+                    messages?.[parent_index]?.number_of_responses;
+
+                  if (activeIndex + 1 >= number_of_responses) {
+                    return;
+                  }
+
+                  setMessages((prev: ChatMessage[]) => {
+                    const messageArray = [...prev];
+                    const msg = messageArray[parent_index];
+                    if (msg && typeof msg.active_message_index === "number") {
+                      msg.active_message_index += 1;
+                    }
+
+                    return messageArray;
+                  });
+                }}
+                whileTap={{ color: "#0000001a" }}
+                id="arrow-right"
+                className="p-1 hover:bg-black/5 cursor-pointer rounded-md"
+              >
+                <ArrowLeft className="w-4 h-4 rotate-180" />
+              </motion.div>
+            </div>
+          )}
           <div
             onMouseOver={() => {
-              setOverlayTranslateAmount(4);
+              setOverlayTranslateAmount(hasMultipleResponses ? 82 : 4);
               setOverlayText("Copy");
               setActive(true);
             }}
@@ -111,9 +187,10 @@ const PromptExtraOptions = ({
           >
             <Copy className="w-4.5 h-4.5" />
           </div>
+
           <div
             onMouseOver={() => {
-              setOverlayTranslateAmount(38);
+              setOverlayTranslateAmount(hasMultipleResponses ? 120 : 38);
               setOverlayText("Like");
               setActive(true);
             }}
@@ -127,13 +204,14 @@ const PromptExtraOptions = ({
           >
             <ThumbsUp
               className={`w-4 h-4 ${
-                feedback === "liked" ? "fill-blue-400" : ""
+                feedback === "like" ? "fill-blue-400" : ""
               }`}
             />
           </div>
+
           <div
             onMouseOver={() => {
-              setOverlayTranslateAmount(66);
+              setOverlayTranslateAmount(hasMultipleResponses ? 150 : 64);
               setOverlayText("Dislike");
               setActive(true);
             }}
@@ -153,7 +231,7 @@ const PromptExtraOptions = ({
           </div>
           <div
             onMouseOver={() => {
-              setOverlayTranslateAmount(98);
+              setOverlayTranslateAmount(hasMultipleResponses ? 180 : 95);
               setOverlayText("Resend");
               setActive(true);
             }}
@@ -169,7 +247,7 @@ const PromptExtraOptions = ({
           </div>
           <div
             onMouseOver={() => {
-              setOverlayTranslateAmount(132);
+              setOverlayTranslateAmount(hasMultipleResponses ? 132 : 102);
             }}
             onClick={() => {
               setHidePromptExtraOptionsModelBox(

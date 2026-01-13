@@ -15,11 +15,13 @@ if not GROQ_API_KEY:
     raise ValueError("GROQ API KEY is missing! Can't Proceed.")
 
 
-
 class OutputSchema(BaseModel):
-    category: Literal["Content", "Tone", "Format", "Safety", "Behavioral"] = Field(description = "The category of the report rule")
-    report_reason: Literal["relevant", "irrelevant"] = Field(description = "The relevance of the response for the reported content")
+    existing_rule: bool = Field(description = "True if a similar in intent rule exists, otherwise False")
+    report_relevance: Literal["relevant", "irrelevant"] = Field(description = "The relevance of the response for the reported content")
     report_rule: Optional[str] = Field(description = "The rule for the reported response") 
+    rule_id: Optional[int]
+    category: Literal["Content", "Tone", "Format", "Safety", "Behavioral"] = Field(description = "The category of the report rule")
+
 
 model = ChatGroq(
     api_key = GROQ_API_KEY,
@@ -30,7 +32,7 @@ llm = model.with_structured_output(schema = OutputSchema,  method='json_schema')
 
 prompt = ChatPromptTemplate.from_messages([
     ("system", system_instructions),
-    ("human", "Reported_Assistant_Response: {assistant_response} \n Report_Reason: {report_reason}"
+    ("human", "Existing_Rules: {existing_rules} \n Reported_Assistant_Response: {assistant_response} \n Report_Reason: {report_reason}"
 )
 ])
 

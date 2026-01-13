@@ -32,7 +32,7 @@ def get_rules_grouped_by_category(supabase_client):
         return []
 
 
-def submit_feedback(user_feedback:Literal ['like', 'dislike'], assistant_response:str):
+def submit_feedback(user_feedback:Literal ['like', 'dislike'], assistant_response:str, message_id:str):
 
     try:
         # initialize supabase_client
@@ -87,7 +87,7 @@ def submit_feedback(user_feedback:Literal ['like', 'dislike'], assistant_respons
                             if not rule or not category:
                                 raise ValueError("No rule and category, can't proceed")
                             # insert a new rule with a small weight
-                            supabase_client.table("chat_rules").insert({"rule": rule, "category": category, "weight": 0.3, "hard_rule": False}).execute()
+                            supabase_client.table("chat_rules").insert({"rule": rule, "category": category, "weight": 0.3, "hard_rule": False, "message_id": message_id}).execute()
 
 
             else:
@@ -96,7 +96,7 @@ def submit_feedback(user_feedback:Literal ['like', 'dislike'], assistant_respons
                 if not response.existing_rule:
                     category = response.category
                     new_rule = response.new_rule
-                    supabase_client.table('chat_rules').insert({"rule": new_rule, "category": category, "weight": 0.3, "hard_rule": False}).execute()
+                    supabase_client.table('chat_rules').insert({"rule": new_rule, "category": category, "weight": 0.3, "hard_rule": False, "message_id": message_id}).execute()
             
     except Exception as error:
         print("Some error occured while submitting feedback", error)

@@ -28,8 +28,7 @@ const ChatProvider: React.FC<ChatProviderProps> = ({
     boolean | null
   >(false);
   const [reportedMessageInfo, setReportedMessageInfo] = useState<{
-    index: number;
-    messageID: number;
+    messageID: string;
   } | null>(null);
 
   return (

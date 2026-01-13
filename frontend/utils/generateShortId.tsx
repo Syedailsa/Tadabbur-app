@@ -1,4 +1,3 @@
-const generateShortId = (): string =>
-  Math.random().toString(36).substring(2, 8);
+const generateUUID = (): string => crypto.randomUUID();
 
-export default generateShortId;
+export default generateUUID;

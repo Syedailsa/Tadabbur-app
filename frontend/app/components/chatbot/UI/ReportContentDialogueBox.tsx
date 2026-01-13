@@ -20,44 +20,29 @@ const ReportContentDialogueBox: React.FC<ReportContenDialogueBoxProps> = ({
   const [hidePlaceholder, setHidePlaceholder] = useState<boolean | null>(true);
   const [selectedReason, setSelectedReason] = useState<string | null>("");
   const [customFeedback, setCustomFeedback] = useState<string | null>("");
-  const [rule, setRule] = useState<string>("");
   if (hideReportContentDialogueBox) return null;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     setSelectedReason(e.target.value);
   };
   const handleSubmit = () => {
-    if (
-      !selectedReason ||
-      !reportedMessageInfo?.index ||
-      !reportedMessageInfo?.messageID
-    )
-      return;
+    if (!selectedReason || !reportedMessageInfo?.messageID) return;
 
     if (selectedReason === "other") {
       if (!customFeedback) return;
       wsRef?.current.send(
         JSON.stringify({
           type: "report",
-          index: reportedMessageInfo.index,
           message_id: reportedMessageInfo.messageID,
-          variant: "custom",
           feedback: customFeedback,
-          rule: null,
         })
       );
     } else {
-      if (!rule) {
-        return;
-      }
       wsRef?.current.send(
         JSON.stringify({
           type: "report",
-          index: reportedMessageInfo.index,
           message_id: reportedMessageInfo.messageID,
-          variant: "normal",
           feedback: selectedReason,
-          rule: rule,
         })
       );
     }
@@ -95,9 +80,6 @@ const ReportContentDialogueBox: React.FC<ReportContenDialogueBoxProps> = ({
                       handleChange(e);
                       if (option.value == "other") {
                         setHidePlaceholder(false);
-                      }
-                      if (option?.rule) {
-                        setRule(option.rule);
                       }
                     }}
                   />
