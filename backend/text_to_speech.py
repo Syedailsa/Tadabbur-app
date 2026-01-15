@@ -30,14 +30,23 @@ class TextToSpeechEngine:
             async with websockets.connect(uri) as ws:
                 voice_config_msg = {
                     "voice_config": {
-                        "voiceId": "River", 
-                        "multiNativeLocale": "en-US",
-                        "style": "Conversation",
+                        "voice_id":"Finley",
+                        "style":"Promo",
+                        "model:":"Falcon",
                         "rate": 0,
                         "pitch": 0,
                         "variation": 1
                     }
+                    # "voice_config": {
+                    #     "voiceId": "River", 
+                    #     "multiNativeLocale": "en-US",
+                    #     "style": "Conversation",
+                    #     "rate": 0,
+                    #     "pitch": 0,
+                    #     "variation": 1
+                    # }
                 }
+                {}
                 await ws.send(json.dumps(voice_config_msg))
 
                 # 2. Send Text Payload
@@ -46,7 +55,7 @@ class TextToSpeechEngine:
                     "end": True 
                 }
                 await ws.send(json.dumps(text_msg))
-
+                print("Text payload sent to MURF for transcription!")
                 # 3. Receive Audio Loop
                 while True:
                     response = await ws.recv()

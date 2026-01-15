@@ -14,7 +14,7 @@ EMBEDDING_MODEL = "fireworks/qwen3-embedding-8b"
 
 # instantiate the embeddings model
 embeddings = FireworksEmbeddings(
-  api_key = os.getenv('FIREWORKS_API_KEY'),
+  api_key = os.getenv('FIREWORKS_AI_API_KEY'),
   model = EMBEDDING_MODEL
 )
 
@@ -99,11 +99,13 @@ def searchAsbabNuzul(
     
     # if no Qdrant Client, then return
     if not qdrant_client:
+        print("Qdrant client not instantiated properly")
         return "Qdrant client not instantiated properly"
 
     # checks if all tool arguments are none
     if not any(verse_tool_args.values()):
         # all arguments are none so return
+        print("No tool arguments are provided")
         return "No tool arguments are provided"
 
     # filter and remove the none tool arguments

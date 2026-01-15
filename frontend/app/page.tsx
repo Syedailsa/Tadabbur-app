@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function MainPage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.push('/pages/auth');
+    router.push("/pages/auth");
   }, [router]);
 
   return (

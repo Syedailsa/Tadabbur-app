@@ -1,6 +1,6 @@
 import json
 import os
-from agents import Agent, ModelSettings, OpenAIChatCompletionsModel, RunConfig, Runner, AsyncOpenAI, GuardrailFunctionOutput, RunContextWrapper, TResponseInputItem, input_guardrail, output_guardrail
+from agents import Agent, AsyncOpenAI
 from langchain_groq import ChatGroq
 from langgraph.checkpoint.memory import InMemorySaver
 # from story_agent import story_agent
@@ -17,21 +17,26 @@ from langchain_core.tools import StructuredTool
 # from langchain_fireworks import ChatFireworks
 from langchain.agents import create_agent
 from openai import OpenAI
+from utils.submit_feedback import submit_feedback
+
+from tools.audio_playback import play_quran_audio
+# from tools.verse_reader import fetch_quran_verse
 from tools.audio_playback import play_quran_audio
 from tools.verse_reader import fetch_quran_verse
 
 load_dotenv()
 
 embed_client = OpenAI(
-    api_key=os.getenv("FIREWORKS_API_KEY"),
+    api_key=os.getenv("FIREWORKS_AI_API_KEY"),
     base_url="https://api.fireworks.ai/inference/v1"
 )
 
-GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+GROQ_API_KEY = os.getenv('GROQ_AI_API_KEY')
+FIREWORKS_API_KEY = os.getenv('FIREWORKS_API_KEY')
 COLLECTION_NAME = "Quran-Dataset-Collection"
 EMBEDDING_MODEL = "fireworks/qwen3-embedding-8b"
 
-FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY")
+FIREWORKS_API_KEY = os.getenv("FIREWORKS_AI_API_KEY")
 
 external_client = AsyncOpenAI(
     api_key=FIREWORKS_API_KEY,

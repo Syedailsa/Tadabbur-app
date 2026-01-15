@@ -139,7 +139,7 @@ from typing import Optional
 import secrets
 
 from database import get_db_connection
-from utils import get_current_user
+from utils.authentication import get_current_user
 
 # ==================== MODELS ====================
 

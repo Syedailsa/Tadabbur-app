@@ -171,4 +171,75 @@ const defaultPrompts = [
   },
 ];
 
-export { ModelList, chatMessages, dummyChatHistory, defaultPrompts };
+// Option 1: With TypeScript interfaces and mapped options
+interface RadioOption {
+  id: string;
+  value: string;
+  label: string;
+}
+
+const reportOptions: RadioOption[] = [
+  {
+    id: "offensive",
+    value: "the response is offensive",
+    label: "The response is offensive",
+  },
+  {
+    id: "ethical",
+    value: "the response violates ethical standards",
+    label: "The response violates ethical standards",
+  },
+  {
+    id: "inaccurate",
+    value: "the response is inaccurate",
+    label: "The response is inaccurate",
+  },
+  {
+    id: "harmful",
+    value: "the response is harmful",
+    label: "The response is harmful",
+  },
+  {
+    id: "violence",
+    value: "the response promotes violence or self-harm",
+    label: "The response promotes violence or self-harm",
+  },
+  {
+    id: "spam",
+    value: "the response is spam or advertising",
+    label: "This appears to be spam or advertising",
+  },
+  {
+    id: "copyright",
+    value: "the response infringes on copyright or intellectual property",
+    label: "This infringes on copyright or intellectual property",
+  },
+  {
+    id: "privacy",
+    value: "the response violates privacy or contains personal information",
+    label: "This violates someone's privacy or contains personal information",
+  },
+  {
+    id: "harassment",
+    value: "the response is harassment or bullying",
+    label: "This is harassment, bullying, or targeted abuse",
+  },
+  {
+    id: "misinformation",
+    value: "the response contains misinformation",
+    label: "This contains misinformation or fake news",
+  },
+  {
+    id: "other",
+    value: "other",
+    label: "Other",
+  },
+];
+
+export {
+  ModelList,
+  chatMessages,
+  dummyChatHistory,
+  defaultPrompts,
+  reportOptions,
+};

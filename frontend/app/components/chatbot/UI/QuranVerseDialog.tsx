@@ -1,5 +1,18 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { X, ChevronLeft, ChevronRight, Book, Loader2, Download, Share2, Copy, Check, Volume2, VolumeX, Settings } from 'lucide-react';
+import React, { useState, useEffect, useRef } from "react";
+import {
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Book,
+  Loader2,
+  Download,
+  Share2,
+  Copy,
+  Check,
+  Volume2,
+  VolumeX,
+  Settings,
+} from "lucide-react";
 
 interface VerseData {
   success: boolean;
@@ -49,15 +62,19 @@ export default function QuranVerseDialog({
   parsedRequest,
   originalMessage,
   wsRef,
-  note
+  note,
 }: QuranVerseDialogProps) {
   const [currentSurah, setCurrentSurah] = useState(parsedRequest?.surah ?? 1);
   const [currentAyah, setCurrentAyah] = useState(parsedRequest?.ayah ?? 1);
   const [verseData, setVerseData] = useState<VerseData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [inputSurah, setInputSurah] = useState(parsedRequest?.surah?.toString() ?? "1");
-  const [inputAyah, setInputAyah] = useState(parsedRequest?.ayah?.toString() ?? "1");
+  const [inputSurah, setInputSurah] = useState(
+    parsedRequest?.surah?.toString() ?? "1"
+  );
+  const [inputAyah, setInputAyah] = useState(
+    parsedRequest?.ayah?.toString() ?? "1"
+  );
 
   // const [currentSurah, setCurrentSurah] = useState(parsedRequest.surah);
   // const [currentAyah, setCurrentAyah] = useState(parsedRequest.ayah);
@@ -81,7 +98,7 @@ export default function QuranVerseDialog({
       setCurrentAyah(safeAyah);
       setInputSurah(safeSurah.toString());
       setInputAyah(safeAyah.toString());
-      
+
       fetchVerse(safeSurah, safeAyah);
     } else {
       if (audioRef.current) {
@@ -103,11 +120,13 @@ export default function QuranVerseDialog({
         if (data.status === "success") {
           setVerseData(data.data);
           setError(null);
-          
+
           // Setup audio if available
           if (data.data.audio?.url && includeAudio) {
             audioRef.current = new Audio(data.data.audio.url);
-            audioRef.current.addEventListener('ended', () => setIsPlaying(false));
+            audioRef.current.addEventListener("ended", () =>
+              setIsPlaying(false)
+            );
           }
         } else {
           setError(data.message || "Failed to fetch verse");
@@ -115,9 +134,9 @@ export default function QuranVerseDialog({
       }
     };
 
-    wsRef.current.addEventListener('message', handleMessage);
+    wsRef.current.addEventListener("message", handleMessage);
     return () => {
-      wsRef.current?.removeEventListener('message', handleMessage);
+      wsRef.current?.removeEventListener("message", handleMessage);
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current = null;
@@ -141,7 +160,7 @@ export default function QuranVerseDialog({
         type: "verse_request",
         surah: surah,
         ayah: ayah,
-        include_audio: includeAudio
+        include_audio: includeAudio,
       })
     );
   };
@@ -179,11 +198,11 @@ export default function QuranVerseDialog({
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       handleManualChange();
-    } else if (e.key === 'ArrowLeft') {
+    } else if (e.key === "ArrowLeft") {
       goToPrevious();
-    } else if (e.key === 'ArrowRight') {
+    } else if (e.key === "ArrowRight") {
       goToNext();
     }
   };
@@ -213,9 +232,12 @@ export default function QuranVerseDialog({
 
     if (navigator.share) {
       try {
-        await navigator.share({ text, title: `Quran ${verseData.surah}:${verseData.ayah}` });
+        await navigator.share({
+          text,
+          title: `Quran ${verseData.surah}:${verseData.ayah}`,
+        });
       } catch (err) {
-        console.log('Share cancelled');
+        console.log("Share cancelled");
       }
     } else {
       copyToClipboard();
@@ -224,7 +246,7 @@ export default function QuranVerseDialog({
 
   const toggleAudio = () => {
     if (!audioRef.current || !verseData?.audio) return;
-    
+
     if (isPlaying) {
       audioRef.current.pause();
       setIsPlaying(false);
@@ -240,14 +262,16 @@ export default function QuranVerseDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[95vh] overflow-hidden flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-300">
         {/* Header */}
-        <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 text-white p-6">
+        <div className="bg-linear-to-r from-emerald-600 via-teal-600 to-cyan-600 text-white p-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3">
                 <Book className="w-8 h-8" />
               </div>
               <div>
-                <h2 className="text-2xl font-bold tracking-tight">Quran Verse Reader</h2>
+                <h2 className="text-2xl font-bold tracking-tight">
+                  Quran Verse Reader
+                </h2>
                 {verseData && (
                   <div className="flex items-center gap-3 mt-1">
                     <p className="text-emerald-100 text-sm">
@@ -296,7 +320,9 @@ export default function QuranVerseDialog({
                   }}
                   className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
                 />
-                <span className="text-sm font-medium text-gray-700">Enable Audio Recitation</span>
+                <span className="text-sm font-medium text-gray-700">
+                  Enable Audio Recitation
+                </span>
               </label>
             </div>
           </div>
@@ -316,7 +342,9 @@ export default function QuranVerseDialog({
 
             <div className="flex items-center gap-3 flex-1 justify-center">
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-600 font-semibold">Surah</label>
+                <label className="text-xs text-gray-600 font-semibold">
+                  Surah
+                </label>
                 <input
                   type="number"
                   min="1"
@@ -331,7 +359,9 @@ export default function QuranVerseDialog({
               <span className="text-3xl text-gray-400 mt-6 font-light">:</span>
 
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-600 font-semibold">Ayah</label>
+                <label className="text-xs text-gray-600 font-semibold">
+                  Ayah
+                </label>
                 <input
                   type="number"
                   min="1"
@@ -381,7 +411,9 @@ export default function QuranVerseDialog({
                 <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <X className="w-8 h-8 text-red-600" />
                 </div>
-                <p className="text-red-600 font-semibold text-lg mb-2">Error Loading Verse</p>
+                <p className="text-red-600 font-semibold text-lg mb-2">
+                  Error Loading Verse
+                </p>
                 <p className="text-gray-600 text-sm">{error}</p>
                 <button
                   onClick={() => fetchVerse(currentSurah, currentAyah)}
@@ -395,9 +427,9 @@ export default function QuranVerseDialog({
             <div className="space-y-6 max-w-3xl mx-auto">
               {/* Arabic Text */}
               <div className="relative">
-                <div className="absolute -inset-4 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl opacity-50"></div>
+                <div className="absolute -inset-4 bg-linear-to-br from-emerald-50 to-teal-50 rounded-2xl opacity-50"></div>
                 <div className="relative bg-white/80 backdrop-blur-sm rounded-xl p-8 shadow-sm border border-emerald-100">
-                  <p 
+                  <p
                     className="text-4xl md:text-5xl leading-loose md:leading-loose font-arabic text-gray-900 text-right"
                     dir="rtl"
                     lang="ar"
@@ -414,7 +446,7 @@ export default function QuranVerseDialog({
 
               {/* Verse Image */}
               {verseData.images && (
-                <div className="bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-4 border border-indigo-200">
+                <div className="bg-linear-to-r from-indigo-50 to-blue-50 rounded-xl p-4 border border-indigo-200">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-bold text-indigo-700 uppercase tracking-wider">
                       Verse Image
@@ -441,18 +473,26 @@ export default function QuranVerseDialog({
 
               {/* Audio Player */}
               {verseData.audio && (
-                <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl p-4 border border-purple-200">
+                <div className="bg-linear-to-r from-purple-50 to-pink-50 rounded-xl p-4 border border-purple-200">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <button
                         onClick={toggleAudio}
                         className="p-3 bg-purple-600 hover:bg-purple-700 text-white rounded-full transition-colors shadow-md hover:shadow-lg"
                       >
-                        {isPlaying ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+                        {isPlaying ? (
+                          <VolumeX className="w-5 h-5" />
+                        ) : (
+                          <Volume2 className="w-5 h-5" />
+                        )}
                       </button>
                       <div>
-                        <p className="font-semibold text-purple-900">Audio Recitation</p>
-                        <p className="text-sm text-purple-700">{verseData.audio.reciter_name}</p>
+                        <p className="font-semibold text-purple-900">
+                          Audio Recitation
+                        </p>
+                        <p className="text-sm text-purple-700">
+                          {verseData.audio.reciter_name}
+                        </p>
                       </div>
                     </div>
                     {isPlaying && (
@@ -463,7 +503,7 @@ export default function QuranVerseDialog({
                             className="w-1 bg-purple-600 rounded-full animate-pulse"
                             style={{
                               height: `${Math.random() * 20 + 10}px`,
-                              animationDelay: `${i * 0.1}s`
+                              animationDelay: `${i * 0.1}s`,
                             }}
                           />
                         ))}
@@ -479,7 +519,9 @@ export default function QuranVerseDialog({
                   <h3 className="text-sm font-bold text-emerald-700 uppercase tracking-wider">
                     Translation
                   </h3>
-                  <span className="text-xs text-gray-500 font-medium">{verseData.translator_name}</span>
+                  <span className="text-xs text-gray-500 font-medium">
+                    {verseData.translator_name}
+                  </span>
                 </div>
                 <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
                   <p className="text-lg leading-relaxed text-gray-800">
@@ -490,21 +532,37 @@ export default function QuranVerseDialog({
 
               {/* Metadata Grid */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg p-3 border border-blue-200">
-                  <p className="text-xs text-blue-700 font-semibold mb-1">In Quran</p>
-                  <p className="text-lg font-bold text-blue-900">{verseData.number_in_quran}</p>
+                <div className="bg-linear-to-br from-blue-50 to-cyan-50 rounded-lg p-3 border border-blue-200">
+                  <p className="text-xs text-blue-700 font-semibold mb-1">
+                    In Quran
+                  </p>
+                  <p className="text-lg font-bold text-blue-900">
+                    {verseData.number_in_quran}
+                  </p>
                 </div>
-                <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-lg p-3 border border-emerald-200">
-                  <p className="text-xs text-emerald-700 font-semibold mb-1">In Surah</p>
-                  <p className="text-lg font-bold text-emerald-900">{verseData.number_in_surah}/{verseData.total_ayahs}</p>
+                <div className="bg-linear-to-br from-emerald-50 to-teal-50 rounded-lg p-3 border border-emerald-200">
+                  <p className="text-xs text-emerald-700 font-semibold mb-1">
+                    In Surah
+                  </p>
+                  <p className="text-lg font-bold text-emerald-900">
+                    {verseData.number_in_surah}/{verseData.total_ayahs}
+                  </p>
                 </div>
-                <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg p-3 border border-purple-200">
-                  <p className="text-xs text-purple-700 font-semibold mb-1">Juz</p>
-                  <p className="text-lg font-bold text-purple-900">{verseData.juz}</p>
+                <div className="bg-linear-to-br from-purple-50 to-pink-50 rounded-lg p-3 border border-purple-200">
+                  <p className="text-xs text-purple-700 font-semibold mb-1">
+                    Juz
+                  </p>
+                  <p className="text-lg font-bold text-purple-900">
+                    {verseData.juz}
+                  </p>
                 </div>
-                <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-lg p-3 border border-amber-200">
-                  <p className="text-xs text-amber-700 font-semibold mb-1">Ruku</p>
-                  <p className="text-lg font-bold text-amber-900">{verseData.ruku}</p>
+                <div className="bg-linear-to-br from-amber-50 to-orange-50 rounded-lg p-3 border border-amber-200">
+                  <p className="text-xs text-amber-700 font-semibold mb-1">
+                    Ruku
+                  </p>
+                  <p className="text-lg font-bold text-amber-900">
+                    {verseData.ruku}
+                  </p>
                 </div>
               </div>
 
@@ -532,7 +590,15 @@ export default function QuranVerseDialog({
         {/* Footer */}
         <div className="bg-gray-50 px-6 py-3 border-t border-gray-200">
           <p className="text-xs text-gray-600 text-center">
-            Use <kbd className="px-2 py-1 bg-gray-200 rounded text-xs font-mono">← →</kbd> arrow keys to navigate • <kbd className="px-2 py-1 bg-gray-200 rounded text-xs font-mono">Enter</kbd> to jump
+            Use{" "}
+            <kbd className="px-2 py-1 bg-gray-200 rounded text-xs font-mono">
+              ← →
+            </kbd>{" "}
+            arrow keys to navigate •{" "}
+            <kbd className="px-2 py-1 bg-gray-200 rounded text-xs font-mono">
+              Enter
+            </kbd>{" "}
+            to jump
           </p>
         </div>
       </div>

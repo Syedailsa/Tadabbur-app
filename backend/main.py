@@ -1,23 +1,24 @@
 import os
 import json
-import re
+import asyncio
 from dotenv import load_dotenv
-import asyncpg
-from pathlib import Path
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header
-from supabase import create_client, Client
-from supabase.client import ClientOptions
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Any, List, Optional
-import asyncio 
-from langchain.messages import HumanMessage, AIMessage
+from typing import List, Optional
+import asyncio # --- ADDED: Required for background tasks
+from langchain.messages import HumanMessage, AIMessage, SystemMessage
 from agents import Runner
 from agents import InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered
-from title_agent import title_agent
-import pprint
-from Clean_text import clean_text_with_groq
+from tadabbur_agents.report_rule_generator import report_rule_generator
+from collections import defaultdict
 import agent as agent_module
+from utils.submit_feedback import submit_feedback
+from utils.generate_title_description import generate_title_description
+from utils.save_system_message import save_system_message_to_db
+from Clean_text import clean_text_with_groq
+from utils.generate_uuid import generate_uuid
+from utils.report_rule import insert_report_rule, delete_report_rule
 import story_agent as story_module
 import logging
 import secrets
@@ -31,6 +32,9 @@ import shutil
 import tempfile
 from speech_to_text import SpeechToTextEngine
 from text_to_speech import TextToSpeechEngine
+from murf import Murf
+from database import init_db_pool, close_db_pool
+from file_service import process_uploaded_file
 from tools.audio_playback import (
     extract_audio_data,
     get_quran_audio,
@@ -46,7 +50,10 @@ from tools.verse_reader import (
     InvalidAyahError,
     QuranVerseAPIError
 )
-from tools.utils import normalize_surah
+
+from quran_api import quran_router , parah_router, story_router
+from reset_password_api import password_reset_router
+from reflection_api import reflection_router
 from api import (
     auth_router,
     notif_router,
@@ -62,67 +69,28 @@ from reflection_api import reflection_router
 from database import init_db_pool, close_db_pool, create_tables
 from fastapi.security import HTTPBearer
 from fastapi.openapi.utils import get_openapi
+import secrets
+# --- IMPORT NEW STT CLASS ---
+from speech_to_text import SpeechToTextEngine
+from text_to_speech import TextToSpeechEngine
+from config.db import get_supabase_client
+from agents import ItemHelpers  # used to extract message text from items (STREAMING)
+from data.data import comprehensive_surah_metadata
+from tools.verse_reader import SURAH_METADATA
 import sys
 
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 load_dotenv()
+from data.data import comprehensive_surah_metadata
 
-session_file_context = {}
-
-pp = pprint.PrettyPrinter(indent=2)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-TADABBUR_PROJECT_URL = os.getenv('TADABBUR_PROJECT_URL')
-TADABBUR_API_KEY = os.getenv('TADABBUR_API_KEY')
 
 # ------------------- APP CONFIG -------------------
 app = FastAPI(title="Tadabbur Agent API")
 
-def custom_openapi():
-    if app.openapi_schema:
-        return app.openapi_schema
-    openapi_schema = get_openapi(
-        title="Tadabbur Agent API",
-        version="1.0.0",
-        description="Backend API for Quranic Tadabbur Agent Application",
-        routes=app.routes,
-    )
-    openapi_schema["components"]["securitySchemes"] = {
-        "bearerAuth": {
-            "type": "http",
-            "scheme": "bearer",
-            "bearerFormat": "JWT"
-        }
-    }
-    openapi_schema["security"] = [{"bearerAuth": []}]
-    app.openapi_schema = openapi_schema
-    return app.openapi_schema
-app.openapi = custom_openapi
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database pool on startup"""
-    await init_db_pool()
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Close database pool on shutdown"""
-    await close_db_pool()
-
-
-# ================= Routes =================
 app.include_router(auth_router)
 app.include_router(password_reset_router)
 app.include_router(notif_router)
@@ -134,55 +102,185 @@ app.include_router(parah_router)
 app.include_router(story_router)
 app.include_router(reflection_router)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database pool on startup"""
+    await init_db_pool()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close database pool on shutdown"""
+    await close_db_pool()
+
+session_file_context = {}
 API_KEY = os.getenv("CHAT_API_KEY")
 # ------------------- OPTIONAL HTTP ENDPOINT -------------------
 # === SESSION CODE START ===
 DB_PATH = "chat.db"
-
-
-
-def generate_short_id() -> str:
-    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
-
+supabase_client = None
+TADABBUR_PROJECT_URL = os.getenv("TADABBUR_PROJECT_URL") 
+TADABBUR_API_KEY = os.getenv("TADABBUR_API_KEY")
 def generate_session_id() -> str:
     """Generate unique session ID: sess_ + 12 hex chars"""
     return f"sess_{secrets.token_hex(6)}"
 
 
-# def ensure_db_exists():
-#     """Force creation of sessions.db file"""
-#     db_file = Path(DB_PATH)
-#     if not db_file.exists():
-#         temp_id = generate_session_id()
-#         temp_session = SQLiteSession(temp_id, DB_PATH)
-
-
-# ensure_db_exists()
-
-
-
 def get_chat_messages(session_id: str, supabase_client) -> List[str]:
     """Get all messages of a specific session"""
     if not session_id or not supabase_client:
+        print("Session id or supabase client none, so returning...")
         return []
-    chat_messages = supabase_client.table('chat_messages').select('message_id','role','message').order('created_at').eq('session_id', session_id).execute().data
-    chat_messages = [
-    {'role': msg['role'], 'content': msg['message']}
-    for msg in chat_messages
-    ]
+        
+    chat_messages = supabase_client.table('chat_messages').select('message_id', 'role', 'content', 'reply_to_message_id', 'feedback').in_("role", ["user", "assistant"]).eq('session_id', session_id).order('created_at').execute().data
+
+    
+    # print("chat messages", chat_messages)
+    
     return chat_messages
 
 
-def get_message_ids(session_id: str, supabase_client) -> list[str | None]:
-    """Get all message IDs for a specific session"""
-    if not session_id or not supabase_client:
+def get_message_ids(supabase_client) -> list[str | None]:
+    """Get all message IDs"""
+    if not supabase_client:
         return []
+    for i in range(8):
+        try:
+            print("Fetching all message_ids from chat_messages table")
 
-    message_ids = supabase_client.table('chat_messages').select('message_id').order('created_at').eq('session_id', session_id).execute().data
-    print(f"All message IDs for session {session_id}, {message_ids}")
-    return message_ids
+            message_ids = supabase_client.table('chat_messages').select('message_id').order('created_at').execute().data
+            print("✅ Successfully fetched all message IDs")
+            return message_ids
 
+        except Exception as e:
+            print("Some error occurred while fetching all message IDs:", e)
+            print(f"Trying again, total tries {i+1}/8")
+            last_error = e
+    raise RuntimeError(
+    f"Failed to fetch all message IDs"
+    ) from last_error
+    
+def group_by_category(system_rules):
+    grouped_by_category = defaultdict(list)
+
+    for item in system_rules:
+        grouped_by_category[item['category']].append({
+            "text": item['rule'],
+            "hard_rule": item['hard_rule']
+        })
+
+    result = []
+    for category, rules in grouped_by_category.items():
+        result.append({
+            "category": category,
+            "rules": rules
+        })
+
+    return result
+
+
+
+def extract_audio_data(response_text: str) -> Optional[dict]:
+    """
+    Check if response contains audio URLs and extract them
+    Returns: dict with audio info or None
+    """
+    logging.info("[EXTRACT_AUDIO] Checking response for audio data")
+    if not response_text:
+        logging.info("[EXTRACT_AUDIO] Response text is empty")
+        return None
+
+    # Check for audio URL pattern
+    if "🎧" in response_text:
+        logging.info("[EXTRACT_AUDIO] Found audio indicators in response")
+        # Extract first audio URL
+        import re
+        url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+        urls = re.findall(url_pattern, response_text)
+        logging.info(f"[EXTRACT_AUDIO] Found URLs: {urls}")
+
+        if urls:
+            # Extract surah and ayah info
+            surah_match = re.search(r'Surah ([^\,\n]+)', response_text)
+            ayah_match = re.search(r'Ayah (\d+)', response_text)
+            logging.info(f"[EXTRACT_AUDIO] Surah match: {surah_match.group(1) if surah_match else None}, Ayah match: {ayah_match.group(1) if ayah_match else None}")
+
+            audio_data = {
+                "has_audio": True,
+                "audio_url": urls[0],  # First URL
+                "all_urls": urls,      # All URLs if multiple ayahs
+                "surah_name": surah_match.group(1).strip() if surah_match else "Unknown",
+                "ayah_number": ayah_match.group(1) if ayah_match else None,
+                "full_response": response_text
+            }
+            logging.info(f"[EXTRACT_AUDIO] Extracted audio data: {audio_data}")
+            return audio_data
+
+    logging.info("[EXTRACT_AUDIO] No audio data found")
+    return None
+
+
+
+
+def extract_verse_data(response_text: str) -> Optional[dict]:
+    """
+    Check if response contains verse data and extract it
+    Returns: dict with verse info or None
+    """
+    if not response_text:
+        return None
+    
+    # Check for verse/ayah indicators
+    verse_indicators = ["📖", "🕌", "arabic text:", "surah", "ayah", "verse"]
+    has_indicator = any(indicator in response_text.lower() for indicator in verse_indicators)
+    
+    if has_indicator:
+        import re
+        
+        # Check for Arabic text (Unicode range for Arabic)
+        has_arabic = bool(re.search(r'[\u0600-\u06FF]', response_text))
+        
+        # Extract surah and ayah info
+        surah_match = re.search(r'##\s*📖\s*([^\(]+)\s*\(([^\)]+)\)\s*-\s*Ayah\s*(\d+)', response_text)
+        
+        if surah_match and has_arabic:
+            surah_name = surah_match.group(1).strip()
+            surah_number = next((k for k, v in comprehensive_surah_metadata.items() if v["name_en"] == surah_name), None)
+            return {
+                "has_verse": True,
+                "surah_name": surah_name,
+                "surah_number": surah_number,
+                "surah_name_ar": surah_match.group(2).strip(),
+                "ayah_number": surah_match.group(3),
+                "full_response": response_text,
+                "contains_arabic": has_arabic
+            }
+        
+        # Fallback: simple detection
+        elif has_arabic:
+            surah_simple = re.search(r'(?:Surah|surah)\s+([^\n,]+)', response_text)
+            ayah_simple = re.search(r'(?:Ayah|ayah|Verse|verse)\s+(\d+)', response_text)
+            surah_name = surah_simple.group(1).strip() if surah_simple else "Unknown"
+            surah_number = next((k for k, v in SURAH_METADATA.items() if v["name_en"] == surah_name), None) if surah_name != "Unknown" else None
+
+            return {
+                "has_verse": True,
+                "surah_name": surah_name,
+                "surah_number": surah_number,
+                "surah_name_ar": "",
+                "ayah_number": ayah_simple.group(1) if ayah_simple else None,
+                "full_response": response_text,
+                "contains_arabic": True
+            }
+    
+    return None
 # ------------------- OPTIONAL HTTP ENDPOINT -------------------
 class Message(BaseModel):
     role: str
@@ -190,6 +288,11 @@ class Message(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[Message]
+
+
+def clean_text(text: str) -> str:
+    return text.replace("\x00", "")
+
 
 @app.post("/api/upload")
 async def upload_file(
@@ -200,20 +303,23 @@ async def upload_file(
         extracted_text = await process_uploaded_file(file)
         existing_context = session_file_context.get(session_id, "")
         updated_context = existing_context + "\n\n--- UPLOADED FILE CONTENT ---\n" + extracted_text 
+        clean_context = clean_text(updated_context)
+        print("Content to be inserted text", clean_context)
+        print("1 done")
         session_file_context[session_id] = updated_context
-
-        supabase = create_client(TADABBUR_PROJECT_URL, TADABBUR_API_KEY)
-
-        supabase.table('chat_sessions').update({
-            'file_context': updated_context
+        print("2 done")
+        print("3 done")
+        supabase_client = get_supabase_client()
+        supabase_client.table('chat_sessions').update({
+            'file_context': clean_context
         }).eq('session_id', session_id).execute()
+        print("Context inserted successfully!")
         
         logger.info(f"File processed for session {session_id}. Text length: {len(extracted_text)}")
         return {"status": "success", "message": "File processed successfully."}
     except Exception as e:
         logger.error(f"Upload failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest, authorization: str | None = Header(None)):
@@ -269,13 +375,14 @@ async def transcribe_audio(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Utility: normalize agent names to avoid minor mismatches (STREAMING)
 def _normalize_name(name: Optional[str]) -> Optional[str]:
     if not name:
         return None
     return "".join(c for c in name.lower() if c.isalnum())
 
 
-# Helper: try to map an agent name to the actua Agent object using configured handoffs (STREAMING)
+# Helper: try to map an agent name to the actual Agent object using configured handoffs (STREAMING)
 def _map_name_to_agent(name: Optional[str]):
     if not name:
         return None
@@ -293,7 +400,7 @@ def _map_name_to_agent(name: Optional[str]):
     # fallback modules
     if _normalize_name(getattr(story_module, "story_agent", None).name if getattr(story_module, "story_agent", None) else None) == normalized:
         return getattr(story_module, "story_agent", None)
-    # try Tafsir agent 
+    # try Tafsir agent
     try:
         taf = getattr(agent_module, "Tafsir_Agent", None) or getattr(agent_module, "Tafsir_Agent", None)
     except Exception:
@@ -308,78 +415,107 @@ def _map_name_to_agent(name: Optional[str]):
     return None
 
 
+async def stream_tts_audio(tts_engine, clean_text, websocket, message_id_ref):
+    async for audio_chunk in tts_engine.stream_audio(clean_text):
+        await websocket.send_json({
+            "type": "tts_audio_chunk",
+            "message_id": message_id_ref,
+            "audio": audio_chunk
+        })
+
 @app.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
     await websocket.accept()
     logger.info("WebSocket connected successfully")
 
-    supabase_client = None
     try:
-        print("Connecting to Database for saving user messages")
-        supabase_client: Client = create_client(
-            TADABBUR_PROJECT_URL,
-            TADABBUR_API_KEY,
-            options=ClientOptions(
-                postgrest_client_timeout=10,
-                storage_client_timeout=10,
-                schema="public",
-            )
-        )
-        print("✅ Supabase Client connected successfully!")
-    except Exception as e:
-        print("Some error occured while connecting to supabase", e)
 
+        supabase_client = get_supabase_client()
+    except Exception as e:
+        print("Some error occured initiating supabase connection", e)
+
+    # initialize the conversation history and message_IDs set
     conversation_history = []
-    unique_message_ids = set()
-    # TTS State
+    unique_message_ids = []
     tts_engine = TextToSpeechEngine()
 
+    
     # ====== SESSION CODE START ======
     current_session = None
     session_id = None
     # ========== SESSION END  ======
-    session_model_key: str = "qwen2p5-72b-instruct"
+    session_model_key: str = "gpt-oss-20b"
     active_agent = agent_module.main_agent
     current_agent_name = active_agent.name
 
     try:
         while True:
             message = await websocket.receive()
-
             if "text" in message:
                 try:
                     data = json.loads(message["text"])
                 except json.JSONDecodeError:
                     continue
 
+
                 if data.get("type") == "tts_request":
+                    print("Got tts request, data", data)
                     raw_text = data.get("text")
                     message_id_ref = data.get("message_id")
                     
                     if raw_text:
-                        logger.info(f"🧹 Cleaning text with Groq Agent...")
+                        logger.info(f"≡ƒº╣ Cleaning text with Groq Agent...")
                         
                         clean_text = await clean_text_with_groq(raw_text)
                         
-                        logger.info(f"🎤 Stream audio for: {clean_text[:50]}...")
-                        
+                        logger.info(f"≡ƒÄñ Stream audio for: {clean_text[:50]}...")
+                        client = Murf(
+                            api_key=os.getenv("MURF_AI_API_KEY") # Not required if you have set the MURF_API_KEY environment variable
+                        )
                         try:
-                            async for audio_chunk in tts_engine.stream_audio(clean_text):
+                            res = client.text_to_speech.generate(
+                                text=clean_text,
+                                voice_id ="Finley",
+                                style ="Promo",
+                                rate = 0,
+                                pitch = 0,
+                                variation = 1
+                            )
+                            # await websocket.send_json({
+                            # "type": "tts_audio_chunk",
+                            # "message_id": message_id_ref,
+                            # "audio": audio_chunk
+                            # })
+                            if res.audio_file:
+                                print("Audio url", res.audio_file)
                                 await websocket.send_json({
                                     "type": "tts_audio_chunk",
                                     "message_id": message_id_ref,
-                                    "audio": audio_chunk 
+                                    "audio_url": res.audio_file
                                 })
+                                
                         except Exception as e:
-                            logger.error(f"TTS Error: {e}")
+                            print("Some error occured while generating audio for text", e)
+                            continue
+
+                        # try:
+                        #     # fire-and-forget
+                        #     asyncio.create_task(
+                        #         stream_tts_audio(tts_engine, clean_text, websocket, message_id_ref)
+                        #     )
+                        # except Exception as e:
+                        #     print("TTS Error", e)
+                        #     logger.error(f"TTS Error: {e}")
+                        #     continue
                     continue
+
 
             if data.get("type") == "audio_request":
                 surah = data.get("surah")
                 ayah = data.get("ayah")
                 reciter = data.get("reciter", "alafasy")
                 
-                logger.info(f"🎵 Audio request: Surah {surah}, Ayah {ayah}, Reciter: {reciter}")
+                logger.info(f"≡ƒÄ╡ Audio request: Surah {surah}, Ayah {ayah}, Reciter: {reciter}")
                 
                 try:
                     audio_result = get_quran_audio(
@@ -395,7 +531,7 @@ async def websocket_chat(websocket: WebSocket):
                             "status": "success",
                             "data": audio_result
                         })
-                        logger.info("✅ Audio data sent successfully")
+                        logger.info("Γ£à Audio data sent successfully")
                     else:
                         error_msg = audio_result.get("error", "Failed to fetch audio")
                         await websocket.send_json({
@@ -403,7 +539,7 @@ async def websocket_chat(websocket: WebSocket):
                             "status": "error",
                             "message": error_msg
                         })
-                        logger.error(f"❌ Audio fetch failed: {error_msg}")
+                        logger.error(f"Γ¥î Audio fetch failed: {error_msg}")
                 
                 except (InvalidSurahError, InvalidAyahError) as e:
                     await websocket.send_json({
@@ -411,7 +547,7 @@ async def websocket_chat(websocket: WebSocket):
                         "status": "error",
                         "message": str(e)
                     })
-                    logger.warning(f"⚠️ Validation error: {e}")
+                    logger.warning(f"ΓÜá∩╕Å Validation error: {e}")
                 
                 except QuranAPIError as e:
                     await websocket.send_json({
@@ -419,7 +555,7 @@ async def websocket_chat(websocket: WebSocket):
                         "status": "error",
                         "message": f"API error: {str(e)}"
                     })
-                    logger.error(f"❌ API error: {e}")
+                    logger.error(f"Γ¥î API error: {e}")
                 
                 except Exception as e:
                     logger.exception("Unexpected audio error")
@@ -431,12 +567,13 @@ async def websocket_chat(websocket: WebSocket):
                 
                 continue
 
+
             if data.get("type") == "verse_request":
                 surah = data.get("surah")
                 ayah = data.get("ayah")
                 include_audio = data.get("include_audio", False)
                 
-                logger.info(f"📖 Verse request: Surah {surah}, Ayah {ayah}, Audio: {include_audio}")
+                logger.info(f"≡ƒôû Verse request: Surah {surah}, Ayah {ayah}, Audio: {include_audio}")
                 
                 try:
                     verse_result = get_quran_verse(
@@ -451,7 +588,7 @@ async def websocket_chat(websocket: WebSocket):
                         "status": "success",
                         "data": verse_result
                         })
-                        logger.info(f"✅ Verse data sent: {surah}:{ayah}")
+                        logger.info(f"Γ£à Verse data sent: {surah}:{ayah}")
                     else:
                         await websocket.send_json({
                         "type": "verse_response",
@@ -465,7 +602,7 @@ async def websocket_chat(websocket: WebSocket):
                         "status": "error",
                         "message": str(e)
                     })
-                    logger.warning(f"⚠️ Validation error: {e}")
+                    logger.warning(f"ΓÜá∩╕Å Validation error: {e}")
                 
                 except QuranVerseAPIError as e:
                     await websocket.send_json({
@@ -473,7 +610,7 @@ async def websocket_chat(websocket: WebSocket):
                         "status": "error",
                         "message": f"API error: {str(e)}"
                     })
-                    logger.error(f"❌ API error: {e}")
+                    logger.error(f"Γ¥î API error: {e}")
                 
                 except Exception as e:
                     logger.exception("Unexpected verse error")
@@ -489,23 +626,6 @@ async def websocket_chat(websocket: WebSocket):
             # SESSION INIT
             if data.get("type") == "session-init":
                 requested_session_id = data.get("session_id", "").strip()
-
-                user_data = data.get("user_data", {})
-                user_age = user_data.get("age")
-                user_name = user_data.get("username", "Friend")
-
-                # 2. If age exists, use the factory function to switch the active_agent
-                if user_age is not None:
-                    try:
-                        print(f"Configuring agent for User Data: \n Age: {user_age}, Name: {user_name}")
-                        active_agent = agent_module.get_agent_by_user_age(
-                            age=int(user_age), 
-                            username=user_name
-                        )
-                        current_agent_name = active_agent.name
-                    except Exception as e:
-                        logger.error(f"Error configuring agent by age: {e}")
-                        
                 if not requested_session_id:
                     # Create brand new session
                     session_id = generate_session_id()
@@ -529,50 +649,65 @@ async def websocket_chat(websocket: WebSocket):
                         logger.error(f"Failed to restore file context: {e}")
                 # add a record in chat_sessions table
                 try:    
-                    if supabase_client:
-                        print("🔃 Creating a new session record")
-                        supabase_client.table("chat_sessions").insert({'session_id': session_id, "title": "Chat Title", "description":"Description for the chat session" }).execute()
-                        # reset the conversation history and unique message ids
-                        conversation_history = []
-                        unique_message_ids.clear()
-                        print("✅ Successfully created a new session record!")
+                    print("🔃 Creating a new session record")
+                    supabase_client.table("chat_sessions").insert({'session_id': session_id, "title": "Chat Title", "description":"Description for the chat session" }).execute()
+
+                    message_ids = get_message_ids(supabase_client)
+                    # convert message IDs to a list
+                    unique_message_ids = list({record['message_id'] for record in message_ids})
+                    # reset the conversation history and unique message ids
+                    conversation_history = []
+                    print("✅ Successfully created a new session record!")            
+                    # Send confirmation — this unblocks frontend
+                    await websocket.send_json({
+                        "type": "session_id",
+                        "status": "acknowledged",
+                        "session_id": session_id,
+                        "current_agent": current_agent_name,
+                        "current_model": session_model_key,
+                        "message_ids": unique_message_ids
+                    })
                 except Exception as e:
                     print("Some error occured while adding a new session record", e)
+                    await websocket.send_json({
+                        "type": "session_id",
+                        "status": "not-acknowledged",
+                        "error": e
+                    })
+                    raise
 
-                # Send confirmation — this unblocks frontend
-                await websocket.send_json({
-                    "type": "session_id",
-                    "user_age": user_age,
-                    "user_name": user_name,
-                    "status": "acknowledged",
-                    "session_id": session_id,
-                    "current_agent": current_agent_name,
-                    "current_model": session_model_key
-                })
                 continue  
 
             # Handle CHAT HISTORY request
             if data.get("type") == "chat_history":
                 try:
-                    if supabase_client:
-                        chat_sessions = supabase_client.table('chat_sessions').select('session_id', 'title', 'description', 'created_at').execute().data
-                        print("All sessions", chat_sessions)
-                        await websocket.send_json({
-                            "type": "chat_history",
-                            "status":"acknowledged",
-                            "chat_history": chat_sessions
-                        })
-                        logger.info(f"Sent {len(chat_sessions)} sessions to frontend")
+                    # first get all unique session IDs from chat_messages
+                    all_session_ids = supabase_client.table("chat_messages").select("session_id").execute().data
+                    # unique session_ids as a list
+                    unique_session_ids = list({
+                        record["session_id"]
+                        for record in all_session_ids
+                    })
+
+                    chat_sessions = supabase_client.table('chat_sessions').select('session_id', 'title', 'description', 'created_at').in_('session_id', unique_session_ids).execute().data
+
+                    print("All sessions", chat_sessions)
+                    await websocket.send_json({
+                        "type": "chat_history",
+                        "status":"acknowledged",
+                        "chat_history": chat_sessions
+                    })
+                    logger.info(f"Sent {len(chat_sessions)} sessions to frontend")
                 except Exception as e:
                     logger.error(f"Error fetching chat history: {e}")
 
-                    await websocket.send_json({
-                        "type": "chat_history",
-                        "status": "non-acknowledged",
-                        "chat_history": [],
-                        "error": str(e)
-                    })
-                continue
+            #         await websocket.send_json({
+            #             "type": "chat_history",
+            #             "status": "non-acknowledged",
+            #             "chat_history": [],
+            #             "error": str(e)
+            #         })
+            #     continue
 
 
             # Handle Get SPECIFIC REQUEST
@@ -591,24 +726,26 @@ async def websocket_chat(websocket: WebSocket):
                     print(f"🔃 Retrieving messages for chat with session-id {session_id}")
                     # get chat messages
                     chat_history = get_chat_messages(session_id, supabase_client)
-                    # get message ids for this session
-                    message_ids = get_message_ids(session_id, supabase_client)
-                    unique_message_ids = set(message_ids)
+                    # get all message ids
+                    message_ids = get_message_ids(supabase_client)
+                    # convert message IDs to a list
+                    unique_message_ids = list({record['message_id'] for record in message_ids})
+
                     # override conversation_history with new_chat_history
                     conversation_history = chat_history or []
                     await websocket.send_json({
                         "type": "get_chat",
                         "status": "acknowledged",
                         "session_id": session_id,
-                        "chat_history": chat_history
+                        "chat_history": chat_history,
+                        "unique_message_ids": unique_message_ids 
                     })
                     logger.info(f"Loaded chat: {session_id} with {len(chat_history)} messages")
                 except Exception as e:
                     logger.error(f"Error loading chat: {e}")
                     await websocket.send_json({
                         "type": "get_chat",
-                        "status": "non-acknowledged",
-                        "session_id": requested_session_id,
+                        "status": "not-acknowledged",
                         "error": str(e)
                     })
                 continue
@@ -668,95 +805,146 @@ async def websocket_chat(websocket: WebSocket):
                 })
                 continue
 
-            if data.get("type") in ["like", "dislike", "report_content"]:
-                feedback_type = data["type"]                    # "like" / "dislike" / "report_content"
-                index = data.get("index")
-                sess_id = data.get("session_id") or session_id  # Use provided session_id or current session_id
-
-                # Validation
-                if not sess_id:
-                    await websocket.send_json({"type": "error", "message": "session_id missing"})
+            if data.get("type") == "undo-report":
+                message_id = data.get("message_id")
+                if not message_id:
+                    print("No message ID found for reported message, can't proceed to undo")
                     continue
-                if not isinstance(index, int) or index < 0:
-                    await websocket.send_json({"type": "error", "message": "invalid index"})
-                    continue
-
-                # Save to PostgreSQL (Supabase)
                 try:
-                    conn = await asyncpg.connect(os.getenv("DATABASE_URL"),statement_cache_size=0)
-                    await conn.execute(
-                        """
-                        INSERT INTO content_feedback (session_id, item_index, feedback_type)
-                        VALUES ($1, $2, $3)
-                        ON CONFLICT (session_id, item_index, feedback_type) DO NOTHING
-                        """,
-                        sess_id, index, feedback_type
-                    )
-                    await conn.close()
-
-                    # Success response
+                    # delete hard rule in a different thread for optimization
+                    await asyncio.to_thread(delete_report_rule, supabase_client, message_id)
                     await websocket.send_json({
-                        "type": "feedback_ack",
-                        "status": "success",
-                        "action": feedback_type,
-                        "index": index
+                        "type": "undo-report",
+                        "message_id": message_id,
+                        "status": "acknowledged"
                     })
-
-                    # Optional: 10+ reports pe alert
-                    if feedback_type == "report_content":
-                        conn = await asyncpg.connect(os.getenv("DATABASE_URL"),statement_cache_size=0)
-                        reports = await conn.fetchval(
-                            "SELECT COUNT(*) FROM content_feedback WHERE item_index = $1 AND feedback_type = 'report_content'",
-                            index
-                        )
-                        await conn.close()
-                        if reports and reports > 10:
-                            await websocket.send_json({
-                                "type": "content_reported",
-                                "index": index,
-                                "reports": reports
-                            })
-
                 except Exception as e:
-                    logger.error(f"Feedback save failed: {e}")
                     await websocket.send_json({
-                        "type": "error",
-                        "message": "feedback save failed"
+                        "type": "undo-report",
+                        "status": "not-acknowledged"
                     })
+                    continue
+                continue
 
-                continue  
+
+            if data.get("type") == "report":
+                print("A response is reported")
+                ack_sent = False
+                try:
+                    message_id = data.get("message_id", "")
+                    feedback = data.get("feedback", "")
+                    
+                    if not message_id or not feedback:
+                        print("No variant/message ID/feedback, can't proceed to report content")
+                        await websocket.send_json({
+                        "type": "report",
+                        "status": "not-acknowledged"
+                    })
+                        ack_sent = True
+                        continue
+                    
+                    reported_assistant_message = next(
+                    (msg for msg in conversation_history if msg["id"] == message_id),
+                    None
+                    )
+                    if reported_assistant_message:
+                        try:
+                            # insert hard rule in a different thread for optimization
+                            print("Reported assistant message",reported_assistant_message['content'] )
+                            response = await asyncio.to_thread(insert_report_rule, rule, supabase_client, message_id, feedback)
+
+                            print("Report response", response)
+                            if not response:
+                                await websocket.send_json({
+                                    "type": "report",
+                                    "status": "not-acknowledged"
+                                })
+                            else:
+                                await websocket.send_json(response)
+                            ack_sent = True
+                            
+                        except Exception as e:
+                            await websocket.send_json({
+                            "type": "report",
+                            "status": "not-acknowledged"
+                            })
+                            ack_sent = True
+                        continue
+                            
+                    else:
+                        print(f"No assistant message found for message_id {message_id}, can't report message. Proceeding...")
+                        continue
+                                
+                except Exception as e:
+                    print(f"An error occured while the assistant's response {message_id}")    
+                    if not ack_sent:
+                        await websocket.send_json({
+                        "type": "report",
+                        "status": "not-acknowledged"
+                    })
+                continue
+
+            if data.get("type") in ["like", "dislike"]:
+                type = data.get("type")
+                session_id = data.get('session_id')
+                message_id = data.get('message_id')
+                message = data.get("message")
+                if not session_id or not message_id or not message:
+                    print("No message or session ID, can't proceed to feedback submission")
+                    continue
+                try:
+                    print("Submitting user feedback")
+                    # create a new task with a thread to optimize operations
+                    await asyncio.to_thread(submit_feedback, type, message, message_id)
+                    
+                    supabase_client.table("chat_messages").update({"feedback": type}).eq("message_id", message_id).execute()
+
+                    print("✅ Successfully submitted user feedback!")
+                except Exception as e:
+                    print("Failed to submit user feedback",e)
+                    continue
+
+                continue
             # === MAIN CHAT MESSAGE ===
 
             if data.get("type") == "user_message":
                 role = data.get("role", "user")
                 message = data.get("content", "")
-                message_id = data.get("message_id")
-                if not message_id:
-                    message_id = str(uuid.uuid4())
-                
+                user_message_id = data.get("message_id")
+                additional_instructions = data.get("system_instructions")
+                resend_flag = data.get("resend_flag")
+                resend_message_id = data.get("resend_message_id")
+
+                # check resend_message_id if resend flag is True
+                if resend_flag:
+                    if not resend_message_id:
+                        print("Can't proceed forward with the received message because of no message ID")
+                        continue
                 print("New message received", message)
-                if message_id:
-                    unique_message_ids.add(message_id)
-                else:
-                    message_id = str(uuid.uuid4())
-                    while message_id in unique_message_ids:
-                        message_id = str(uuid.uuid4())
-                    unique_message_ids.add(message_id)
+                if not resend_flag:
+                    if user_message_id:
+                        unique_message_ids.append(user_message_id)
+                    else:
+                        user_message_id = generate_uuid()
+                        while user_message_id in unique_message_ids:
+                            user_message_id = generate_uuid()
+                        unique_message_ids.append(user_message_id)
                 # save user message in db
-                try:
-                    if supabase_client:
+                message_string = message + f"\n\n {additional_instructions}" if additional_instructions else message
+                if not resend_flag:
+                    try:
                         supabase_client.table('chat_messages').insert({
-                            "message_id": message_id,
+                            "message_id": user_message_id,
                             "session_id": session_id,
                             "role": role,
-                            "content": message,
+                            "content": message_string,
                         }).execute()
                         print("✅ User message saved successfully!")
-                except Exception as e:
-                    print("Some error occured while inserting user messages", e)
+                    except Exception as e:
+                        print("Some error occured while inserting user messages", e)
+                        raise
 
-                logger.info(f"[{current_agent_name}] Session: {session_id} | Message: {message} ...")
-
+                logger.info(f"[{current_agent_name}] Session: {session_id} | Message: {message_string} ...")
                 # File Feature
                 file_context = session_file_context.get(session_id, "")
                 
@@ -775,167 +963,159 @@ async def websocket_chat(websocket: WebSocket):
                     
                     message_for_history = injected_message
                     logger.info(f"✅ Injected file context into prompt for {session_id}")
-
-                try:
                     # append user message to conversation history
                     conversation_history.append(HumanMessage(message_for_history))
-                    response = active_agent.invoke(
-                        {"messages": conversation_history},
+                    
+                dynamic_system_instruction_string = ""
+                try:
+                    # fetch those rules whose weight exceeds 0.8 and build the dynamic system instructions
+                    print("Fetching rules with weights >= 0.8")
+                    system_rules = supabase_client.table('chat_rules').select('rule','category', 'hard_rule').or_("weight.gte.0.7,hard_rule.eq.True").execute().data
+                    hard_rules_injected = False
+                    if system_rules:
+                        system_rules = group_by_category(system_rules)
+                        print("System rules after being grouped by category", system_rules)
+                        dynamic_system_instruction_string += f"## STRICT RULES\n\n"
+
+                        # iterate and build strict guidelines
+                        for record in system_rules:
+                            category = record["category"]
+                            rules = record["rules"]
+                            hard_rule_count = 1
+                            for rule in rules:
+                                rule_text = rule["text"]
+                                hard_rule = rule["hard_rule"]
+                                if not rule:
+                                    print("Rule is not present, can't add to system instruction")
+                                    continue
+                                if hard_rule:
+                                    dynamic_system_instruction_string += f"{hard_rule_count}.  {rule_text} \n"
+                                    hard_rule_count += 1
+                                    hard_rules_injected = True
+                        
+                        if not hard_rules_injected:
+                            dynamic_system_instruction_string = f'\n ## OTHER GUIDELINES \n'
+                        else:
+                            dynamic_system_instruction_string += f"\n ## GUIDELINES \n"
+                        # now build soft guidelines
+                        for record in system_rules:
+                            category = record["category"]
+                            rules = record["rules"]
+                            soft_rule_count = 1
+                            dynamic_system_instruction_string += f'\n {category}_Rules \n'
+                            for rule in rules:
+                                rule_text = rule['text']
+                                hard_rule = rule["hard_rule"]
+                                if not rule:
+                                    print("Rule is not present, can't add to system instruction")
+                                    continue
+                                if not hard_rule:        
+                                    dynamic_system_instruction_string += f'{soft_rule_count}. {rule_text} \n'
+                                    soft_rule_count += 1
+                            
+                            # iterate over all rules and add below corresponding category in the instruction string
+
+                        if dynamic_system_instruction_string != "":
+                            print("Dynamic system instructions string", dynamic_system_instruction_string)
+                            # save system message in db
+
+                            # use a different thread to optimize performance
+                            asyncio.create_task(asyncio.to_thread(save_system_message_to_db, session_id,  dynamic_system_instruction_string,  unique_message_ids, supabase_client))
+                            
+                            # the rules injection logic in system message here
+                        else:
+                            print("No system instructions, continuing...")
+                            continue
+                except Exception as e:
+                    print("Some error occured while building system instructions", e)
+                    raise
+
+                try:
+                    # Prepare messages
+                    base_messages = (
+                        [{"role": "system", "content": dynamic_system_instruction_string}]
+                        if dynamic_system_instruction_string else []
                     )
+                    if not resend_flag:
+                        # append user message to conversation history
+                        conversation_history.append({"role": "user", "content": message_string, "id": user_message_id})
+                        messages = base_messages + conversation_history
+                
+                    else:
+                        messages = base_messages + conversation_history + [{"role": "user", "content": message_string}]
+                        
+                    response = active_agent.invoke(
+                        {"messages": messages},
+                    )
+
                     response = response['messages'][-1].content
-                    # append assistant message to conversation history
-                    conversation_history.append(AIMessage(response or ""))
-
-                    response_message_id = str(uuid.uuid4())
+                    
+                    # generate a message id for response message
+                    response_message_id = generate_uuid()
                     while response_message_id in unique_message_ids:
-                        response_message_id = str(uuid.uuid4())
+                        response_message_id = generate_uuid()
+                    unique_message_ids.append(response_message_id)
 
-                    unique_message_ids.add(response_message_id)
+                    user_message_id = user_message_id if not resend_flag else resend_message_id
+                    # append assistant message to conversation history
+                    conversation_history.append({"role": "assistant", "content": response or "", "id": response_message_id, "reply_to_message_id": user_message_id})
 
-                    try: 
-                        if supabase_client:
-                            supabase_client.table('chat_messages').insert({
-                                "message_id": response_message_id,
-                                "session_id": session_id,
-                                "role": "assistant",
-                                "content": response or "",
-                            }).execute()
-                            print("✅ Assistant message saved successfully!")
+                    try:
+                        supabase_client.table('chat_messages').insert({
+                            "message_id": response_message_id,
+                            "session_id": session_id,
+                            "role": "assistant",
+                            "content": response or "",
+                            "reply_to_message_id": user_message_id
+                        }).execute()
+                        print("✅ Assistant message saved successfully!")
                     except Exception as e:
                         print("Some error occured while inserting assistant messages", e)
 
                     # generate title and description for the current chat history if there are 2 user/assistant messages each
                     # run the below logic in a seperate thread
-                    if (len(conversation_history) == 2):
-                        conversation_string = ""
-                        # build a conversation string from user & assistant messages
-                        for message in conversation_history:
-                            if isinstance(message, HumanMessage):
-                                conversation_string += f"User message: {message.content} \n"
-                            else:
-                                conversation_string += f"Assistant message: {message.content} \n"
-                        if conversation_string:
-                            try:
-                                agent_response = title_agent.invoke(conversation_string)
-                                title = agent_response.title or "Title"
-                                description = agent_response.description or "Description of chat session"
-                                # insert title and description in session table
-                                try:
-                                    if supabase_client:
-                                        print("🔃 Inserting title and description in session record")
-                                        supabase_client.table('chat_sessions').update({"title": title, "description": description}).eq("session_id", session_id).execute()
-                                        print("✅ Successfully insert title and description")
-                                except Exception as e:
-                                    print("Some error occured while inserting title and description in session table", e)
-                            except Exception as e:
-                                print("Some error occured while generating title and description", e)
-                        else: 
-                            print("No conversation string so not generating title and description.")
-
-                    
-                    # tool logic
-
-                    response_lower = response.lower() if response else ""
-
-                    has_audio_indicators = any(indicator in response_lower for indicator in ["🎧", "http", "play", "listen", "audio", "recite"])
-                    has_verse_indicators = (
-                        any(indicator in response_lower for indicator in ["surah", "ayah", "verse", "chapter"]) 
-                        and bool(re.search(r'[\u0600-\u06FF]', response or ""))
+                    asyncio.create_task(
+                        asyncio.to_thread(
+                            generate_title_description,
+                            conversation_history,
+                            session_id,
+                            supabase_client
+                        )
                     )
 
-                    audio_data = None
-                    verse_data = None
-
-                    if has_audio_indicators:
-                        logging.info("[SMART-CHECK] 🎵 Audio indicators detected - calling extract_audio_data()")
-                        audio_data = extract_audio_data(response)
-                        logging.info(f"[DEBUG] Audio extracted: {audio_data is not None}")
-                    else:
-                        logging.info("[SMART-CHECK] ⏭️ No audio indicators - skipping extraction")
-
-                    if has_verse_indicators and not audio_data: 
-                        logging.info("[SMART-CHECK] 📖 Verse indicators detected - calling extract_verse_data()")
-                        verse_data = extract_verse_data(response)
-                        logging.info(f"[DEBUG] Verse extracted: {verse_data is not None}")
-                    else:
-                        if not has_verse_indicators:
-                            logging.info("[SMART-CHECK] ⏭️ No verse indicators - skipping extraction")
-
-                    logging.info(f"[DEBUG] Audio detected: {audio_data is not None}")
-                    logging.info(f"[DEBUG] Verse detected: {verse_data is not None}")
-
-                    if audio_data:
-                        await websocket.send_json({
-                            "type": "open_audio_dialog",  
-                            "parsed_request": {
-                                "surah": audio_data["surah_number"],
-                                "ayah": audio_data["ayah_number"]
-                            },
-                            "original_message": f"Play Surah {audio_data['surah_name']}",
-                            "available_reciters": get_available_reciters(), 
-                            "note": "Audio auto-detected"
-                        })
-                        logging.info("[WS]opening dialog cleanly")
-                      
-                    elif verse_data and isinstance(verse_data, dict) and verse_data.get("surah_number"):
-                        logging.info("[WS] Vers - opening Quran Verse ")
-                        await websocket.send_json({
-                            "type": "open_verse_dialog",
-                            "parsed_request": {
-                                "surah": verse_data["surah_number"],
-                                "ayah": verse_data["ayah_number"]
-                            },
-                            "original_message": "Quran Verse",
-                            "note": None  
-                        })                       
-                   
-                    else:
+                    
+                    if response:
                         await websocket.send_json({
                             "type": "assistance_response",
                             "message_id": response_message_id,
-                            "content": response,
+                            "content": response or "",
+                            "resend_flag": resend_flag,
+                            "reply_to_message_id": user_message_id,
                             "final": True
                         })
 
 
-                    # === FINAL RESPONSE & CLEANUP ===
-                    # await websocket.send_json({
-                    #     "type": "assistance_response",
-                    #     "content": final_text.strip() if final_text.strip() else "I'm not sure how to respond to that."
-                    # })
-
-
-                    await websocket.send_json({"type": "streaming_end"})
-                    await websocket.send_json({"type": "run_complete"})
-
-
-                except OutputGuardrailTripwireTriggered as e:
-                    msg = getattr(e.guardrail_result, "output_info",
-                                "Sorry, I can only respond within the context of the Quran and authentic Islamic sources.")
-
-
-                    await websocket.send_json({
-                        "type": "assistance_response",
-                        "content": msg.strip()
-                    })
                     await websocket.send_json({"type": "streaming_end"})
                     await websocket.send_json({"type": "run_complete"})
 
 
                 except WebSocketDisconnect:
                     logger.info("Client disconnected")
+                    print("Closing websocket...")
+                    websocket.close()
                     break
 
 
                 except Exception as e:
-                    logger.exception("Streaming error")
                     await websocket.send_json({"type": "assistance_response", "content": "Sorry, something went wrong."})
                     await websocket.send_json({"type": "streaming_end"})
                     await websocket.send_json({"type": "run_complete"})
+                    raise
 
 
     except WebSocketDisconnect:
         logger.info("WebSocket closed")
+        
 
     except Exception as e:
         logger.exception("WebSocket error")

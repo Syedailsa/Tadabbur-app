@@ -12,7 +12,8 @@ from supabase import create_client, Client
 # Local imports
 
 from models import *
-from utils import (
+
+from utils.authentication import (
     hash_password, verify_password, create_access_token,
     verify_google_token, generate_user_id, generate_notification_id,
     generate_bookmark_id, generate_feedback_id, get_current_user
@@ -122,6 +123,7 @@ async def login(req: LoginRequest):
 @auth_router.post("/google-signin", response_model=AuthResponse)
 async def google_signin(req: GoogleSignInRequest):
     """Sign in with Google OAuth"""
+    
     google_data = await verify_google_token(req.token)
     
     async with get_db_connection() as conn:

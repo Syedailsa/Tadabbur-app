@@ -135,8 +135,8 @@ const ChatHisoryDialoguseBox = () => {
                     </motion.div>
                   ))
                 ) : (
-                  <div>
-                    <p className="switzer-500 text-sm text-black/70">
+                  <div className="flex justify-center items-center">
+                    <p className="switzer-500 text-sm text-black/50">
                       No chat history.
                     </p>
                   </div>
