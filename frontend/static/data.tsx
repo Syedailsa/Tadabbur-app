@@ -231,7 +231,7 @@ const reportOptions: RadioOption[] = [
   },
   {
     id: "other",
-    value: "other reason",
+    value: "other",
     label: "Other",
   },
 ];

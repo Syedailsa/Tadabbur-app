@@ -4,10 +4,7 @@ import logging
 from typing import Optional, Dict, Any, List
 from langchain_core.tools import tool
 from enum import Enum
-<<<<<<< HEAD
-=======
 from data.data import comprehensive_surah_metadata
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
 
 logger = logging.getLogger(__name__)
 
@@ -16,27 +13,6 @@ class QuranVerseError(Exception):
     pass
 
 class InvalidSurahError(QuranVerseError):
-<<<<<<< HEAD
-    """Raised when surah number is invalid"""
-    pass
-
-class InvalidAyahError(QuranVerseError):
-    """Raised when ayah number is invalid"""
-    pass
-
-class QuranVerseAPIError(QuranVerseError):
-    """Raised when API request fails"""
-    pass
-
-class Edition(str, Enum):
-    """Available Quran editions"""
-    # Arabic editions
-    UTHMANI = "quran-uthmani" 
-    SIMPLE = "quran-simple"     
-    SIMPLE_ENHANCED = "quran-simple-enhanced"  
-    
-    # English translations
-=======
     pass
 
 class InvalidAyahError(QuranVerseError):
@@ -49,24 +25,15 @@ class Edition(str, Enum):
     UTHMANI = "quran-uthmani" 
     SIMPLE = "quran-simple"     
     SIMPLE_ENHANCED = "quran-simple-enhanced"  
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
     SAHIH_INTERNATIONAL = "en.sahih"
     PICKTHALL = "en.pickthall"
     YUSUF_ALI = "en.yusufali"
     ASAD = "en.asad"
     CLEAR_QURAN = "en.clearquran"
-<<<<<<< HEAD
-    
-    # Audio reciters
-=======
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
     ALAFASY = "ar.alafasy"
     HUSARY = "ar.husary"
     MINSHAWI = "ar.minshawi"
 
-<<<<<<< HEAD
-# Complete Surah metadata with English and Arabic names
-=======
 # SURAH_METADATA = {
 #     meta["surah_number"]: {
 #         "name_en": meta["englishName"],
@@ -77,7 +44,6 @@ class Edition(str, Enum):
 #     for meta in comprehensive_surah_metadata
 # }
 
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
 SURAH_METADATA = {
     1: {"name_en": "Al-Fatihah", "name_ar": "الفاتحة", "ayahs": 7, "revelation": "Meccan"},
     2: {"name_en": "Al-Baqarah", "name_ar": "البقرة", "ayahs": 286, "revelation": "Medinan"},
@@ -196,31 +162,6 @@ SURAH_METADATA = {
 }
 
 def validate_surah_ayah(surah: int, ayah: int) -> None:
-<<<<<<< HEAD
-    """Validate surah and ayah numbers with detailed error messages"""
-    if surah < 1 or surah > 114:
-        raise InvalidSurahError(
-            f"Invalid surah number: {surah}. Must be between 1 and 114."
-        )
-    
-    if surah not in SURAH_METADATA:
-        raise InvalidSurahError(f"Surah {surah} metadata not found.")
-    
-    max_ayah = SURAH_METADATA[surah]["ayahs"]
-    surah_name = SURAH_METADATA[surah]["name_en"]
-    
-    if ayah < 1 or ayah > max_ayah:
-        raise InvalidAyahError(
-            f"Invalid ayah: {ayah}. Surah {surah} ({surah_name}) has {max_ayah} ayah(s)."
-        )
-
-
-def _fetch_verse_data(
-    surah: int, 
-    ayah: int,
-    arabic_edition: str = Edition.UTHMANI,
-    translation_edition: str = Edition.SAHIH_INTERNATIONAL,
-=======
     """Validate surah and ayah numbers"""
     if surah < 1 or surah > 114:
         raise InvalidSurahError(f"Invalid surah number: {surah}")
@@ -238,21 +179,10 @@ def get_quran_verse(
     ayah: int,
     arabic_edition: str = Edition.UTHMANI,
     translation_edition: str = "en.asad",
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
     include_audio: bool = False,
     audio_reciter: str = Edition.ALAFASY
 ) -> Dict[str, Any]:
     """
-<<<<<<< HEAD
-    Internal function - preserves all your original logic
-    Returns complete dict with images, metadata, everything!
-    """
-    validate_surah_ayah(surah, ayah)
-    
-    try:
-        with httpx.Client(timeout=15.0) as client:
-            # Fetch Arabic text
-=======
     Directly fetch verse data. Returns a Dictionary.
     Used by the Backend WebSocket to send data to the Frontend.
     """
@@ -266,16 +196,11 @@ def get_quran_verse(
     
     try:
         with httpx.Client(timeout=15.0) as client:
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
             arabic_url = f"https://api.alquran.cloud/v1/ayah/{surah}:{ayah}/{arabic_edition}"
             arabic_response = client.get(arabic_url)
             arabic_response.raise_for_status()
             arabic_data = arabic_response.json()
             
-<<<<<<< HEAD
-            # Fetch translation
-=======
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
             translation_url = f"https://api.alquran.cloud/v1/ayah/{surah}:{ayah}/{translation_edition}"
             translation_response = client.get(translation_url)
             translation_response.raise_for_status()
@@ -284,37 +209,14 @@ def get_quran_verse(
             if arabic_data.get("code") != 200 or translation_data.get("code") != 200:
                 raise QuranVerseAPIError("API returned non-200 status code")
             
-<<<<<<< HEAD
-            # Extract data
-            arabic_ayah = arabic_data["data"]
-            trans_ayah = translation_data["data"]
-            
-            # Get surah metadata
-            surah_meta = SURAH_METADATA[surah]
-            
-            # Build complete verse data 
-=======
             arabic_ayah = arabic_data["data"]
             trans_ayah = translation_data["data"]
             surah_meta_api = arabic_ayah["surah"]
 
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
             verse_data = {
                 "success": True,
                 "surah": surah,
                 "ayah": ayah,
-<<<<<<< HEAD
-                "surah_name_en": surah_meta["name_en"],
-                "surah_name_ar": surah_meta["name_ar"],
-                "total_ayahs": surah_meta["ayahs"],
-                "revelation_type": surah_meta["revelation"],
-                
-                # Arabic text
-                "arabic_text": arabic_ayah["text"],
-                "arabic_edition": arabic_edition,
-                
-                # Translation
-=======
                 "surah_name_en": surah_meta_api["englishName"],
                 "surah_name_ar": surah_meta_api["name"],
                 "total_ayahs": surah_meta_api.get("numberOfAyahs", 0),
@@ -323,52 +225,20 @@ def get_quran_verse(
                 "arabic_text": arabic_ayah["text"],
                 "arabic_edition": arabic_edition,
                 
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
                 "translation_text": trans_ayah["text"],
                 "translation_edition": translation_edition,
                 "translator_name": trans_ayah.get("edition", {}).get("englishName", ""),
                 
-<<<<<<< HEAD
-                # Metadata
-                "number_in_quran": arabic_ayah.get("numberInQuran", arabic_ayah.get("numberInSurah", 0)),
-                "number_in_surah": arabic_ayah.get("numberInSurah", arabic_ayah.get("number", 0)),
-                "juz": arabic_ayah.get("juz", 0),
-                "manzil": arabic_ayah.get("manzil", 0),
-                "ruku": arabic_ayah.get("ruku", 0),
-                "hizb_quarter": arabic_ayah.get("hizbQuarter", 0),
-                "sajda": arabic_ayah.get("sajda", False),
-                
-                # Images
-=======
                 "number_in_quran": arabic_ayah.get("numberInQuran"),
                 "juz": arabic_ayah.get("juz"),
                 "manzil": arabic_ayah.get("manzil"),
                 "ruku": arabic_ayah.get("ruku"),
                 "sajda": arabic_ayah.get("sajda", False),
                 
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
                 "images": {
                     "normal": f"https://cdn.islamic.network/quran/images/{surah}_{ayah}.png",
                     "high_resolution": f"https://cdn.islamic.network/quran/images/high-resolution/{surah}_{ayah}.png"
                 },
-<<<<<<< HEAD
-
-                # Navigation
-                "can_go_previous": ayah > 1,
-                "can_go_next": ayah < surah_meta["ayahs"],
-                "previous": {"surah": surah, "ayah": ayah - 1} if ayah > 1 else None,
-                "next": {"surah": surah, "ayah": ayah + 1} if ayah < surah_meta["ayahs"] else None,
-            }
-            
-            # Add audio if requested 
-            if include_audio:
-                audio_url = f"https://api.alquran.cloud/v1/ayah/{surah}:{ayah}/{audio_reciter}"
-                try:
-                    audio_response =  client.get(audio_url)
-                    audio_response.raise_for_status()
-                    audio_data = audio_response.json()
-                    
-=======
                 
                 "can_go_previous": ayah > 1,
                 "can_go_next": ayah < surah_meta_api.get("numberOfAyahs", 999),
@@ -379,7 +249,6 @@ def get_quran_verse(
                 try:
                     audio_resp = client.get(audio_url)
                     audio_data = audio_resp.json()
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
                     if audio_data.get("code") == 200:
                         verse_data["audio"] = {
                             "url": audio_data["data"].get("audio"),
@@ -387,35 +256,15 @@ def get_quran_verse(
                             "reciter_name": audio_data["data"].get("edition", {}).get("englishName", "")
                         }
                 except Exception as e:
-<<<<<<< HEAD
-                    logger.warning(f"Failed to fetch audio: {e}")
-                    verse_data["audio"] = None
-=======
                     logger.warning(f"Failed to fetch audio for verse: {e}")
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
             
             logger.info(f"✅ Successfully fetched Surah {surah}:{ayah}")
             return verse_data
             
-<<<<<<< HEAD
-    except httpx.HTTPStatusError as e:
-        logger.error(f"HTTP {e.response.status_code} error: {e}")
-        raise QuranVerseAPIError(f"Failed to fetch verse (HTTP {e.response.status_code}).")
-    except httpx.RequestError as e:
-        logger.error(f"Network error: {e}")
-        raise QuranVerseAPIError(f"Network error: {str(e)}")
-    except Exception as e:
-        logger.exception(f"Unexpected error")
-        raise QuranVerseAPIError(f"Unexpected error: {str(e)}")
-
-
-# TOOL WRAPPER - This is what LangChain agent will call
-=======
     except Exception as e:
         logger.error(f"Error fetching verse: {e}")
         return {"success": False, "error": str(e)}
 
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
 @tool
 def fetch_quran_verse(
     surah: int, 
@@ -425,69 +274,6 @@ def fetch_quran_verse(
 ) -> str:
     """
     Fetch a specific Quran verse with Arabic text and English translation.
-<<<<<<< HEAD
-    
-    Use this tool when user wants to READ or VIEW a specific verse or ayah.
-    
-    Args:
-        surah: Surah number (1-114)
-        ayah: Ayah number within the surah
-        arabic_edition: Arabic text edition (default: quran-uthmani)
-        translation_edition: Translation edition (default: en.sahih)
-        
-    Examples of when to use:
-        - "Show me Ayatul Kursi" → surah=2, ayah=255
-        - "Read Surah Fatiha verse 5" → surah=1, ayah=5
-        - "What is verse 255 of Surah Baqarah?" → surah=2, ayah=255
-        - "Display Surah Ikhlas verse 1" → surah=112, ayah=1
-    
-    Returns:
-        Formatted string with Arabic text, translation, and metadata for display
-    """
-    
-    try:
-        # Call internal function to get complete data
-        verse_data = _fetch_verse_data(
-            surah=surah,
-            ayah=ayah,
-            arabic_edition=arabic_edition,
-            translation_edition=translation_edition,
-            include_audio=False
-        )
-        
-        # Format for beautiful display
-        response = f"""
-## 📖 {verse_data['surah_name_en']} ({verse_data['surah_name_ar']}) - Ayah {verse_data['ayah']}
-
-**Revelation:** {verse_data['revelation_type']} | **Total Ayahs:** {verse_data['total_ayahs']}
-
----
-
-### 🕌 Arabic Text:
-{verse_data['arabic_text']}
-
----
-
-### 📝 English Translation:
-{verse_data['translation_text']}
-
----
-
-**Translator:** {verse_data['translator_name']}  
-**Juz:** {verse_data['juz']} | **Ruku:** {verse_data['ruku']} | **Manzil:** {verse_data['manzil']}
-"""
-        
-        return response.strip()
-        
-    except (InvalidSurahError, InvalidAyahError, QuranVerseAPIError) as e:
-        return f"❌ Error: {str(e)}"
-    except Exception as e:
-        logger.exception("Unexpected error in tool")
-        return f"❌ Unexpected error: {str(e)}"
-
-
-# 👇 KEEPING ALL YOUR OTHER FUNCTIONS INTACT
-=======
     Args:
         surah: Surah number (1-114)
         ayah: Ayah number within the surah
@@ -510,19 +296,12 @@ def fetch_quran_verse(
 **Translator:** {data['translator_name']}
 **Juz:** {data['juz']} | **Ruku:** {data['ruku']} | **Manzil:** {data['manzil']}
 """.strip()
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
 
 def word_to_number(word: str) -> Optional[int]:
     """Convert word numbers to integers"""
     word_numbers = {
         "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-<<<<<<< HEAD
-        "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-        "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5,
-        "sixth": 6, "seventh": 7, "eighth": 8, "ninth": 9, "tenth": 10
-=======
         "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
     }
     return word_numbers.get(word.lower())
 
@@ -539,68 +318,20 @@ def preprocess_text(text: str) -> str:
             processed_words.append(word)
     return ' '.join(processed_words)
 
-<<<<<<< HEAD
-
-async def parse_verse_request(text: str) -> Optional[Dict[str, int]]:
-    """
-    Intelligently parse user request to extract surah and ayah numbers
-    (KEEPING YOUR ORIGINAL LOGIC)
-    """
-=======
 def parse_verse_request(text: str) -> Optional[Dict[str, int]]:
     """Intelligently parse user request to extract surah and ayah numbers"""
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
     text = text.lower().strip()
     text = preprocess_text(text)
     
     known_verses = {
         "ayat al kursi": {"surah": 2, "ayah": 255},
         "ayatul kursi": {"surah": 2, "ayah": 255},
-<<<<<<< HEAD
-        "throne verse": {"surah": 2, "ayah": 255},
-        "light verse": {"surah": 24, "ayah": 35},
-        "ayat an nur": {"surah": 24, "ayah": 35},
-=======
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
     }
     
     for key, value in known_verses.items():
         if key in text:
             return value
     
-<<<<<<< HEAD
-    # Pattern 1: surah:ayah
-    pattern1 = r'(?:surah\s*)?(\d+)\s*:\s*(\d+)'
-    match = re.search(pattern1, text)
-    if match:
-        return {"surah": int(match.group(1)), "ayah": int(match.group(2))}
-    
-    # Pattern 2: "surah X ayah Y"
-    pattern2 = r'surah\s*(\d+)\s*(?:ayah|verse|ayat)\s*(\d+)'
-    match = re.search(pattern2, text)
-    if match:
-        return {"surah": int(match.group(1)), "ayah": int(match.group(2))}
-    
-    # Pattern 3: "ayah Y of surah X"
-    pattern3 = r'(?:ayah|verse|ayat)\s*(\d+)\s*(?:of|from|in)\s*surah\s*(\d+)'
-    match = re.search(pattern3, text)
-    if match:
-        return {"surah": int(match.group(2)), "ayah": int(match.group(1))}
-    
-    # Pattern 4: Surah name + verse number
-    for surah_num, meta in SURAH_METADATA.items():
-        name_en = meta["name_en"].lower().replace("-", "").replace("'", "")
-        if name_en in text or any(word in name_en for word in text.split() if len(word) > 3):
-            verse_pattern = r'(?:verse|ayah|ayat)\s*(\d+)'
-            verse_match = re.search(verse_pattern, text)
-            if verse_match:
-                return {"surah": surah_num, "ayah": int(verse_match.group(1))}
-    
-    return None
-
-
-async def get_verse_range(
-=======
     patterns = [
         r'(?:surah\s*)?(\d+)\s*:\s*(\d+)',  # 2:255
         r'surah\s*(\d+)\s*(?:ayah|verse|ayat)\s*(\d+)', # surah 2 ayah 255
@@ -617,40 +348,23 @@ async def get_verse_range(
     return None
 
 def get_verse_range(
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
     surah: int, 
     start_ayah: int, 
     end_ayah: int,
     arabic_edition: str = Edition.UTHMANI,
     translation_edition: str = Edition.SAHIH_INTERNATIONAL
 ) -> List[Dict[str, Any]]:
-<<<<<<< HEAD
-    """
-    Fetch multiple verses in a range (KEEPING YOUR ORIGINAL)
-    """
-=======
     """Fetch multiple verses in a range"""
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
     validate_surah_ayah(surah, start_ayah)
     validate_surah_ayah(surah, end_ayah)
     
     if start_ayah > end_ayah:
-<<<<<<< HEAD
-        raise InvalidAyahError(
-            f"Start ayah ({start_ayah}) must be <= end ayah ({end_ayah})"
-        )
-=======
         raise InvalidAyahError(f"Start ayah ({start_ayah}) must be <= end ayah ({end_ayah})")
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
     
     verses = []
     for ayah_num in range(start_ayah, end_ayah + 1):
         try:
-<<<<<<< HEAD
-            verse = await _fetch_verse_data(
-=======
             verse = get_quran_verse(
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
                 surah=surah,
                 ayah=ayah_num,
                 arabic_edition=arabic_edition,
@@ -662,45 +376,4 @@ def get_verse_range(
             logger.error(f"Failed to fetch ayah {ayah_num}: {e}")
             continue
     
-<<<<<<< HEAD
     return verses
-
-
-async def get_available_editions() -> Dict[str, List[str]]:
-    """Get all available editions (KEEPING YOUR ORIGINAL)"""
-    return {
-        "arabic": [Edition.UTHMANI, Edition.SIMPLE, Edition.SIMPLE_ENHANCED],
-        "english_translations": [
-            Edition.SAHIH_INTERNATIONAL, Edition.PICKTHALL, 
-            Edition.YUSUF_ALI, Edition.ASAD, Edition.CLEAR_QURAN
-        ],
-        "audio_reciters": [Edition.ALAFASY, Edition.HUSARY, Edition.MINSHAWI]
-    }
-
-
-async def get_surah_info(surah: int) -> Dict[str, Any]:
-    """Get complete surah information (KEEPING YOUR ORIGINAL)"""
-    if surah < 1 or surah > 114:
-        raise InvalidSurahError(f"Invalid surah number: {surah}")
-    
-    meta = SURAH_METADATA[surah]
-    return {
-        "number": surah,
-        "name_en": meta["name_en"],
-        "name_ar": meta["name_ar"],
-        "total_ayahs": meta["ayahs"],
-        "revelation_type": meta["revelation"],
-        "revelation_place": "Mecca" if meta["revelation"] == "Meccan" else "Medina"
-    }
-
-
-# 👇 BONUS: Direct access to complete data if needed programmatically
-async def get_complete_verse_data(surah: int, ayah: int) -> Dict[str, Any]:
-    """
-    Get complete verse data including images, metadata, everything
-    Use this when you need the full dict (not just formatted string)
-    """
-    return await _fetch_verse_data(surah, ayah)
-=======
-    return verses
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a

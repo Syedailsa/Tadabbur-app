@@ -32,7 +32,7 @@ llm = model.with_structured_output(schema = OutputSchema,  method='json_schema')
 
 prompt = ChatPromptTemplate.from_messages([
     ("system", system_instructions),
-    ("human", "Existing_Rules: {existing_rules} \n Reported_Assistant_Response: {assistant_response} \n Report_Reason: {report_reason}"
+    ("human", "Existing_Rules: {existing_rules} \n Report_Reason: {report_reason}"
 )
 ])
 

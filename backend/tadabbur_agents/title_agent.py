@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from langchain_groq import ChatGroq
 
 load_dotenv()
-GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+GROQ_API_KEY = os.getenv('GROQ_AI_API_KEY')
 
 
 if not GROQ_API_KEY:

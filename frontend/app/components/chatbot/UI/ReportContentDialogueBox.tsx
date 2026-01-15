@@ -15,9 +15,9 @@ const ReportContentDialogueBox: React.FC<ReportContenDialogueBoxProps> = ({
   hideReportContentDialogueBox,
   setHideReportContentDialogueBox,
 }) => {
-  const { wsRef, reportedMessageInfo } = useContext(ChatContext);
+  const { wsRef, reportedMessageID } = useContext(ChatContext);
 
-  const [hidePlaceholder, setHidePlaceholder] = useState<boolean | null>(true);
+  const [hidePlaceholder, setHidePlaceholder] = useState<boolean>(true);
   const [selectedReason, setSelectedReason] = useState<string | null>("");
   const [customFeedback, setCustomFeedback] = useState<string | null>("");
   if (hideReportContentDialogueBox) return null;
@@ -26,14 +26,14 @@ const ReportContentDialogueBox: React.FC<ReportContenDialogueBoxProps> = ({
     setSelectedReason(e.target.value);
   };
   const handleSubmit = () => {
-    if (!selectedReason || !reportedMessageInfo?.messageID) return;
+    if (!selectedReason || !reportedMessageID) return;
 
     if (selectedReason === "other") {
       if (!customFeedback) return;
       wsRef?.current.send(
         JSON.stringify({
           type: "report",
-          message_id: reportedMessageInfo.messageID,
+          message_id: reportedMessageID,
           feedback: customFeedback,
         })
       );
@@ -41,7 +41,7 @@ const ReportContentDialogueBox: React.FC<ReportContenDialogueBoxProps> = ({
       wsRef?.current.send(
         JSON.stringify({
           type: "report",
-          message_id: reportedMessageInfo.messageID,
+          message_id: reportedMessageID,
           feedback: selectedReason,
         })
       );
@@ -78,7 +78,8 @@ const ReportContentDialogueBox: React.FC<ReportContenDialogueBoxProps> = ({
                     checked={selectedReason === option.value}
                     onChange={(e) => {
                       handleChange(e);
-                      if (option.value == "other") {
+                      if (option.id == "other") {
+                        console.log("! done");
                         setHidePlaceholder(false);
                       }
                     }}
@@ -101,8 +102,8 @@ const ReportContentDialogueBox: React.FC<ReportContenDialogueBoxProps> = ({
                   onInput={(e) => {
                     const target = e.target as HTMLDivElement;
                     const text = target.textContent.trim() ?? "";
-                    setCustomFeedback(text);
                     setHidePlaceholder(text != "");
+                    setCustomFeedback(text);
                   }}
                   contentEditable
                   className="focus:outline-none switzer-500 w-full border border-black/20 tracking-tight rounded-sm max-h-20 px-2 py-1 overflow-y-auto"

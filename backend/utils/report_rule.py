@@ -1,25 +1,19 @@
 from tadabbur_agents.report_rule_generator import report_rule_generator
 
-def insert_report_rule(rule: str, supabase_client, message_id: str,reported_assistant_message: str, feedback:str):
+def insert_report_rule(rule: str, supabase_client, message_id: str, feedback:str):
     for i in range(8):
         try:
             print("Inserting hard rule...")
             # first fetch existing rules
-            print("Fetching all existing hard rules....")
             existing_rules = supabase_client.table('chat_rules').select("rule_id", "rule").eq("hard_rule", True).execute().data
 
             print("All existing hard rules", existing_rules)
             
-            response = report_rule_generator.invoke({"existing_rules": existing_rules,"assistant_response": reported_assistant_message, "report_reason": feedback})
+            response = report_rule_generator.invoke({"existing_rules": existing_rules, "report_reason": feedback})
 
             existing_rule = response.existing_rule
             if existing_rule:
                 print("Similar in intent rule already exists, returning...")
-                # await websocket.send_json({
-                    # "type": "report",
-                    # "message_id": message_id,
-                    # "status": "acknowledged"
-                # })
                 response_data = {
                     "type": "report",
                     "message_id": message_id,
@@ -43,15 +37,16 @@ def insert_report_rule(rule: str, supabase_client, message_id: str,reported_assi
                         # first delete the conflicting rule
                         supabase_client.table('chat_rules').delete().eq("rule_id", rule_id).execute()
                 else:
-                    print("Not valid report reason")
+                    print("Report reason not valid")
                     response_data = {
                         "type": "report",
                         "status": "not-acknowledged"
                         }
                     return response_data
-
+            
+            # insert hard rule
             supabase_client.table('chat_rules').insert({"rule": rule, "hard_rule": True, "message_id": message_id}).execute()
-            print(f"✅ Hard rule with message_id {message_id} inserted successfully!")
+            print(f"Message with {message_id} is successfully reported!")
             response_data = {
                 "type": "report",
                 "status": "acknowledged",

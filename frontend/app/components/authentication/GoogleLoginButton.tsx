@@ -1,6 +1,6 @@
-import React from 'react';
-import { GoogleLogin } from '@react-oauth/google';
-import axios from 'axios';
+import React from "react";
+import { GoogleLogin } from "@react-oauth/google";
+import axios from "axios";
 
 interface GoogleLoginProps {
   onSuccess: (data: any) => void;
@@ -8,13 +8,16 @@ interface GoogleLoginProps {
   text?: "signin_with" | "signup_with";
 }
 
-export default function GoogleLoginButton({ onSuccess, onError, text = "signin_with" }: GoogleLoginProps) {
-  
+export default function GoogleLoginButton({
+  onSuccess,
+  onError,
+  text = "signin_with",
+}: GoogleLoginProps) {
   const handleGoogleSuccess = async (credentialResponse: any) => {
     try {
       // Matches your backend model: class GoogleSignInRequest(BaseModel): token: str
-      const res = await axios.post('http://localhost:8000/auth/google-signin', {
-        token: credentialResponse.credential
+      const res = await axios.post("http://localhost:8000/auth/google-signin", {
+        token: credentialResponse.credential,
       });
       onSuccess(res.data);
     } catch (error) {

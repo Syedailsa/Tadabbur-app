@@ -8,7 +8,7 @@ interface ChatProviderProps {
   chatHistory: ChatRecord[] | null;
   setChatHistory: React.Dispatch<React.SetStateAction<ChatRecord[] | null>>;
   sessionID: string | null;
-  messages: any;      
+  messages: any;
   setMessages: any;
   attachedFile: File | null;
   setAttachedFile: Dispatch<SetStateAction<File | null>>;
@@ -38,7 +38,7 @@ const ChatProvider: React.FC<ChatProviderProps> = ({
   const [openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox] = useState<
     boolean | null
   >(false);
-  const [reportedMessageInfo, setReportedMessageInfo] = useState<{
+  const [reportedMessageID, setReportedMessageID] = useState<{
     messageID: string;
   } | null>(null);
 
@@ -54,22 +54,19 @@ const ChatProvider: React.FC<ChatProviderProps> = ({
         setHideModelBox,
         active,
         setActive,
-        attachedFile,
-        setAttachedFile,
         selectedSessionID,
         setSelectedSessionID,
         openChatHistoryDialogueBox,
         setOpenChatHistoryDialogueBox,
         chatHistory,
         setChatHistory,
-<<<<<<< HEAD
-        reportedMessageInfo,
-        setReportedMessageInfo,
-=======
+        reportedMessageID,
+        setReportedMessageID,
+        attachedFile,
+        setAttachedFile,
         sessionID,
         messages,
         setMessages,
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
       }}
     >
       {children}

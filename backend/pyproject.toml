@@ -26,10 +26,6 @@ dependencies = [
     "qdrant-client>=1.7.0",
     "uvicorn>=0.27.0",
     "rapidfuzz>=3.0.0",
-<<<<<<< HEAD
-    "uvicorn>=0.27.0",
-    "python-multipart>=0.0.6",
-=======
     "python-multipart>=0.0.6",
     "aiofiles>=25.1.0",
     "asyncpg>=0.31.0",
@@ -44,7 +40,6 @@ dependencies = [
     "pyjwt>=2.10.1",
     "sqlalchemy[asyncio]>=2.0.44",
     "pypdf>=6.5.0",
->>>>>>> 0a9fd875e9285f0bbd715f6ad16060e0c201aa0a
 ]
 
 [tool.setuptools]

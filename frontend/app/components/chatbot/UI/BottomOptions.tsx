@@ -18,19 +18,24 @@ const BottomOptions = () => {
     setActive,
     setAttachedFile,
     setInput,
-    sessionID, 
+    sessionID,
     setMessages,
   } = useContext(ChatContext);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const micActive = useRef<boolean>(false);
 
   useEffect(() => {
     const isMicActive = active[2];
     if (isMicActive) {
+      console.log("Starting mic");
       startRecording();
-    } else {
+      micActive.current = true;
+    } else if (!isMicActive && micActive.current) {
+      console.log("Stopping mic");
       stopRecording();
+      micActive.current = false;
     }
     return () => stopRecording();
   }, [active[2]]);
@@ -116,11 +121,11 @@ const BottomOptions = () => {
 
   return (
     <div className="w-full flex gap-x-1 mt-auto items-center">
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        onChange={handleFileChange} 
-        style={{ display: 'none' }} 
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        style={{ display: "none" }}
         accept=".pdf,.txt"
       />
       <motion.div
@@ -217,7 +222,7 @@ const BottomOptions = () => {
           whileHover={{ backgroundColor: "#0000000D" }}
           className="rounded-full w-9 h-9 cursor-pointer flex justify-center items-center"
           id="attach-files-box"
-          onClick={() => fileInputRef.current?.click()} 
+          onClick={() => fileInputRef.current?.click()}
         >
           <AttachIcon className="fill-current text-black w-5 h-5" />
         </motion.div>

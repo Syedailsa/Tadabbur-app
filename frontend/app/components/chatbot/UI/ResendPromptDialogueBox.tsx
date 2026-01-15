@@ -42,11 +42,19 @@ const ResendPromptDialogueBox = () => {
     };
   }, [hideResendPromptDialogue, setHideResendPromptDialogue]);
 
+  // have to handle input tomorrow
   const handleInput = () => {
     if (!inputRef.current) return;
     const input = inputRef.current?.innerText;
     if (input.trim() != "") {
-      ask(input);
+      const old_assistant_responses = messages?.[parent_index]?.responses;
+      ask(
+        messages[parent_index]?.content,
+        input,
+        true,
+        reply_to_message_id,
+        old_assistant_responses
+      );
       setHideResendPromptDialogue(true);
     } else {
       return;
@@ -73,6 +81,15 @@ const ResendPromptDialogueBox = () => {
               if (e.key === "Enter") {
                 e.preventDefault();
                 handleInput();
+                const old_assistant_responses =
+                  messages?.[parent_index]?.responses;
+                ask(
+                  messages[parent_index]?.content,
+                  inputRef.current?.innerText,
+                  true,
+                  reply_to_message_id,
+                  old_assistant_responses
+                );
               }
             }}
             contentEditable
@@ -131,9 +148,6 @@ const ResendPromptDialogueBox = () => {
                   // save the assistant messsages before deleting the message object
                   const old_assistant_responses =
                     messages?.[parent_index]?.responses;
-                  const number_of_assistant_responses =
-                    messages?.[parent_index]?.number_of_responses;
-
                   // remove the user and assistant message
                   setMessages((prev: ChatMessage[]) =>
                     prev.filter(
