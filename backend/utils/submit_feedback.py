@@ -32,8 +32,7 @@ def get_rules_grouped_by_category(supabase_client):
         return []
 
 
-def submit_feedback(user_feedback:Literal ['like', 'dislike'], assistant_response:str, message_id:str):
-
+def submit_feedback(user_feedback:Literal['like', 'dislike'], assistant_response:str, message_id:str):
     try:
         # initialize supabase_client
         supabase_client = get_supabase_client()        
@@ -41,15 +40,18 @@ def submit_feedback(user_feedback:Literal ['like', 'dislike'], assistant_respons
 
         all_traits = response.all_traits
         if not all_traits:
+            print("No traits found, can't submit user feedback!")
             raise ValueError("No traits found")
 
         categories = get_rules_grouped_by_category(supabase_client)
 
+        print("All categories", categories)
         for record in all_traits:
             trait_category = record.category
             trait = record.trait
 
             if not trait_category or not trait:
+                print("Category or trait is not defined. Can't proceed!")
                 raise ValueError("Category or trait is not defined. Can't proceed!")
             
             if categories:
@@ -59,10 +61,9 @@ def submit_feedback(user_feedback:Literal ['like', 'dislike'], assistant_respons
 
                     if trait_category == category:
                         response = rule_similarity_evaluator.invoke({"existing_rules": rules, "trait": trait})
-
+                        print("Similarity Response", response)
                         # insert those with no existing rule using a small weight
                         if response.existing_rule:
-                           
                             # if rule exists increase weight by 0.1
                             rule_id = response.rule_id
                             if not rule_id:
@@ -82,6 +83,7 @@ def submit_feedback(user_feedback:Literal ['like', 'dislike'], assistant_respons
                             supabase_client.table("chat_rules").update({"weight": new_weight}).eq("rule_id", rule_id).execute()
 
                         else:
+                            print("Inserting a new rule")
                             rule = response.new_rule
                             category = response.category
                             if not rule or not category:
@@ -94,6 +96,7 @@ def submit_feedback(user_feedback:Literal ['like', 'dislike'], assistant_respons
                 # no categories, no rules, insert all
                 response = rule_similarity_evaluator.invoke({"existing_rules": [], "trait": trait})
                 if not response.existing_rule:
+                    print("Inserting a new rule")
                     category = response.category
                     new_rule = response.new_rule
                     supabase_client.table('chat_rules').insert({"rule": new_rule, "category": category, "weight": 0.3, "hard_rule": False, "message_id": message_id}).execute()
