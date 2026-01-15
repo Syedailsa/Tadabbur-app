@@ -6,11 +6,10 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { ReactNode, useEffect, useRef, useState } from "react";
 import ChatProvider from "@/app/providers/chatbot/ChatProvider";
-import DownArrow from "../../../icons/arrow-down-head.svg";
 import AttachIcon from "../../../icons/attach_icon.svg";
 import DisclaimerIcon from "../../../icons/disclaimer.svg";
 import UndoArrow from "../../../icons/refresh.svg";
-// import DownArrow from "../icons/arrow-down-head.svg";
+import DownArrow from ".../icons/arrow-down-head.svg";
 import SimpleAudioDialog from "../../components/chatbot/UI/AudioDialogBox";
 import { AssistantMessage } from "@/app/components/chatbot/interfaces/ChatMessage";
 import {
@@ -28,7 +27,7 @@ import { audioScheduler } from "../../utils/AudioScheduler";
 import { ModelList } from "@/static/data";
 import BottomOptions from "../../components/chatbot/UI/BottomOptions";
 import ExtraOptions from "../../components/chatbot/UI/ExtraOptions";
-// import PromptSuggestion from "../icons/prompt_suggestion.svg";
+import PromptSuggestion from ".../icons/prompt_suggestion.svg";
 import { defaultPrompts } from "@/static/data";
 import ModelBox from "../../components/chatbot/UI/ModelBox";
 import Controls from "../../components/chatbot/UI/Controls";
@@ -104,48 +103,45 @@ export default function ChatPage() {
 
   useEffect(() => {
     const handleMicStart = () => {
-      setIsRecording(true);
-
-      tempSpeechRef.current = "";
-
-      if (inputRef.current && inputRef.current.innerText.trim().length > 0) {
-        committedTextRef.current = inputRef.current.innerText.trim() + " ";
-      } else {
-        committedTextRef.current = "";
-      }
+        setIsRecording(true);
+        tempSpeechRef.current = ""; 
     };
 
     const handleMicStop = () => {
-      setIsRecording(false);
+        setIsRecording(false);
+    };
 
-      const finalText = (
-        committedTextRef.current + tempSpeechRef.current
-      ).trim();
+    const handleSTTResult = (e: Event) => {
+        const customEvent = e as CustomEvent;
+        const text = customEvent.detail;
+        
+        if (inputRef.current && text) {
+            const currentText = inputRef.current.innerText.trim();
+            const newText = currentText ? `${currentText} ${text}` : text;
+            
+            inputRef.current.innerText = newText;
+            committedTextRef.current = newText;
 
-      if (inputRef.current) {
-        inputRef.current.innerText = finalText;
-
-        const range = document.createRange();
-        const sel = window.getSelection();
-        if (inputRef.current.lastChild) {
-          range.selectNodeContents(inputRef.current);
-          range.collapse(false);
-          sel?.removeAllRanges();
-          sel?.addRange(range);
+            const range = document.createRange();
+            const sel = window.getSelection();
+            if(inputRef.current.lastChild) {
+                 range.selectNodeContents(inputRef.current);
+                 range.collapse(false);
+                 sel?.removeAllRanges();
+                 sel?.addRange(range);
+            }
+            setShowPlaceholder(false);
         }
-        setShowPlaceholder(finalText === "");
-
-        committedTextRef.current = finalText;
-        tempSpeechRef.current = "";
-      }
     };
 
     window.addEventListener("tadabbur-mic-start", handleMicStart);
     window.addEventListener("tadabbur-mic-stop", handleMicStop);
+    window.addEventListener("tadabbur-stt-result", handleSTTResult);
 
     return () => {
-      window.removeEventListener("tadabbur-mic-start", handleMicStart);
-      window.removeEventListener("tadabbur-mic-stop", handleMicStop);
+        window.removeEventListener("tadabbur-mic-start", handleMicStart);
+        window.removeEventListener("tadabbur-mic-stop", handleMicStop);
+        window.removeEventListener("tadabbur-stt-result", handleSTTResult);
     };
   }, []);
   // In your element
@@ -210,18 +206,6 @@ export default function ChatPage() {
           }
           break;
 
-        case "stt_chunk":
-          if (inputRef.current && inputRef.current.innerText.trim() === "") {
-            committedTextRef.current = "";
-          }
-          tempSpeechRef.current = data.text;
-          break;
-
-        case "stt_final":
-          committedTextRef.current += data.text + " ";
-          tempSpeechRef.current = "";
-          break;
-
         case "tts_audio_chunk":
           const audioBase64 = data.audio;
           const audio_url = data.audio_url;
@@ -232,43 +216,6 @@ export default function ChatPage() {
           // if (audioBase64) {
           //   audioScheduler.scheduleChunk(audioBase64);
           // }
-          break;
-
-        case "audio_response":
-          setAudioRequest({
-            surah: data.surah_name,
-            ayah_number: data.ayah_number,
-            audio_url: data.audio_url,
-            all_urls: data.all_urls,
-            text_response: data.text_response,
-          });
-          setShowAudioDialog(true);
-          const response_message_id = data.message_id;
-          const text_response = data.text_response;
-          // Also add the text message to chat
-
-          // have to review the logic here
-          // setMessages((prev) => {
-          //   if (!prev || prev.length == 0) {
-          //     return prev;
-          //   }
-          //   const updated = [...(prev || [])];
-          //   const lastUserMessage = updated.findLast((m) => m.role === "user");
-
-          //   if (lastUserMessage) {
-          //     lastUserMessage.number_of_responses = 1;
-          //     lastUserMessage.responses.push({
-          //       role: "assistant",
-          //       message_id: response_message_id,
-          //       content: text_response,
-          //       reply_to_message_id: reply_to_message_id,
-          //       feedback: null,
-          //     });
-          //   }
-          //   setStreamingMessageIndex(updated.length - 1);
-          //   return updated;
-          // });
-
           break;
 
         case "session_id":

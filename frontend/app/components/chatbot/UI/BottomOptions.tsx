@@ -23,6 +23,7 @@ const BottomOptions = () => {
   } = useContext(ChatContext);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]); // Store audio chunks locally
   const fileInputRef = useRef<HTMLInputElement>(null);
   const micActive = useRef<boolean>(false);
 
@@ -37,43 +38,46 @@ const BottomOptions = () => {
       stopRecording();
       micActive.current = false;
     }
-    return () => stopRecording();
+    return () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+            mediaRecorderRef.current.stop();
+        }
+    };
   }, [active[2]]);
 
   const startRecording = async () => {
     try {
-      console.log("🎤 Mic Request...");
+      console.log("🎤 Mic Request (Batch Mode)...");
 
+      // Signal UI to show WaveForm
       window.dispatchEvent(new Event("tadabbur-mic-start"));
-
-      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-        console.error("❌ Main WebSocket not connected!");
-        alert("Please wait for chat connection...");
-        setActive((prev: boolean[]) => {
-          const c = [...prev];
-          c[2] = false;
-          return c;
-        });
-        return;
-      }
-
-      wsRef.current.send(JSON.stringify({ type: "start_mic" }));
+      
+      audioChunksRef.current = [];
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
 
+      // Collect Data
       mediaRecorder.ondataavailable = (event) => {
-        if (
-          event.data.size > 0 &&
-          wsRef.current?.readyState === WebSocket.OPEN
-        ) {
-          wsRef.current.send(event.data);
+        if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
         }
       };
 
-      mediaRecorder.start(1000);
-      console.log("🎙️ Recording via Main Socket!");
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        
+        if (audioBlob.size > 0) {
+            await uploadAudioForTranscription(audioBlob);
+        }
+      };
+
+      mediaRecorder.start();
+      console.log("🎙️ Recording Started locally.");
+      
     } catch (micErr) {
       console.error("❌ Mic denied:", micErr);
       setActive((prev: boolean[]) => {
@@ -89,18 +93,41 @@ const BottomOptions = () => {
       mediaRecorderRef.current &&
       mediaRecorderRef.current.state !== "inactive"
     ) {
-      mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream
-        .getTracks()
-        .forEach((track) => track.stop());
+      mediaRecorderRef.current.stop(); 
     }
-
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "stop_mic" }));
-    }
-
+    
+    // Signal UI to stop WaveForm
     window.dispatchEvent(new Event("tadabbur-mic-stop"));
   };
+
+  const uploadAudioForTranscription = async (audioBlob: Blob) => {
+    const formData = new FormData();
+    formData.append("file", audioBlob, "voice_note.webm");
+
+    try {
+        console.log("📤 Uploading audio for transcription...");
+        const response = await fetch("http://localhost:8000/api/transcribe", {
+            method: "POST",
+            body: formData,
+        });
+
+        if (!response.ok) throw new Error("Transcription failed");
+
+        const data = await response.json();
+        const text = data.text;
+
+        if (text) {
+            console.log("✅ Transcription Received:", text);
+            const event = new CustomEvent("tadabbur-stt-result", { detail: text });
+            window.dispatchEvent(event);
+        }
+
+    } catch (error) {
+        console.error("Transcription Error:", error);
+        alert("Failed to transcribe audio.");
+    }
+  };
+
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
