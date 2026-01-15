@@ -5,6 +5,7 @@ from typing import Optional, Dict, Any, List
 from langchain_core.tools import tool
 from enum import Enum
 from data.data import comprehensive_surah_metadata
+from tools.utils import get_surah_id_from_name, clean_surah_name
 
 logger = logging.getLogger(__name__)
 
@@ -377,3 +378,61 @@ def get_verse_range(
             continue
     
     return verses
+
+def extract_verse_data(response_text: str) -> Optional[dict]:
+    if not response_text:
+        return None
+    
+    clean_text = clean_surah_name(response_text)
+    
+    verse_indicators = ["surah", "ayah", "verse", "chapter"]
+    has_indicator = any(indicator in clean_text.lower() for indicator in verse_indicators)
+    
+    if has_indicator:
+        import re
+        
+        has_arabic = bool(re.search(r'[\u0600-\u06FF]', response_text))
+        
+        surah_match = re.search(r'(?:Surah|surah|Chapter)\s+([^\(\)\d,:]+)', clean_text)
+        ayah_match = re.search(r'(?:Ayah|ayah|Verse|verse)[sS]?\s*(\d+)', clean_text)
+        chapter_num_match = re.search(r'\((\d+)\)', clean_text)
+        
+        if (surah_match or chapter_num_match) and has_arabic:
+            surah_number = None
+            surah_name_raw = "Unknown"
+            
+            if surah_match:
+                surah_name_raw = clean_surah_name(surah_match.group(1))
+                
+                surah_number = get_surah_id_from_name(surah_name_raw)
+            
+            if not surah_number and chapter_num_match:
+                surah_number = int(chapter_num_match.group(1))
+            
+            if not surah_number and surah_name_raw != "Unknown":
+                best_match_name = normalize_surah(surah_name_raw, surah_name_english_array)
+                if best_match_name:
+                    for meta in comprehensive_surah_metadata:
+                        if meta.get("englishName") == best_match_name:
+                            surah_number = int(meta.get("surah_number"))
+                            break
+
+            extracted_ayah = int(ayah_match.group(1)) if ayah_match else 1
+            
+            if not surah_number:
+                logging.warning(f"[EXTRACT_VERSE] Failed to identify Surah from '{surah_name_raw}'.")
+                surah_number = 2 if extracted_ayah > 7 else 1
+
+            logging.info(f"[EXTRACT_VERSE] Extracted: Surah {surah_number}, Ayah {extracted_ayah}")
+
+            return {
+                "has_verse": True,
+                "surah_name": surah_name_raw,
+                "surah_number": surah_number, 
+                "surah_name_ar": "", 
+                "ayah_number": extracted_ayah,
+                "full_response": response_text,
+                "contains_arabic": has_arabic
+            }
+    
+    return None

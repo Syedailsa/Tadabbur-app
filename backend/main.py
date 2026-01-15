@@ -23,30 +23,25 @@ import logging
 import secrets
 import random
 import string
+import uuid
 from agents import ItemHelpers  
 from fastapi import UploadFile, File, Form
 from file_service import process_uploaded_file
+import shutil
+import tempfile
 from speech_to_text import SpeechToTextEngine
 from text_to_speech import TextToSpeechEngine
 from tools.audio_playback import (
-    play_quran_audio,
+    extract_audio_data,
     get_quran_audio,
-    parse_quran_audio_request,
     get_available_reciters,
     InvalidSurahError,
     InvalidAyahError,
     QuranAPIError
 )
-from tools.verse_reader import SURAH_METADATA
-from data.data import (
-    comprehensive_surah_metadata, 
-    surah_name_english_array
-)
+from tools.verse_reader import extract_verse_data
 from tools.verse_reader import (
-    fetch_quran_verse,
     get_quran_verse,
-    parse_verse_request,
-    get_verse_range,
     InvalidSurahError,
     InvalidAyahError,
     QuranVerseAPIError
@@ -60,8 +55,6 @@ from api import (
     feedback_router,
     
 )
-import unicodedata
-from reflection_api import reflection_router
 from reset_password_api import password_reset_router
 from quran_api import quran_router , parah_router, story_router
 from reset_password_api import password_reset_router
@@ -190,303 +183,6 @@ def get_message_ids(session_id: str, supabase_client) -> list[str | None]:
     print(f"All message IDs for session {session_id}, {message_ids}")
     return message_ids
 
-# # audio data
-# def extract_audio_data(response_text: str) -> Optional[dict]:
-#     """
-#     Check if response contains audio URLs and extract them.
-#     Handles Unicode names (Yā-Sīn) by falling back to Chapter numbers found in text.
-#     """
-#     logging.info(f"[EXTRACT_AUDIO] Text start: {response_text[:100]}...")
-    
-#     if not response_text:
-#         return None
-
-#     if "🎧" in response_text or "http" in response_text:
-#         import re
-
-#         surah_regex = r'(?:Surah|surah)\s+([^\(\)\d,:]+?)(?=\s*(?:\(|\d|,|Ayah|ayah))'
-        
-#         ayah_match = re.search(r'(?:Ayah|ayah|Verse|verse)\s*(\d+)', response_text)
-        
-#         url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
-#         urls = re.findall(url_pattern, response_text)
-        
-#         surah_match = re.search(surah_regex, response_text)
-
-#         if urls:
-#             surah_name_raw = "Unknown"
-#             if surah_match:
-#                 surah_name_raw = surah_match.group(1).replace("**", "").replace("‑", "-").strip()
-            
-#             logging.info(f"[EXTRACT_AUDIO] Regex captured Raw Name: '{surah_name_raw}'")
-
-#             surah_number = None
-            
-#             best_match_name = normalize_surah(surah_name_raw, surah_name_english_array)
-#             logging.info(f"[EXTRACT_AUDIO] Fuzzy Match: '{surah_name_raw}' -> '{best_match_name}'")
-            
-#             if best_match_name:
-#                 for meta in comprehensive_surah_metadata:
-#                     if meta.get("englishName") == best_match_name:
-#                         surah_number = int(meta.get("surah_number")) 
-#                         break
-            
-#             if not surah_number:
-#                 chapter_match = re.search(r'(?:Chapter|Surah)?\s*[\(]?\s*(\d+)\s*[\)]?', response_text)
-                
-#                 all_numbers = re.findall(r'(?:Chapter|Surah|\()\s*(\d+)', response_text)
-                
-#                 for num_str in all_numbers:
-#                     num = int(num_str)
-#                     if 1 <= num <= 114:
-#                         surah_number = num
-#                         logging.info(f"[EXTRACT_AUDIO] Fallback: Found Chapter number {surah_number} in text")
-#                         break
-
-#             if not surah_number:
-#                 logging.warning(f"[EXTRACT_AUDIO] Could not identify Surah. Defaulting to 1.")
-#                 surah_number = 1 
-
-#             extracted_ayah = int(ayah_match.group(1)) if ayah_match else None
-#             logging.info(f"[EXTRACT_AUDIO] Final Result - Surah: {surah_number}, Ayah: {extracted_ayah}")
-
-#             return {
-#                 "has_audio": True,
-#                 "audio_url": urls[0],
-#                 "all_urls": urls,
-#                 "surah_name": best_match_name or surah_name_raw, 
-#                 "surah_number": surah_number, 
-#                 "ayah_number": extracted_ayah,
-#                 "full_response": response_text
-#             }
-
-#     return None
-
-# # verse data
-# def extract_verse_data(response_text: str) -> Optional[dict]:
-#     """
-#     Check if response contains verse data and extract it.
-#     Strips Markdown (*, _) before regex to ensure reliable matching.
-#     """
-#     if not response_text:
-#         return None
-    
-#     clean_text = response_text.replace("*", "").replace("_", "").replace("‑", "-")
-    
-#     verse_indicators = ["surah", "ayah", "verse", "chapter"]
-#     has_indicator = any(indicator in clean_text.lower() for indicator in verse_indicators)
-    
-#     if has_indicator:
-#         import re
-        
-#         has_arabic = bool(re.search(r'[\u0600-\u06FF]', response_text))
-        
-#         surah_match = re.search(r'(?:Surah|surah|Chapter)\s+([^\(\)\d,:]+)', clean_text)
-        
-#         ayah_match = re.search(r'(?:Ayah|ayah|Verse|verse)\s*(\d+)', clean_text)
-        
-#         chapter_num_match = re.search(r'\((\d+)\)', clean_text)
-        
-#         if (surah_match or chapter_num_match) and has_arabic:
-#             surah_number = None
-#             surah_name_raw = surah_match.group(1).strip() if surah_match else "Unknown"
-            
-#             if chapter_num_match:
-#                 surah_number = int(chapter_num_match.group(1))
-            
-#             if not surah_number and surah_match:
-#                 best_match_name = normalize_surah(surah_name_raw, surah_name_english_array)
-#                 if best_match_name:
-#                     for meta in comprehensive_surah_metadata:
-#                         if meta.get("englishName") == best_match_name:
-#                             surah_number = int(meta.get("surah_number"))
-#                             break
-
-#             extracted_ayah = int(ayah_match.group(1)) if ayah_match else 1
-            
-#             if not surah_number:
-#                 logging.warning(f"[EXTRACT_VERSE] Failed to identify Surah from '{surah_name_raw}'.")
-#                 surah_number = 2 if extracted_ayah > 7 else 1
-
-#             logging.info(f"[EXTRACT_VERSE] Extracted: Surah {surah_number}, Ayah {extracted_ayah}")
-
-#             return {
-#                 "has_verse": True,
-#                 "surah_name": surah_name_raw,
-#                 "surah_number": surah_number, 
-#                 "surah_name_ar": "", 
-#                 "ayah_number": extracted_ayah,
-#                 "full_response": response_text,
-#                 "contains_arabic": has_arabic
-#             }
-    
-#     return None
-
-def clean_surah_name(name: str) -> str:
-    """
-    Aggressively cleans Surah names:
-    1. Removes Markdown (*, _)
-    2. Normalizes Unicode (ā -> a, ī -> i)
-    3. Removes hyphens and special chars
-    """
-    if not name: return ""
-    
-    name = name.replace("*", "").replace("_", "")
-    
-    # Unicode Normalization 
-    # "Yā-Sīn" -> "Ya-Sin" and "Ar-Rahmān" -> "Ar-Rahman"
-    normalized = unicodedata.normalize('NFKD', name).encode('ASCII', 'ignore').decode('utf-8')
-    
-    # "Ya-Sin" -> "Ya Sin" (easier for fuzzy match)
-    cleaned = re.sub(r'[^a-zA-Z0-9\s]', ' ', normalized)
-    
-    return cleaned.strip()
-
-def extract_audio_data(response_text: str) -> Optional[dict]:
-    logging.info(f"[EXTRACT_AUDIO] Text start: {response_text[:100]}...")
-    
-    if not response_text:
-        return None
-
-    if "🎧" in response_text or "http" in response_text:
-        import re
-
-        surah_regex = r'(?:Surah|surah)\s+([^\(\)\d,:]+?)(?=\s*(?:\(|\d|,|Ayah|ayah|:))'
-        
-        ayah_match = re.search(r'(?:Ayah|ayah|Verse|verse)[sS]?\s*(\d+)', response_text)
-        
-        url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
-        urls = re.findall(url_pattern, response_text)
-        
-        surah_match = re.search(surah_regex, response_text)
-
-        if urls:
-            surah_name_raw = "Unknown"
-            best_match_name = None
-            surah_number = None
-
-            if surah_match:
-                raw_capture = surah_match.group(1)
-                
-                surah_name_raw = clean_surah_name(raw_capture)
-                logging.info(f"[EXTRACT_AUDIO] Cleaned Name: '{surah_name_raw}'")
-
-                best_match_name = normalize_surah(surah_name_raw, surah_name_english_array)
-                logging.info(f"[EXTRACT_AUDIO] Fuzzy Match: '{surah_name_raw}' -> '{best_match_name}'")
-                
-                if best_match_name:
-                    for meta in comprehensive_surah_metadata:
-                        if meta.get("englishName") == best_match_name:
-                            surah_number = int(meta.get("surah_number")) 
-                            break
-            
-            if not surah_number:
-                lower_raw = surah_name_raw.lower().replace(" ", "")
-                overrides = { 
-                    "yasin": 36, "yas": 36, "ya-sin": 36,
-                    "rahman": 55, "arrahman": 55,
-                    "mulk": 67, "almulk": 67,
-                    "kahf": 18, "alkahf": 18,
-                    "munafiqon": 63, "munafiqun": 63, "munafikun": 63, "al-munaafiqoon": 63,
-                    "aljinn": 72, "jinn": 72, "Al-Jinn": 72
-                }
-                for key, val in overrides.items(): 
-                    if key in lower_raw:
-                        surah_number = val
-                        logging.info(f"[EXTRACT_AUDIO] Manual Override: '{key}' -> {surah_number}")
-                        break
-
-            if not surah_number:
-                chapter_match = re.findall(r'(?:Chapter|Surah|\()\s*(\d+)', response_text)
-                for num_str in chapter_match:
-                    num = int(num_str)
-                    if 1 <= num <= 114:
-                        surah_number = num
-                        logging.info(f"[EXTRACT_AUDIO] Fallback: Found Chapter number {surah_number} in text")
-                        break
-
-            if not surah_number:
-                logging.warning(f"[EXTRACT_AUDIO] Could not identify Surah. Defaulting to 1.")
-                surah_number = 1 
-
-            extracted_ayah = int(ayah_match.group(1)) if ayah_match else None
-            logging.info(f"[EXTRACT_AUDIO] Final Result - Surah: {surah_number}, Ayah: {extracted_ayah}")
-
-            return {
-                "has_audio": True,
-                "audio_url": urls[0],
-                "all_urls": urls,
-                "surah_name": best_match_name or surah_name_raw, 
-                "surah_number": surah_number, 
-                "ayah_number": extracted_ayah,
-                "full_response": response_text
-            }
-
-    return None
-
-def extract_verse_data(response_text: str) -> Optional[dict]:
-    if not response_text:
-        return None
-    
-    clean_text = response_text.replace("*", "").replace("_", "")
-    
-    verse_indicators = ["surah", "ayah", "verse", "chapter"]
-    has_indicator = any(indicator in clean_text.lower() for indicator in verse_indicators)
-    
-    if has_indicator:
-        import re
-        
-        has_arabic = bool(re.search(r'[\u0600-\u06FF]', response_text))
-        
-        surah_match = re.search(r'(?:Surah|surah|Chapter)\s+([^\(\)\d,:]+)', clean_text)
-        
-        ayah_match = re.search(r'(?:Ayah|ayah|Verse|verse)[sS]?\s*(\d+)', clean_text)
-        
-        chapter_num_match = re.search(r'\((\d+)\)', clean_text)
-        
-        if (surah_match or chapter_num_match) and has_arabic:
-            surah_number = None
-            surah_name_raw = "Unknown"
-            
-            if surah_match:
-                surah_name_raw = clean_surah_name(surah_match.group(1))
-            
-            if chapter_num_match:
-                surah_number = int(chapter_num_match.group(1))
-            
-            if not surah_number and surah_name_raw != "Unknown":
-                best_match_name = normalize_surah(surah_name_raw, surah_name_english_array)
-                if best_match_name:
-                    for meta in comprehensive_surah_metadata:
-                        if meta.get("englishName") == best_match_name:
-                            surah_number = int(meta.get("surah_number"))
-                            break
-
-            extracted_ayah = int(ayah_match.group(1)) if ayah_match else 1
-            
-            if not surah_number:
-                lower_raw = surah_name_raw.lower().replace(" ", "")
-                if "yasin" in lower_raw: surah_number = 36
-                elif "rahman" in lower_raw: surah_number = 55
-                elif "mulk" in lower_raw: surah_number = 67
-                else:
-                    logging.warning(f"[EXTRACT_VERSE] Failed to identify Surah from '{surah_name_raw}'.")
-                    surah_number = 2 if extracted_ayah > 7 else 1
-
-            logging.info(f"[EXTRACT_VERSE] Extracted: Surah {surah_number}, Ayah {extracted_ayah}")
-
-            return {
-                "has_verse": True,
-                "surah_name": surah_name_raw,
-                "surah_number": surah_number, 
-                "surah_name_ar": "", 
-                "ayah_number": extracted_ayah,
-                "full_response": response_text,
-                "contains_arabic": has_arabic
-            }
-    
-    return None
-
 # ------------------- OPTIONAL HTTP ENDPOINT -------------------
 class Message(BaseModel):
     role: str
@@ -548,11 +244,31 @@ async def chat(req: ChatRequest, authorization: str | None = Header(None)):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+stt_engine = SpeechToTextEngine()
+
+@app.post("/api/transcribe")
+async def transcribe_audio(file: UploadFile = File(...)):
+    """
+    Receives an audio file (Blob) from frontend, saves it temporarily,
+    and sends it to Fireworks for transcription.
+    """
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_audio:
+            shutil.copyfileobj(file.file, temp_audio)
+            temp_path = temp_audio.name
+
+        text = await stt_engine.transcribe(temp_path)
+
+        os.remove(temp_path)
+
+        return {"text": text}
+
+    except Exception as e:
+        logger.error(f"Transcription endpoint error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-
-
-# Utility: normalize agent names to avoid minor mismatches (STREAMING)
 def _normalize_name(name: Optional[str]) -> Optional[str]:
     if not name:
         return None
@@ -597,9 +313,6 @@ async def websocket_chat(websocket: WebSocket):
     await websocket.accept()
     logger.info("WebSocket connected successfully")
 
-    stt_engine: Optional[SpeechToTextEngine] = None
-    stt_task: Optional[asyncio.Task] = None
-
     supabase_client = None
     try:
         print("Connecting to Database for saving user messages")
@@ -620,9 +333,6 @@ async def websocket_chat(websocket: WebSocket):
     unique_message_ids = set()
     # TTS State
     tts_engine = TextToSpeechEngine()
-    # STT State
-    stt_engine: Optional[SpeechToTextEngine] = None
-    stt_task: Optional[asyncio.Task] = None
 
     # ====== SESSION CODE START ======
     current_session = None
@@ -635,46 +345,11 @@ async def websocket_chat(websocket: WebSocket):
     try:
         while True:
             message = await websocket.receive()
-            if "bytes" in message and message["bytes"]:
-                if stt_engine: 
-                    await stt_engine.process_audio(message["bytes"])
-                continue
 
             if "text" in message:
                 try:
                     data = json.loads(message["text"])
                 except json.JSONDecodeError:
-                    continue
-               
-                if data.get("type") == "start_mic":
-                    logger.info("🎙️ Received Start Mic command")
-                    if stt_engine:
-                        await stt_engine.stop()
-                        print("Cancelling task")
-                        if stt_task: stt_task.cancel()
-                   
-                    stt_engine = SpeechToTextEngine()
-                    await stt_engine.start()
-                   
-                    async def stream_stt():
-                        try:
-                            async for text, is_final in stt_engine.get_text_stream():
-                                response_type = "stt_final" if is_final else "stt_chunk"
-                                await websocket.send_json({"type": response_type, "text": text})
-                        except Exception:
-                            pass
-                    stt_task = asyncio.create_task(stream_stt())
-                    continue
-
-
-                if data.get("type") == "stop_mic":
-                    logger.info("🛑 Received Stop Mic command")
-                    if stt_engine:
-                        await stt_engine.stop()
-                        stt_engine = None
-                    if stt_task:
-                        stt_task.cancel()
-                        stt_task = None
                     continue
 
                 if data.get("type") == "tts_request":
@@ -1056,14 +731,16 @@ async def websocket_chat(websocket: WebSocket):
                 role = data.get("role", "user")
                 message = data.get("content", "")
                 message_id = data.get("message_id")
+                if not message_id:
+                    message_id = str(uuid.uuid4())
                 
                 print("New message received", message)
                 if message_id:
                     unique_message_ids.add(message_id)
                 else:
-                    message_id = generate_short_id()
+                    message_id = str(uuid.uuid4())
                     while message_id in unique_message_ids:
-                        message_id = generate_short_id()
+                        message_id = str(uuid.uuid4())
                     unique_message_ids.add(message_id)
                 # save user message in db
                 try:
@@ -1108,10 +785,10 @@ async def websocket_chat(websocket: WebSocket):
                     response = response['messages'][-1].content
                     # append assistant message to conversation history
                     conversation_history.append(AIMessage(response or ""))
-                    # generate a message id for response message
-                    response_message_id = generate_short_id()
+
+                    response_message_id = str(uuid.uuid4())
                     while response_message_id in unique_message_ids:
-                        response_message_id = generate_short_id()
+                        response_message_id = str(uuid.uuid4())
 
                     unique_message_ids.add(response_message_id)
 
@@ -1154,13 +831,40 @@ async def websocket_chat(websocket: WebSocket):
                                 print("Some error occured while generating title and description", e)
                         else: 
                             print("No conversation string so not generating title and description.")
-                    audio_data = extract_audio_data(response)
-                    logging.info(f"[WS] Audio data extracted: {audio_data is not None}")
+
+                    
+                    # tool logic
+
+                    response_lower = response.lower() if response else ""
+
+                    has_audio_indicators = any(indicator in response_lower for indicator in ["🎧", "http", "play", "listen", "audio", "recite"])
+                    has_verse_indicators = (
+                        any(indicator in response_lower for indicator in ["surah", "ayah", "verse", "chapter"]) 
+                        and bool(re.search(r'[\u0600-\u06FF]', response or ""))
+                    )
+
+                    audio_data = None
+                    verse_data = None
+
+                    if has_audio_indicators:
+                        logging.info("[SMART-CHECK] 🎵 Audio indicators detected - calling extract_audio_data()")
+                        audio_data = extract_audio_data(response)
+                        logging.info(f"[DEBUG] Audio extracted: {audio_data is not None}")
+                    else:
+                        logging.info("[SMART-CHECK] ⏭️ No audio indicators - skipping extraction")
+
+                    if has_verse_indicators and not audio_data: 
+                        logging.info("[SMART-CHECK] 📖 Verse indicators detected - calling extract_verse_data()")
+                        verse_data = extract_verse_data(response)
+                        logging.info(f"[DEBUG] Verse extracted: {verse_data is not None}")
+                    else:
+                        if not has_verse_indicators:
+                            logging.info("[SMART-CHECK] ⏭️ No verse indicators - skipping extraction")
+
+                    logging.info(f"[DEBUG] Audio detected: {audio_data is not None}")
+                    logging.info(f"[DEBUG] Verse detected: {verse_data is not None}")
 
                     if audio_data:
-                        logging.info("[WS] Detected audio request - opening dialog cleanly")
-
-                        
                         await websocket.send_json({
                             "type": "open_audio_dialog",  
                             "parsed_request": {
@@ -1171,35 +875,10 @@ async def websocket_chat(websocket: WebSocket):
                             "available_reciters": get_available_reciters(), 
                             "note": "Audio auto-detected"
                         })
-
-                        
-                        clean_message = f"I have opened the audio player for **Surah {audio_data['surah_name']}**."
-                        if audio_data["ayah_number"]:
-                            clean_message += f" Verse {audio_data['ayah_number']}."
-                        
-                        await websocket.send_json({
-                            "type": "assistance_response",
-                            "message_id": response_message_id,
-                            "content": clean_message,
-                            "final": True
-                        })
-                       
-                        verse_data = None
-
-                    else:
-                        logging.info("[WS] Sending assistance_response")
-                        if response:
-                            await websocket.send_json({
-                                "type": "assistance_response",
-                                "message_id": response_message_id,
-                                "content": response,
-                                "final": True
-                            })
-
-                    verse_data = extract_verse_data(response)
-                    if verse_data:
+                        logging.info("[WS]opening dialog cleanly")
+                      
+                    elif verse_data and isinstance(verse_data, dict) and verse_data.get("surah_number"):
                         logging.info("[WS] Vers - opening Quran Verse ")
-                 
                         await websocket.send_json({
                             "type": "open_verse_dialog",
                             "parsed_request": {
@@ -1208,29 +887,15 @@ async def websocket_chat(websocket: WebSocket):
                             },
                             "original_message": "Quran Verse",
                             "note": None  
-                        })
-
-                       
-                        clean_msg = f"**Surah {verse_data['surah_name']} – Ayah {verse_data['ayah_number']}**"
-                        clean_msg += "\n\nIt has opened in the Quran Reader above — go ahead and read it."
-
+                        })                       
+                   
+                    else:
                         await websocket.send_json({
                             "type": "assistance_response",
                             "message_id": response_message_id,
-                            "content": clean_msg,
+                            "content": response,
                             "final": True
                         })
-                   
-
-                    
-
-                    # if response:
-                    #     await websocket.send_json({
-                    #         "type": "assistance_response",
-                    #         "message_id": response_message_id,
-                    #         "content": response,
-                    #         "final": True
-                    #     })
 
 
                     # === FINAL RESPONSE & CLEANUP ===
@@ -1274,10 +939,6 @@ async def websocket_chat(websocket: WebSocket):
 
     except Exception as e:
         logger.exception("WebSocket error")
-    finally:
-        if stt_engine:
-            await stt_engine.stop()
-            stt_task.cancel()
 
 
 # ------------------- APP RUNNER -------------------

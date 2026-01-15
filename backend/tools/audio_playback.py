@@ -10,6 +10,7 @@ import logging
 from langchain_core.tools import tool
 from tools.utils import normalize_surah
 from data.data import surah_name_english_array, comprehensive_surah_metadata
+from tools.utils import get_surah_id_from_name, clean_surah_name
 
 logger = logging.getLogger(__name__)
 
@@ -161,3 +162,71 @@ def play_quran_audio(query: str) -> str:
     except Exception as e:
         logging.exception(f"[AUDIO_TOOL] Exception: {str(e)}")
         return f"Error fetching audio: {str(e)}"
+    
+def extract_audio_data(response_text: str) -> Optional[dict]:
+    logging.info(f"[EXTRACT_AUDIO] Text start: {response_text[:100]}...")
+    
+    if not response_text:
+        return None
+
+    if "🎧" in response_text or "http" in response_text:
+        import re
+
+        surah_regex = r'(?:Surah|surah)\s+([^\(\)\d,:]+?)(?=\s*(?:\(|\d|,|Ayah|ayah|:))'
+        ayah_match = re.search(r'(?:Ayah|ayah|Verse|verse)[sS]?\s*(\d+)', response_text)
+        
+        url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+        urls = re.findall(url_pattern, response_text)
+        
+        surah_match = re.search(surah_regex, response_text)
+
+        if urls:
+            surah_name_raw = "Unknown"
+            best_match_name = None
+            surah_number = None
+
+            if surah_match:
+                
+                raw_capture = surah_match.group(1)
+                surah_name_raw = clean_surah_name(raw_capture)
+                
+             
+                surah_number = get_surah_id_from_name(surah_name_raw)
+                if surah_number:
+                    logging.info(f"[EXTRACT_AUDIO] Manual Override Match: '{surah_name_raw}' -> {surah_number}")
+
+                if not surah_number:
+                    best_match_name = normalize_surah(surah_name_raw, surah_name_english_array)
+                    if best_match_name:
+                        for meta in comprehensive_surah_metadata:
+                            if meta.get("englishName") == best_match_name:
+                                surah_number = int(meta.get("surah_number")) 
+                                break
+            
+            if not surah_number:
+                chapter_match = re.findall(r'(?:Chapter|Surah|\()\s*(\d+)', response_text)
+                for num_str in chapter_match:
+                    num = int(num_str)
+                    if 1 <= num <= 114:
+                        surah_number = num
+                        logging.info(f"[EXTRACT_AUDIO] Fallback: Found Chapter number {surah_number} in text")
+                        break
+
+            if not surah_number:
+                logging.warning(f"[EXTRACT_AUDIO] Could not identify Surah. Defaulting to 1.")
+                surah_number = 1 
+
+            extracted_ayah = int(ayah_match.group(1)) if ayah_match else None
+            logging.info(f"[EXTRACT_AUDIO] Final Result - Surah: {surah_number}, Ayah: {extracted_ayah}")
+
+            return {
+                "has_audio": True,
+                "audio_url": urls[0],
+                "all_urls": urls,
+                "surah_name": best_match_name or surah_name_raw, 
+                "surah_number": surah_number, 
+                "ayah_number": extracted_ayah,
+                "full_response": response_text
+            }
+
+    return None

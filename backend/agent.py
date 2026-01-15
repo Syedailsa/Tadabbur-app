@@ -262,11 +262,6 @@ child_system_instructions = """
         Use ONLY when the user explicitly requests a *story*  
         (e.g., “tell me the story of Musa”).
 
-        ## Tool Usage Constraint
-        You may call tools at most 2 times per user query. 
-        If you reach the limit, stop and respond: 
-        "I am unable to make further tool calls for this request."
-
         "## PRIORITY RULE: When Uploaded Files & Context are present\n"
         "  • If the user's message contains a section marked 'SYSTEM: The user has attached a file...', "
         "  • you MUST use that provided text to answer the question. "
@@ -433,10 +428,7 @@ standard_system_instructions = """
         Use ONLY when the user explicitly requests a *story*  
         (e.g., “tell me the story of Musa”).
 
-        ## Tool Usage Constraint
-        You may call tools at most 2 times per user query. 
-        If you reach the limit, stop and respond: 
-        "I am unable to make further tool calls for this request."
+        
 
         "## PRIORITY RULE: When Uploaded Files & Context are present\n"
         "  • If the user's message contains a section marked 'SYSTEM: The user has attached a file...', "

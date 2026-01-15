@@ -7,7 +7,7 @@ import rehypeRaw from "rehype-raw";
 import { ReactNode, useContext, useEffect, useRef, useState } from "react";
 import ChatProvider from "../../providers/chatbot/ChatProvider";
 import { useRouter } from "next/navigation";
-// import DownArrow from "./../../icons/arrow-down-head.svg";
+import DownArrow from "../../../icons/arrow-down-head.svg";
 import RegistrationForm, { RegistrationData } from "./../../components/chatbot/UI/ReactForm"; 
 import ProtectedRoute from "@/app/utils/ProtectedRoutes";
 import AttachIcon from "@/icons/attach_icon.svg";
@@ -21,7 +21,7 @@ import {
 import { ModelList } from "@/static/data";
 import BottomOptions from "./../../components/chatbot/UI/BottomOptions";
 import ExtraOptions from "./../../components/chatbot/UI/ExtraOptions";
-// import PromptSuggestion from "./../../icons/prompt_suggestion.svg";
+import PromptSuggestion from "../../../icons/prompt_suggestion.svg";
 import { defaultPrompts } from "@/static/data";
 import ModelBox from "./../../components/chatbot/UI/ModelBox";
 import Controls from "./../../components/chatbot/UI/Controls";
@@ -119,48 +119,45 @@ export default function ChatPage() {
 
   useEffect(() => {
     const handleMicStart = () => {
-
         setIsRecording(true);
-
         tempSpeechRef.current = ""; 
-
-        if (inputRef.current && inputRef.current.innerText.trim().length > 0) {
-            committedTextRef.current = inputRef.current.innerText.trim() + " "; 
-        } else {
-            committedTextRef.current = "";
-        }
     };
 
     const handleMicStop = () => {
-
         setIsRecording(false);
+    };
 
-        const finalText = (committedTextRef.current + tempSpeechRef.current).trim();
+    const handleSTTResult = (e: Event) => {
+        const customEvent = e as CustomEvent;
+        const text = customEvent.detail;
         
-        if (inputRef.current) {
-            inputRef.current.innerText = finalText;
+        if (inputRef.current && text) {
+            const currentText = inputRef.current.innerText.trim();
+            const newText = currentText ? `${currentText} ${text}` : text;
             
+            inputRef.current.innerText = newText;
+            committedTextRef.current = newText;
+
             const range = document.createRange();
             const sel = window.getSelection();
             if(inputRef.current.lastChild) {
-                range.selectNodeContents(inputRef.current);
-                range.collapse(false);
-                sel?.removeAllRanges();
-                sel?.addRange(range);
+                 range.selectNodeContents(inputRef.current);
+                 range.collapse(false);
+                 sel?.removeAllRanges();
+                 sel?.addRange(range);
             }
-            setShowPlaceholder(finalText === ""); 
-            
-            committedTextRef.current = finalText;
-            tempSpeechRef.current = "";
+            setShowPlaceholder(false);
         }
     };
 
     window.addEventListener("tadabbur-mic-start", handleMicStart);
     window.addEventListener("tadabbur-mic-stop", handleMicStop);
+    window.addEventListener("tadabbur-stt-result", handleSTTResult);
 
     return () => {
         window.removeEventListener("tadabbur-mic-start", handleMicStart);
         window.removeEventListener("tadabbur-mic-stop", handleMicStop);
+        window.removeEventListener("tadabbur-stt-result", handleSTTResult);
     };
   }, []);
 
@@ -304,18 +301,6 @@ export default function ChatPage() {
             note: data.note || null,
           });
           setShowAudioDialog(true);
-          break;
-
-        case "stt_chunk":
-          if (inputRef.current && inputRef.current.innerText.trim() === "") {
-             committedTextRef.current = "";
-          }
-          tempSpeechRef.current = data.text;
-          break;
-
-        case "stt_final":
-          committedTextRef.current += data.text + " ";
-          tempSpeechRef.current = ""; 
           break;
 
         case "tts_audio_chunk":
@@ -476,14 +461,13 @@ export default function ChatPage() {
     // generate a message ID for the user message
     let messageID = generateShortId();
     while (messageIDs?.includes(messageID)) {
-      messageID = generateShortId(); // Reassign the same variable
+      messageID = generateShortId();
     }
     setMessageIDs((prev) => {
       return [...(prev || []), messageID];
     });
 
     setMessages((prev: any) => {
-      // prev is already typed correctly from useState
       const updated = [
         ...(prev || []),
         { message_id: messageID, role: "user", content: input, feedback: null },
@@ -612,23 +596,6 @@ export default function ChatPage() {
     );
   };
 
-  // if (!userData) {
-  //   return (
-  //       <RegistrationForm 
-  //           onComplete={(data) => {
-  //               setUserData(data); 
-                
-  //               if (data.age <= 12) {
-  //                   setGreeting(`Assalamu Alaykum ${data.username}! 🌟 I am Tadabbur, your friend!`);
-  //                   setPlaceholder("Tell me a about prophets...");
-  //               } else {
-  //                   setGreeting(`Assalamu Alaykum ${data.username}, I am Tadabbur. How may I assist you with your Quranic studies?`);
-  //               }
-  //           }} 
-  //       />
-  //   );
-  // }
-
   return (
     <ProtectedRoute>
     {!userData ? (
@@ -637,7 +604,7 @@ export default function ChatPage() {
               setUserData(data); 
               if (data.age <= 12) {
                   setGreeting(`Assalamu Alaykum ${data.username}! 🌟 I am Tadabbur, your friend!`);
-                  setPlaceholder("Tell me a about prophets...");
+                  setPlaceholder("Tell me about prophets...");
               } else {
                   setGreeting(`Assalamu Alaykum ${data.username}, I am Tadabbur. How may I assist you with your Quranic studies?`);
               }
@@ -750,9 +717,9 @@ export default function ChatPage() {
                                         >
                                         <div className="w-full flex flex-col px-3 pt-3 pb-6 gap-y-1">
                                             <div className="flex gap-x-3">
-                                            {/* <div className="p-1 h-max border border-black/5 rounded-md">
+                                            <div className="p-1 h-max border border-black/5 rounded-md">
                                                 <PromptSuggestion className="w-5 h-5 fill-current text-green-700" />
-                                            </div> */}
+                                            </div>
                                             <div className="default-prompt-text-box">
                                                 <div className="heading-text">
                                                 <p className="switzer-600 tracking-tight text-black/80">
@@ -944,7 +911,7 @@ export default function ChatPage() {
                             >
                             {loadingMessage}
                             </motion.p>
-                            {/* <motion.div
+                            <motion.div
                             animate={{ x: [-4, 6] }}
                             transition={{
                                 duration: 1,
@@ -954,7 +921,7 @@ export default function ChatPage() {
                             }}
                             >
                             <DownArrow className="mt-[0.32rem] w-4 h-4 -rotate-90" />
-                            </motion.div> */}
+                            </motion.div>
                         </motion.div>
                         )}
                     </AnimatePresence>
