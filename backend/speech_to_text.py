@@ -2,7 +2,7 @@ import os
 import httpx
 import logging
 
-FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY")
+FIREWORKS_API_KEY = os.getenv("FIREWORKS_AI_API_KEY")
 FIREWORKS_URL = "https://audio-prod.api.fireworks.ai/v1/audio/transcriptions"
 
 logger = logging.getLogger(__name__)

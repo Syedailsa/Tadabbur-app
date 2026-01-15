@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import re
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -185,102 +186,6 @@ def group_by_category(system_rules):
 
     return result
 
-
-
-def extract_audio_data(response_text: str) -> Optional[dict]:
-    """
-    Check if response contains audio URLs and extract them
-    Returns: dict with audio info or None
-    """
-    logging.info("[EXTRACT_AUDIO] Checking response for audio data")
-    if not response_text:
-        logging.info("[EXTRACT_AUDIO] Response text is empty")
-        return None
-
-    # Check for audio URL pattern
-    if "🎧" in response_text:
-        logging.info("[EXTRACT_AUDIO] Found audio indicators in response")
-        # Extract first audio URL
-        import re
-        url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
-        urls = re.findall(url_pattern, response_text)
-        logging.info(f"[EXTRACT_AUDIO] Found URLs: {urls}")
-
-        if urls:
-            # Extract surah and ayah info
-            surah_match = re.search(r'Surah ([^\,\n]+)', response_text)
-            ayah_match = re.search(r'Ayah (\d+)', response_text)
-            logging.info(f"[EXTRACT_AUDIO] Surah match: {surah_match.group(1) if surah_match else None}, Ayah match: {ayah_match.group(1) if ayah_match else None}")
-
-            audio_data = {
-                "has_audio": True,
-                "audio_url": urls[0],  # First URL
-                "all_urls": urls,      # All URLs if multiple ayahs
-                "surah_name": surah_match.group(1).strip() if surah_match else "Unknown",
-                "ayah_number": ayah_match.group(1) if ayah_match else None,
-                "full_response": response_text
-            }
-            logging.info(f"[EXTRACT_AUDIO] Extracted audio data: {audio_data}")
-            return audio_data
-
-    logging.info("[EXTRACT_AUDIO] No audio data found")
-    return None
-
-
-
-
-def extract_verse_data(response_text: str) -> Optional[dict]:
-    """
-    Check if response contains verse data and extract it
-    Returns: dict with verse info or None
-    """
-    if not response_text:
-        return None
-    
-    # Check for verse/ayah indicators
-    verse_indicators = ["📖", "🕌", "arabic text:", "surah", "ayah", "verse"]
-    has_indicator = any(indicator in response_text.lower() for indicator in verse_indicators)
-    
-    if has_indicator:
-        import re
-        
-        # Check for Arabic text (Unicode range for Arabic)
-        has_arabic = bool(re.search(r'[\u0600-\u06FF]', response_text))
-        
-        # Extract surah and ayah info
-        surah_match = re.search(r'##\s*📖\s*([^\(]+)\s*\(([^\)]+)\)\s*-\s*Ayah\s*(\d+)', response_text)
-        
-        if surah_match and has_arabic:
-            surah_name = surah_match.group(1).strip()
-            surah_number = next((k for k, v in comprehensive_surah_metadata.items() if v["name_en"] == surah_name), None)
-            return {
-                "has_verse": True,
-                "surah_name": surah_name,
-                "surah_number": surah_number,
-                "surah_name_ar": surah_match.group(2).strip(),
-                "ayah_number": surah_match.group(3),
-                "full_response": response_text,
-                "contains_arabic": has_arabic
-            }
-        
-        # Fallback: simple detection
-        elif has_arabic:
-            surah_simple = re.search(r'(?:Surah|surah)\s+([^\n,]+)', response_text)
-            ayah_simple = re.search(r'(?:Ayah|ayah|Verse|verse)\s+(\d+)', response_text)
-            surah_name = surah_simple.group(1).strip() if surah_simple else "Unknown"
-            surah_number = next((k for k, v in SURAH_METADATA.items() if v["name_en"] == surah_name), None) if surah_name != "Unknown" else None
-
-            return {
-                "has_verse": True,
-                "surah_name": surah_name,
-                "surah_number": surah_number,
-                "surah_name_ar": "",
-                "ayah_number": ayah_simple.group(1) if ayah_simple else None,
-                "full_response": response_text,
-                "contains_arabic": True
-            }
-    
-    return None
 # ------------------- OPTIONAL HTTP ENDPOINT -------------------
 class Message(BaseModel):
     role: str
@@ -1083,8 +988,65 @@ async def websocket_chat(websocket: WebSocket):
                         )
                     )
 
+                    # tool logic
+                    response_lower = response.lower() if response else ""
+
+                    # Pre-check indicators
+                    has_audio_indicators = any(indicator in response_lower for indicator in ["🎧", "http", "play", "listen", "audio", "recite"])
+                    has_verse_indicators = (
+                        any(indicator in response_lower for indicator in ["surah", "ayah", "verse", "chapter"]) 
+                        and bool(re.search(r'[\u0600-\u06FF]', response or ""))
+                    )
+
+                    # Initialize as None
+                    audio_data = None
+                    verse_data = None
+
                     
-                    if response:
+                    if has_audio_indicators:
+                        logging.info("[SMART-CHECK] 🎵 Audio indicators detected - calling extract_audio_data()")
+                        audio_data = extract_audio_data(response)
+                        logging.info(f"[DEBUG] Audio extracted: {audio_data is not None}")
+                    else:
+                        logging.info("[SMART-CHECK] ⏭️ No audio indicators - skipping extraction")
+
+                    if has_verse_indicators and not audio_data: 
+                        logging.info("[SMART-CHECK] 📖 Verse indicators detected - calling extract_verse_data()")
+                        verse_data = extract_verse_data(response)
+                        logging.info(f"[DEBUG] Verse extracted: {verse_data is not None}")
+                    else:
+                        if not has_verse_indicators:
+                            logging.info("[SMART-CHECK] ⏭️ No verse indicators - skipping extraction")
+                   
+                    logging.info(f"[DEBUG] Audio detected: {audio_data is not None}")
+                    logging.info(f"[DEBUG] Verse detected: {verse_data is not None}")
+
+                    if audio_data:
+                        await websocket.send_json({
+                            "type": "open_audio_dialog",  
+                            "parsed_request": {
+                                "surah": audio_data["surah_number"],
+                                "ayah": audio_data["ayah_number"]
+                            },
+                            "original_message": f"Play Surah {audio_data['surah_name']}",
+                            "available_reciters": get_available_reciters(), 
+                            "note": "Audio auto-detected"
+                        })
+                        logging.info("[WS]opening dialog cleanly")
+                      
+                    elif verse_data and isinstance(verse_data, dict) and verse_data.get("surah_number"):
+                        logging.info("[WS] Vers - opening Quran Verse ")
+                        await websocket.send_json({
+                            "type": "open_verse_dialog",
+                            "parsed_request": {
+                                "surah": verse_data["surah_number"],
+                                "ayah": verse_data["ayah_number"]
+                            },
+                            "original_message": "Quran Verse",
+                            "note": None  
+                        }) 
+                    
+                    else:
                         await websocket.send_json({
                             "type": "assistance_response",
                             "message_id": response_message_id,

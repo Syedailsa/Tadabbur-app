@@ -8,10 +8,12 @@ from typing import Optional, Dict, Any
 import re
 import logging
 from langchain_core.tools import tool
-from tools.utils import normalize_surah
+from tools.utils import (
+    normalize_surah,
+    clean_surah_name,
+    get_surah_id_from_name
+)
 from data.data import surah_name_english_array, comprehensive_surah_metadata
-from tools.utils import get_surah_id_from_name, clean_surah_name
-
 logger = logging.getLogger(__name__)
 
 QURAN_API_BASE = "https://api.alquran.cloud/v1"
@@ -162,7 +164,7 @@ def play_quran_audio(query: str) -> str:
     except Exception as e:
         logging.exception(f"[AUDIO_TOOL] Exception: {str(e)}")
         return f"Error fetching audio: {str(e)}"
-    
+
 def extract_audio_data(response_text: str) -> Optional[dict]:
     logging.info(f"[EXTRACT_AUDIO] Text start: {response_text[:100]}...")
     

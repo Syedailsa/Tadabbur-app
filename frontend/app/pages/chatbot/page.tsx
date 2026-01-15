@@ -206,18 +206,6 @@ export default function ChatPage() {
           }
           break;
 
-        case "stt_chunk":
-          if (inputRef.current && inputRef.current.innerText.trim() === "") {
-            committedTextRef.current = "";
-          }
-          tempSpeechRef.current = data.text;
-          break;
-
-        case "stt_final":
-          committedTextRef.current += data.text + " ";
-          tempSpeechRef.current = "";
-          break;
-
         case "tts_audio_chunk":
           const audioBase64 = data.audio;
           const audio_url = data.audio_url;
@@ -228,43 +216,6 @@ export default function ChatPage() {
           // if (audioBase64) {
           //   audioScheduler.scheduleChunk(audioBase64);
           // }
-          break;
-
-        case "audio_response":
-          setAudioRequest({
-            surah: data.surah_name,
-            ayah_number: data.ayah_number,
-            audio_url: data.audio_url,
-            all_urls: data.all_urls,
-            text_response: data.text_response,
-          });
-          setShowAudioDialog(true);
-          const response_message_id = data.message_id;
-          const text_response = data.text_response;
-          // Also add the text message to chat
-
-          // have to review the logic here
-          // setMessages((prev) => {
-          //   if (!prev || prev.length == 0) {
-          //     return prev;
-          //   }
-          //   const updated = [...(prev || [])];
-          //   const lastUserMessage = updated.findLast((m) => m.role === "user");
-
-          //   if (lastUserMessage) {
-          //     lastUserMessage.number_of_responses = 1;
-          //     lastUserMessage.responses.push({
-          //       role: "assistant",
-          //       message_id: response_message_id,
-          //       content: text_response,
-          //       reply_to_message_id: reply_to_message_id,
-          //       feedback: null,
-          //     });
-          //   }
-          //   setStreamingMessageIndex(updated.length - 1);
-          //   return updated;
-          // });
-
           break;
 
         case "session_id":

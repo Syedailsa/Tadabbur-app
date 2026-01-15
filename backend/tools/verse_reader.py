@@ -5,7 +5,13 @@ from typing import Optional, Dict, Any, List
 from langchain_core.tools import tool
 from enum import Enum
 from data.data import comprehensive_surah_metadata
-from tools.utils import get_surah_id_from_name, clean_surah_name
+
+from tools.utils import(
+    normalize_surah,
+    clean_surah_name,
+    get_surah_id_from_name
+)
+from data.data import surah_name_english_array
 
 logger = logging.getLogger(__name__)
 
