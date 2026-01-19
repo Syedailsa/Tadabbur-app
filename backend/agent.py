@@ -16,20 +16,15 @@ from pydantic import BaseModel, Field
 from langchain_core.tools import StructuredTool
 # from langchain_fireworks import ChatFireworks
 from langchain.agents import create_agent
-from openai import OpenAI
 from utils.submit_feedback import submit_feedback
 
 from tools.audio_playback import play_quran_audio
 # from tools.verse_reader import fetch_quran_verse
 from tools.audio_playback import play_quran_audio
 from tools.verse_reader import fetch_quran_verse
+from tools.story_agent_tool import story_agent_tool
 
 load_dotenv()
-
-embed_client = OpenAI(
-    api_key=os.getenv("FIREWORKS_AI_API_KEY"),
-    base_url="https://api.fireworks.ai/inference/v1"
-)
 
 GROQ_API_KEY = os.getenv('GROQ_AI_API_KEY')
 FIREWORKS_API_KEY = os.getenv('FIREWORKS_API_KEY')
@@ -38,11 +33,43 @@ EMBEDDING_MODEL = "fireworks/qwen3-embedding-8b"
 
 FIREWORKS_API_KEY = os.getenv("FIREWORKS_AI_API_KEY")
 
-external_client = AsyncOpenAI(
-    api_key=FIREWORKS_API_KEY,
-    base_url="https://api.fireworks.ai/inference/v1"
-)
+SUPPORTED_CHAT_MODELS = {
+    "Llama 3.1 8B": "llama-3.1-8b-instant",
+    "Llama 3.3 70B": "llama-3.3-70b-versatile",
+    "GPT OSS 120B": "openai/gpt-oss-120b",     
+    "GPT OSS 20B": "openai/gpt-oss-20b",
+}
 
+DEFAULT_CHAT_MODEL = "openai/gpt-oss-120b"
+
+def get_llm(model_key: str = None):
+    """
+    Returns a LangChain ChatGroq instance configured for the specific model.
+    """
+    if not model_key:
+        model_id = DEFAULT_CHAT_MODEL
+    elif model_key in SUPPORTED_CHAT_MODELS:
+        model_id = SUPPORTED_CHAT_MODELS[model_key]
+    elif model_key in SUPPORTED_CHAT_MODELS.values():
+        model_id = model_key
+    else:
+        print(f"⚠️ Model '{model_key}' not found. Falling back to default.")
+        model_id = DEFAULT_CHAT_MODEL
+
+    print(f"Initializing Groq LLM: {model_id}")
+
+    try:
+        llm = ChatGroq(
+            model=model_id,
+            api_key=GROQ_API_KEY,
+            temperature=0.1,
+            max_tokens=None, 
+            # model_kwargs={"top_p": 0.9} 
+        )
+        return llm
+    except Exception as e:
+        print(f"❌ Error initializing Groq LLM for {model_id}: {e}")
+        raise e
 
 class TableData(BaseModel):
     headers: List[str] = Field(..., description="Column headers for the table")
@@ -163,13 +190,16 @@ child_system_instructions = """
         1. **For Complex Queries** (stories, tafsir, comparisons, specific knowledge):
           - You MUST call the 'Submit_Quran_Response' tool with the final answer.
 
-        2. **For Simple Greetings & Short Interactions** (e.g., 'hi', 'thanks' etc'):
+        2. **For Complex Queries** (stories, tafsir, comparisons, specific knowledge):
+          - You MUST return a valid JSON object 
+        
+        3. **For Simple Greetings & Short Interactions** (e.g., 'hi', 'thanks' etc'):
           - Do NOT use JSON. Just reply with a warm, plain text markdown response.
 
-        ## Content Rules (When using JSON):
-        - Use 'sections' to break down long stories or explanations.
-        - Use 'table' fields ONLY when comparing data.
-        - Keep the 'intro' concise.
+        4. **Content Rules** (When using JSON):
+          - Use 'sections' to break down long stories or explanations.
+          - Use 'table' fields ONLY when comparing data or formatting similar content.
+          - Keep the 'intro' concise.
 
         ### Important Guidelines
         1. When calling `searchAsbabNuzul`, pass **only the arguments explicitly mentioned by the user**. Leave all others as `None`.  
@@ -263,9 +293,14 @@ child_system_instructions = """
             }}
         ]
 
-        ### • Quran_Story_Teller
+        ### • story_agent_tool
         Use ONLY when the user explicitly requests a *story*  
         (e.g., “tell me the story of Musa”).
+
+        ### Example Queries
+        1. "Tell me the story of Adam."
+        2. "What happened to Noah's Ark?"
+        3. "Explain the story of Yusuf and his brothers."
 
         "## PRIORITY RULE: When Uploaded Files & Context are present\n"
         "  • If the user's message contains a section marked 'SYSTEM: The user has attached a file...', "
@@ -329,8 +364,16 @@ standard_system_instructions = """
         1. **For Complex Queries** (stories, tafsir, comparisons, specific knowledge):
           - You MUST call the 'Submit_Quran_Response' tool with the final answer.
 
-        2. **For Simple Greetings & Short Interactions** (e.g., 'hi', 'thanks' etc'):
+        2. **For Complex Queries** (stories, tafsir, comparisons, specific knowledge):
+          - You MUST return a valid JSON object 
+        
+        3. **For Simple Greetings & Short Interactions** (e.g., 'hi', 'thanks' etc'):
           - Do NOT use JSON. Just reply with a warm, plain text markdown response.
+
+        4. **Content Rules** (When using JSON):
+          - Use 'sections' to break down long stories or explanations.
+          - Use 'table' fields ONLY when comparing data or formatting similar content.
+          - Keep the 'intro' concise.
 
         ## Content Rules (When using JSON):
         - Use 'sections' to break down long stories or explanations.
@@ -429,11 +472,14 @@ standard_system_instructions = """
             }}
         ]
 
-        ### • Quran_Story_Teller
+        ### • story_agent_tool
         Use ONLY when the user explicitly requests a *story*  
         (e.g., “tell me the story of Musa”).
 
-        
+        ### Example Queries
+        1. "Tell me the story of Adam."
+        2. "What happened to Noah's Ark?"
+        3. "Explain the story of Yusuf and his brothers."
 
         "## PRIORITY RULE: When Uploaded Files & Context are present\n"
         "  • If the user's message contains a section marked 'SYSTEM: The user has attached a file...', "
@@ -449,28 +495,19 @@ standard_system_instructions = """
 
         **Default language:** English (unless the user requests another)."""
 
-try:
-    model = ChatGroq(
-        api_key=GROQ_API_KEY,
-        model="openai/gpt-oss-120b",
-        temperature=0,
-    )
-except Exception as e:
-    print("Error initializing ChatFireworks model:", e)
-    raise e
-
-def get_agent_by_user_age( age: int , username: str ):
+def get_agent_by_user_age( age: int , username: str, model_key: str = None ):
     """
     Returns a configured agent based on the user's age and name.
     """
+    llm = get_llm(model_key)
     user_context_str = f"You are chatting with **{username}**, who is **{age} years old**."
     
     if age <= 12:
         selected_template = child_system_instructions 
-        print(f"\n--- AGENT INITIALIZED: Child Mode | User: {username}, Age: {age} ---\n")
+        print(f"\n--- AGENT INITIALIZED: Child Mode | User: {username}, Age: {age} | Model: {llm.model_name} ---\n")
     else:
         selected_template = standard_system_instructions 
-        print(f"\n--- AGENT INITIALIZED: Standard Mode | User: {username}, Age: {age} ---\n")
+        print(f"\n--- AGENT INITIALIZED: Standard Mode | User: {username}, Age: {age} | Model: {llm.model_name} ---\n")
     
     formatted_system_prompt = selected_template.format(
         QuranMetaData=QuranMetaData, 
@@ -481,9 +518,9 @@ def get_agent_by_user_age( age: int , username: str ):
 
     return create_agent(
         name="QuranTadabburAgent",
-        model=model,
+        model=llm,
         system_prompt=formatted_system_prompt,
-        tools=[Search_Quran_By_filters, searchAsbabNuzul, final_response_tool, play_quran_audio, fetch_quran_verse],
+        tools=[Search_Quran_By_filters, searchAsbabNuzul, final_response_tool, play_quran_audio, fetch_quran_verse, story_agent_tool],
     )
 
 main_agent = get_agent_by_user_age(age=25, username="DefaultUser")  

@@ -120,7 +120,7 @@ async def create_tables():
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS user_images (
                 id SERIAL PRIMARY KEY,
-                user_id TEXT NOT NULL,
+                user_id UUID NOT NULL,
                 image_name TEXT NOT NULL,
                 image_data BYTEA NOT NULL,
                 content_type TEXT NOT NULL,

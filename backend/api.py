@@ -15,9 +15,10 @@ from models import *
 
 from utils.authentication import (
     hash_password, verify_password, create_access_token,
-    verify_google_token, generate_user_id, generate_notification_id,
+    verify_google_token, generate_notification_id,
     generate_bookmark_id, generate_feedback_id, get_current_user
 )
+from utils.generate_uuid import generate_uuid
 from database import get_db_connection
 
 # Configure logging
@@ -54,7 +55,7 @@ async def signup(req: SignupRequest):
             raise HTTPException(status_code=400, detail="Email or firstname already registered")
 
         # Create user
-        user_id = generate_user_id()
+        user_id = generate_uuid()
         pwd_hash = hash_password(req.password)
 
         await conn.execute("""
@@ -134,7 +135,7 @@ async def google_signin(req: GoogleSignInRequest):
         
         if not user:
             # Create new user
-            user_id = generate_user_id()
+            user_id = generate_uuid()
             username = google_data['name'] or google_data['email'].split('@')[0]
             
             # Ensure unique firstname

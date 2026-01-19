@@ -106,6 +106,10 @@ const BottomOptions = () => {
 
     try {
         console.log("📤 Uploading audio for transcription...");
+        
+        // 1. Dispatch event to tell ChatPage to show loading state
+        window.dispatchEvent(new Event("tadabbur-transcription-start"));
+
         const response = await fetch("http://localhost:8000/api/transcribe", {
             method: "POST",
             body: formData,
@@ -120,10 +124,13 @@ const BottomOptions = () => {
             console.log("✅ Transcription Received:", text);
             const event = new CustomEvent("tadabbur-stt-result", { detail: text });
             window.dispatchEvent(event);
+            // Note: ChatPage will turn off loading when it receives "tadabbur-stt-result"
         }
 
     } catch (error) {
         console.error("Transcription Error:", error);
+        // 2. Dispatch error event so ChatPage stops loading
+        window.dispatchEvent(new Event("tadabbur-transcription-error"));
         alert("Failed to transcribe audio.");
     }
   };

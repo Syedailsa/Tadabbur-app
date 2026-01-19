@@ -1,13 +1,14 @@
 import os
 import json
 import asyncio
+import pprint
 import re
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
-import asyncio # --- ADDED: Required for background tasks
+import asyncio 
 from langchain.messages import HumanMessage, AIMessage, SystemMessage
 from agents import Runner
 from agents import InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered
@@ -71,7 +72,6 @@ from database import init_db_pool, close_db_pool, create_tables
 from fastapi.security import HTTPBearer
 from fastapi.openapi.utils import get_openapi
 import secrets
-# --- IMPORT NEW STT CLASS ---
 from speech_to_text import SpeechToTextEngine
 from text_to_speech import TextToSpeechEngine
 from config.db import get_supabase_client
@@ -92,6 +92,37 @@ logger = logging.getLogger(__name__)
 # ------------------- APP CONFIG -------------------
 app = FastAPI(title="Tadabbur Agent API")
 
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title="Tadabbur Agent API",
+        version="1.0.0",
+        description="Backend API for Quranic Tadabbur Agent Application",
+        routes=app.routes,
+    )
+    openapi_schema["components"]["securitySchemes"] = {
+        "bearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT"
+        }
+    }
+    openapi_schema["security"] = [{"bearerAuth": []}]
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+app.openapi = custom_openapi
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database pool on startup"""
+    await init_db_pool()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close database pool on shutdown"""
+    await close_db_pool()
+
 app.include_router(auth_router)
 app.include_router(password_reset_router)
 app.include_router(notif_router)
@@ -111,16 +142,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database pool on startup"""
-    await init_db_pool()
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Close database pool on shutdown"""
-    await close_db_pool()
-
 session_file_context = {}
 API_KEY = os.getenv("CHAT_API_KEY")
 # ------------------- OPTIONAL HTTP ENDPOINT -------------------
@@ -129,6 +150,7 @@ DB_PATH = "chat.db"
 supabase_client = None
 TADABBUR_PROJECT_URL = os.getenv("TADABBUR_PROJECT_URL") 
 TADABBUR_API_KEY = os.getenv("TADABBUR_API_KEY")
+
 def generate_session_id() -> str:
     """Generate unique session ID: sess_ + 12 hex chars"""
     return f"sess_{secrets.token_hex(6)}"
@@ -305,20 +327,6 @@ def _map_name_to_agent(name: Optional[str]):
     # fallback modules
     if _normalize_name(getattr(story_module, "story_agent", None).name if getattr(story_module, "story_agent", None) else None) == normalized:
         return getattr(story_module, "story_agent", None)
-    # try Tafsir agent
-    try:
-        taf = getattr(agent_module, "Tafsir_Agent", None) or getattr(agent_module, "Tafsir_Agent", None)
-    except Exception:
-        taf = None
-    # If tafser agent exists in module scope under tafseer_agent module
-    import tafseer_agent as taf_mod
-    try:
-        if _normalize_name(getattr(taf_mod, "Tafsir_Agent", None).name if getattr(taf_mod, "Tafsir_Agent", None) else None) == normalized:
-            return getattr(taf_mod, "Tafsir_Agent", None)
-    except Exception:
-        pass
-    return None
-
 
 async def stream_tts_audio(tts_engine, clean_text, websocket, message_id_ref):
     async for audio_chunk in tts_engine.stream_audio(clean_text):
@@ -656,35 +664,52 @@ async def websocket_chat(websocket: WebSocket):
                 continue
 
             # ============================= MODEL SELECTION HANDLER =============================
-            # if data.get("type") == "model-selection":
-            #     requested_model = data.get("model")  # e.g., "kimi-k2-instruct-0905", "deepseek-v3p1-terminus"
+            if data.get("type") == "model-selection":
+                requested_model = data.get("model")
+                
+                is_valid = (requested_model in agent_module.SUPPORTED_CHAT_MODELS or 
+                            requested_model in agent_module.SUPPORTED_CHAT_MODELS.values())
 
-            #     # Validate against supported models
-            #     if requested_model in agent_module.SUPPORTED_MODELS:
-            #         session_model_key = requested_model
-            #         model_info = agent_module.SUPPORTED_MODELS[requested_model]
+                if is_valid:
+                    session_model_key = requested_model
+                    
+                    display_name = requested_model
+                    if requested_model in agent_module.SUPPORTED_CHAT_MODELS:
+                        display_name = requested_model 
+                    
+                    if current_agent_name == "QuranTadabburAgent":
+                        print(f"🔄 Hot-swapping Main Agent to model: {session_model_key}")
+                        active_agent = agent_module.get_agent_by_user_age(
+                            age=25, 
+                            username="DefaultUser", 
+                            model_key=session_model_key
+                        )
+                    else:
+                        print(f"⚠️ Model pref saved as {session_model_key}, but not applied immediately because user is in {current_agent_name} mode.")
 
-
-            #         await websocket.send_json({
-            #             "type": "model-selection",
-            #             "status": "acknowledged",
-            #             "model": requested_model,
-            #             "display_name": model_info["name"]
-            #         })
-            #         await websocket.send_json({
-            #             "type": "loading_message",
-            #             "content": f"Switched to **{model_info['name']}**"
-            #         })
-            #         logger.info(f"Model switched to: {requested_model} ({model_info['name']})")
-            #     else:
-            #         await websocket.send_json({
-            #             "type": "model-selection",
-            #             "status": "not-acknowledged",
-            #             "model": requested_model,
-            #             "error": "This model is not supported.",
-            #             "available": list(agent_module.SUPPORTED_MODELS.keys())
-            #         })
-            #     continue  # Skip to next message
+                    await websocket.send_json({
+                        "type": "model-selection",
+                        "status": "acknowledged",
+                        "model": requested_model,
+                        "display_name": display_name
+                    })
+                    
+                    await websocket.send_json({
+                        "type": "loading_message",
+                        "content": f"Switched to **{display_name}**"
+                    })
+                    
+                    logger.info(f"Model preference updated to: {display_name}")
+                
+                else:
+                    await websocket.send_json({
+                        "type": "model-selection",
+                        "status": "not-acknowledged",
+                        "model": requested_model,
+                        "error": "This model is not supported.",
+                        "available": list(agent_module.SUPPORTED_CHAT_MODELS.keys())
+                    })
+                continue  
             
             # === AGENT SWITCH ===
             if data.get("type") == "agent":
@@ -696,8 +721,8 @@ async def websocket_chat(websocket: WebSocket):
                     current_agent_name = getattr(mapped, "name", agent_name)
                 elif agent_name == "story-telling":
                     active_agent = story_module.story_agent
-                    # active_config = getattr(story_module, "config", None)
-                    # current_agent_name = "Quran Storyteller"
+                    active_config = getattr(story_module, "config", None)
+                    current_agent_name = "Quran Storyteller"
                 else:
                     active_agent = agent_module.agent
                     # active_config = getattr(agent_module, "config", None)
