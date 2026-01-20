@@ -12,6 +12,8 @@ import UndoArrow from "../../../icons/refresh.svg";
 import DownArrow from ".../icons/arrow-down-head.svg";
 import SimpleAudioDialog from "../../components/chatbot/UI/AudioDialogBox";
 import { AssistantMessage } from "@/app/components/chatbot/interfaces/ChatMessage";
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { dracula } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import {
   motion,
   easeInOut,
@@ -27,7 +29,7 @@ import { audioScheduler } from "../../utils/AudioScheduler";
 import { ModelList } from "@/static/data";
 import BottomOptions from "../../components/chatbot/UI/BottomOptions";
 import ExtraOptions from "../../components/chatbot/UI/ExtraOptions";
-import PromptSuggestion from ".../icons/prompt_suggestion.svg";
+// import PromptSuggestion from ".../icons/prompt_suggestion.svg";
 import { defaultPrompts } from "@/static/data";
 import ModelBox from "../../components/chatbot/UI/ModelBox";
 import Controls from "../../components/chatbot/UI/Controls";
@@ -49,6 +51,7 @@ export default function ChatPage() {
   const inputRef = useRef<HTMLDivElement | null>(null);
   const [showPlaceholder, setShowPlaceholder] = useState<boolean | null>(true);
   const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [greeting, setGreeting] = useState<string | null>(
     "Assalam O Alaykum, I am Tadabbur, how may I help you today?"
   );
@@ -82,6 +85,9 @@ export default function ChatPage() {
     useState<boolean | null>(true);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
 
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadResponse, setUploadResponse] = useState<any>(null);
+
   const currentMessageIDRef = useRef<string | null>(null);
   const [reportedMessageIDs, setReportedMessageIDs] = useState<string[] | null>(
     []
@@ -90,6 +96,19 @@ export default function ChatPage() {
 
   const oldMessagesRef = useRef<AssistantMessage[]>([]);
   const controls = useAnimationControls();
+
+  function preprocessContent(content: string) {
+    if (!content) return "";
+    let processed = content;
+
+    processed = processed.replace(/\\n/g, '\n');
+    processed = processed.replace(/([^\n])\s*(#{1,6}\s)/g, '$1\n\n$2');
+    processed = processed.replace(/(\|[ -]*\|)\s*(?=\|)/g, '$1\n');
+    processed = processed.replace(/([^\n])\s*(-\s)/g, '$1\n$2');
+    processed = processed.replace(/([^\n])\s*(\d+\.\s)/g, '$1\n$2');
+
+    return processed;
+  }
 
   function chunkText(text: string, size = 4) {
     const words = text.split(/\s+/);
@@ -103,17 +122,44 @@ export default function ChatPage() {
 
   useEffect(() => {
     const handleMicStart = () => {
+<<<<<<< HEAD
       setIsRecording(true);
       tempSpeechRef.current = "";
+=======
+        setIsRecording(true);
+        setIsTranscribing(false);
+        tempSpeechRef.current = ""; 
+>>>>>>> f0b8f84efca08b3cc7af035e98bcd41eff8e67e8
     };
 
     const handleMicStop = () => {
       setIsRecording(false);
     };
 
+    const handleTranscriptionStart = () => {
+        setIsTranscribing(true);
+    };
+
+    const handleTranscriptionEnd = () => {
+        setIsTranscribing(false);
+    };
+
     const handleSTTResult = (e: Event) => {
+<<<<<<< HEAD
       const customEvent = e as CustomEvent;
       const text = customEvent.detail;
+=======
+        setIsTranscribing(false);
+        const customEvent = e as CustomEvent;
+        const text = customEvent.detail;
+        
+        if (inputRef.current && text) {
+            const currentText = inputRef.current.innerText.trim();
+            const newText = currentText ? `${currentText} ${text}` : text;
+            
+            inputRef.current.innerText = newText;
+            committedTextRef.current = newText;
+>>>>>>> f0b8f84efca08b3cc7af035e98bcd41eff8e67e8
 
       if (inputRef.current && text) {
         const currentText = inputRef.current.innerText.trim();
@@ -136,14 +182,24 @@ export default function ChatPage() {
 
     window.addEventListener("tadabbur-mic-start", handleMicStart);
     window.addEventListener("tadabbur-mic-stop", handleMicStop);
+    window.addEventListener("tadabbur-transcription-start", handleTranscriptionStart);
+    window.addEventListener("tadabbur-transcription-error", handleTranscriptionEnd); 
     window.addEventListener("tadabbur-stt-result", handleSTTResult);
 
     return () => {
+<<<<<<< HEAD
       window.removeEventListener("tadabbur-mic-start", handleMicStart);
       window.removeEventListener("tadabbur-mic-stop", handleMicStop);
       window.removeEventListener("tadabbur-stt-result", handleSTTResult);
+=======
+        window.removeEventListener("tadabbur-mic-start", handleMicStart);
+        window.removeEventListener("tadabbur-mic-stop", handleMicStop);
+        window.removeEventListener("tadabbur-transcription-start", handleTranscriptionStart);
+        window.removeEventListener("tadabbur-transcription-error", handleTranscriptionEnd);
+        window.removeEventListener("tadabbur-stt-result", handleSTTResult);
+>>>>>>> f0b8f84efca08b3cc7af035e98bcd41eff8e67e8
     };
-  }, []);
+}, []);
   // In your element
   useEffect(() => {
     const websocket = new WebSocket("ws://localhost:8000/ws/chat");
@@ -330,49 +386,25 @@ export default function ChatPage() {
 
           setLoading(false);
           setLoadingMessage(null);
-          const chunk_array = chunkText(reply, 4); // 4 words per chunk
+          const tokens = reply.split(/(\s+)/); 
+
           (async () => {
-            for (const chunk of chunk_array) {
-              // smaller delay → faster
+            for (let i = 0; i < tokens.length; i += 4) {
+              const chunk = tokens.slice(i, i + 4).join("");
+              
               await new Promise((resolve) => setTimeout(resolve, 2));
 
               setMessages((prev) => {
-                if (!prev || prev.length === 0) {
-                  return prev;
-                }
-                const updated = [...(prev || [])];
+                if (!prev || prev.length === 0) return prev;
+                const updated = [...prev];
                 const streamIndex = streamingMessageIndex ?? updated.length - 1;
+                
                 if (streamIndex >= 0 && streamIndex < updated.length) {
-                  let lastAssistantMessageIdx = 0;
-                  if (updated[streamIndex].number_of_responses) {
-                    lastAssistantMessageIdx =
-                      updated[streamIndex].number_of_responses - 1;
-                  }
-
-                  updated[streamIndex].responses[
-                    lastAssistantMessageIdx
-                  ].content =
-                    (updated[streamIndex].responses[lastAssistantMessageIdx]
-                      .content || "") +
-                    " " +
-                    chunk;
-                } else {
-                  // will have to review the logic here
-                  // maybe the fallback logic here is dead/unused each time
-                  const lastUserMessage = updated.findLast(
-                    (m) => m.role === "user"
-                  );
-
-                  if (lastUserMessage) {
-                    lastUserMessage.number_of_responses = 1;
-                    lastUserMessage.responses.push({
-                      message_id: message_id,
-                      role: "assistant",
-                      reply_to_message_id: reply_to_message_id,
-                      content: chunk,
-                      feedback: null,
-                    });
-                  }
+                  const lastMsg = updated[streamIndex];
+                  const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
+                  
+                  updated[streamIndex].responses[lastResIdx].content = 
+                    (updated[streamIndex].responses[lastResIdx].content || "") + chunk;
                 }
                 return updated;
               });
@@ -429,7 +461,8 @@ export default function ChatPage() {
     };
   }, []);
 
-  const uploadFile = async (file: File) => {
+  const performBackgroundUpload = async (file: File) => {
+    setIsUploading(true);
     const formData = new FormData();
     formData.append("file", file);
     formData.append("session_id", sessionID || "default_session");
@@ -442,27 +475,28 @@ export default function ChatPage() {
 
       if (!response.ok) {
         const err = await response.json();
-        alert(`Upload failed: ${err.detail}`);
+        console.error(`Upload failed: ${err.detail}`);
+        setAttachedFile(null); // Clear file on error
+        setIsUploading(false);
         return;
       }
 
       const data = await response.json();
-
-      // Add the file message to the chat UI immediately
-      setMessages((prev: any) => [
-        ...(prev || []),
-        {
-          message_id: data.message_id,
-          role: "user",
-          content: `📂 Attached file: ${file.name}`,
-          feedback: null,
-        },
-      ]);
+      // Store the data to be used when user hits Enter
+      setUploadResponse(data); 
     } catch (error) {
       console.error("Upload error:", error);
-      alert("Failed to upload file.");
+      setAttachedFile(null);
+    } finally {
+      setIsUploading(false);
     }
   };
+
+  useEffect(() => {
+    if (attachedFile && !uploadResponse && !isUploading) {
+      performBackgroundUpload(attachedFile);
+    }
+  }, [attachedFile, uploadResponse, isUploading]);
 
   const ask = async (
     input: string,
@@ -569,10 +603,27 @@ export default function ChatPage() {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
 
-      // Handle File Upload
       if (attachedFile) {
-        await uploadFile(attachedFile);
-        setAttachedFile(null); // Clear the file after sending
+        if (isUploading) {
+          alert("File is still uploading, please wait a moment...");
+          return;
+        }
+
+        if (uploadResponse) {
+          setMessages((prev: any) => [
+            ...(prev || []),
+            {
+              message_id: uploadResponse.message_id, // Use ID from the background upload
+              role: "user",
+              content: `📂 Attached file: ${attachedFile.name}`,
+              feedback: null,
+            },
+          ]);
+          
+          // Reset file states
+          setAttachedFile(null);
+          setUploadResponse(null);
+        }
       }
 
       const input = inputRef.current?.innerText;
@@ -764,9 +815,9 @@ export default function ChatPage() {
                                     >
                                       <div className="w-full flex flex-col px-3 pt-3 pb-6 gap-y-1">
                                         <div className="flex gap-x-3">
-                                          <div className="p-1 h-max border border-black/5 rounded-md">
-                                            {/* <PromptSuggestion className="w-5 h-5 fill-current text-green-700" /> */}
-                                          </div>
+                                          {/* <div className="p-1 h-max border border-black/5 rounded-md">
+                                            <PromptSuggestion className="w-5 h-5 fill-current text-green-700" />
+                                          </div> */}
                                           <div className="default-prompt-text-box">
                                             <div className="heading-text">
                                               <p className="switzer-600 tracking-tight text-black/80">
@@ -931,9 +982,52 @@ export default function ChatPage() {
                                         {...props}
                                       />
                                     ),
+                                    table: ({ node, ...props }) => (
+                                      <div className="overflow-x-auto my-4 border rounded-lg shadow-sm">
+                                        <table className="min-w-full divide-y divide-gray-200" {...props} />
+                                      </div>
+                                    ),
+                                    thead: ({ node, ...props }) => (
+                                      <thead className="bg-gray-50" {...props} />
+                                    ),
+                                    tbody: ({ node, ...props }) => (
+                                      <tbody className="bg-white divide-y divide-gray-200" {...props} />
+                                    ),
+                                    tr: ({ node, ...props }) => (
+                                      <tr className="hover:bg-gray-50" {...props} />
+                                    ),
+                                    th: ({ node, ...props }) => (
+                                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b" {...props} />
+                                    ),
+                                    td: ({ node, ...props }) => (
+                                      <td className="px-4 py-3 text-sm text-gray-700 border-b whitespace-pre-wrap" {...props} />
+                                    ),
+
+                                    code({ node, inline, className, children, ...props }: any) {
+                                      const match = /language-(\w+)/.exec(className || '');
+                                      if (!inline && match) {
+                                        return (
+                                          <SyntaxHighlighter
+                                            style={dracula}
+                                            language={match[1]}
+                                            PreTag="div"
+                                            className="rounded-md shadow-sm my-4"
+                                            {...props}
+                                          >
+                                            {String(children).replace(/\n$/, '')}
+                                          </SyntaxHighlighter>
+                                        );
+                                      } else {
+                                        return (
+                                          <code className="bg-gray-100 text-red-500 px-1.5 py-0.5 rounded text-sm font-mono" {...props}>
+                                            {children}
+                                          </code>
+                                        );
+                                      }
+                                    },
                                   }}
                                 >
-                                  {ai_msg.content}
+                                  {preprocessContent(ai_msg.content)}
                                 </ReactMarkdown>
                               </div>
                               {/* Place it here, inside the div */}
@@ -1027,6 +1121,22 @@ export default function ChatPage() {
                     <WaveForm />
                   </div>
                 )}
+                {/* NEW: Transcribing Loading State in place of Waveform */}
+                {!isRecording && isTranscribing && (
+                  <motion.div
+                      key="transcribing"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      className="absolute bottom-20 left-0 w-full px-4 z-20 flex justify-center"
+                  >
+                      <div className="bg-white/90 backdrop-blur-sm border border-black/5 shadow-lg rounded-full px-5 py-2.5 flex items-center gap-x-3">
+                        {/* Spinner */}
+                        <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin"></div>
+                        <p className="switzer-500 text-sm text-black/80">Transcribing audio...</p>
+                      </div>
+                  </motion.div>
+                )}
               </AnimatePresence>
               <div
                 className="flex flex-col relative border border-black/10 px-3 py-2 rounded-lg h-40 shadow-md bg-white
@@ -1039,7 +1149,11 @@ export default function ChatPage() {
                       {attachedFile.name}
                     </span>
                     <button
-                      onClick={() => setAttachedFile(null)}
+                      onClick={() => {
+                        setAttachedFile(null);
+                        setUploadResponse(null);
+                        setIsUploading(false);
+                      }}
                       className="text-gray-400 hover:text-red-500 font-bold px-1"
                     >
                       ✕

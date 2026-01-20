@@ -1,22 +1,22 @@
 const ModelList = [
   {
-    model_name: "kimi-k2-instruct-0905",
-    provider: "Qwen",
+    model_name: "Llama 3.1 8B",
+    provider: "Meta",
     parameters: "235B",
     isNew: true,
     background:
       "bg-linear-to-br rounded-lg from-[#FFB347] via-[#FFCC33] to-[#FFB347]", // Warm Amber (light gold)
   },
   {
-    model_name: "deepseek-v3p1-terminus",
-    provider: "DeepSeek",
+    model_name: "Llama 3.3 70B",
+    provider: "Meta",
     parameters: "120B",
     isNew: false,
     background:
       "bg-linear-to-br rounded-lg from-[#6DD5FA] via-[#2980B9] to-[#6DD5FA]", // Sky Blue
   },
   {
-    model_name: "gpt-oss-120b",
+    model_name: "GPT OSS 120B",
     provider: "OpenAI",
     parameters: "120B",
     isNew: false,
@@ -24,21 +24,21 @@ const ModelList = [
       "bg-linear-to-br rounded-lg from-[#B993D6] via-[#8CA6DB] to-[#B993D6]", // Soft Lavender Blue
   },
   {
-    model_name: "gpt-oss-20b",
+    model_name: "GPT OSS 20B",
     provider: "OpenAI",
     parameters: "20B",
     isNew: false,
     background:
       "bg-linear-to-br rounded-lg from-[#A8EDEA] via-[#FED6E3] to-[#A8EDEA]", // Mint Rose
   },
-  {
-    model_name: "qwen3-235b-a22b-instruct",
-    provider: "Qwen",
-    parameters: "235B",
-    isNew: true,
-    background:
-      "bg-linear-to-br rounded-lg from-[#FBD786] via-[#C6FFDD] to-[#FBD786]", // Soft Sunrise
-  },
+  // {
+  //   model_name: "Llama Guard 4 12B",
+  //   provider: "Meta",
+  //   parameters: "235B",
+  //   isNew: true,
+  //   background:
+  //     "bg-linear-to-br rounded-lg from-[#FBD786] via-[#C6FFDD] to-[#FBD786]", // Soft Sunrise
+  // },
 ];
 
 const chatMessages: { role: "user" | "assistant"; content: string }[] = [
