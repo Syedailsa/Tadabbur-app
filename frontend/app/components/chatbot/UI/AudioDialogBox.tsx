@@ -37,7 +37,6 @@ export default function QuranAudioDialog({
 
   useEffect(() => {
     if (isOpen && wsRef.current) {
-      
       // Listen for audio responses
       const handleMessage = (event: MessageEvent) => {
         const data = JSON.parse(event.data);
@@ -90,10 +89,7 @@ export default function QuranAudioDialog({
 
   const handleAudioEnd = () => {
     // Auto-play next ayah
-    if (
-      audioData?.ayahs &&
-      currentAyahIndex < audioData.ayahs.length - 1
-    ) {
+    if (audioData?.ayahs && currentAyahIndex < audioData.ayahs.length - 1) {
       playAyah(currentAyahIndex + 1);
     }
   };
@@ -103,7 +99,10 @@ export default function QuranAudioDialog({
       if (audioData.type === "single_ayah") {
         audioRef.current.src = audioData.ayah.audio_url;
         audioRef.current.play();
-      } else if (audioData.type === "complete_surah" && audioData.ayahs?.length > 0) {
+      } else if (
+        audioData.type === "complete_surah" &&
+        audioData.ayahs?.length > 0
+      ) {
         playAyah(0);
       }
     }
@@ -154,7 +153,8 @@ export default function QuranAudioDialog({
             {/* Surah Info */}
             <div className="mb-4">
               <p className="text-lg">
-                <span className="font-semibold">Surah:</span> {parsedRequest.surah}
+                <span className="font-semibold">Surah:</span>{" "}
+                {parsedRequest.surah}
                 {parsedRequest.ayah && (
                   <>
                     {" "}

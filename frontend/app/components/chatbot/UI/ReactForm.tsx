@@ -1,16 +1,18 @@
-import React from 'react';
-import { useForm, SubmitHandler } from 'react-hook-form'; 
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { motion } from 'framer-motion';
+import React from "react";
+import { useForm, SubmitHandler } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { motion } from "framer-motion";
 
 const RegistrationSchema = z.object({
-  username: z.string()
-    .min(3, 'Username must be at least 3 characters long')
-    .max(20, 'Username must be less than 20 characters'),
-  age: z.coerce.number()
-    .min(1, 'Please enter a valid age')
-    .max(120, 'Please enter a valid age'), 
+  username: z
+    .string()
+    .min(3, "Username must be at least 3 characters long")
+    .max(20, "Username must be less than 20 characters"),
+  age: z.coerce
+    .number()
+    .min(1, "Please enter a valid age")
+    .max(120, "Please enter a valid age"),
 });
 
 export type RegistrationData = z.infer<typeof RegistrationSchema>;
@@ -28,8 +30,8 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onComplete }) => {
     resolver: zodResolver(RegistrationSchema) as any,
     defaultValues: {
       username: "",
-      age: undefined, 
-    }
+      age: undefined,
+    },
   });
 
   const onSubmit: SubmitHandler<RegistrationData> = (data) => {
@@ -38,21 +40,29 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onComplete }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         className="w-full max-w-md bg-white rounded-xl shadow-xl border border-black/5 overflow-hidden"
       >
         <div className="bg-gray-50 px-8 py-6 border-b border-gray-100">
-          <h2 className="text-2xl font-bold text-gray-800 switzer-600">Welcome to Tadabbur</h2>
+          <h2 className="text-2xl font-bold text-gray-800 switzer-600">
+            Welcome to Tadabbur
+          </h2>
           <p className="text-gray-500 text-sm mt-1 switzer-400">
             Tell us a bit about yourself to personalize your experience.
           </p>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="px-8 py-8 flex flex-col gap-y-5">
+        <form
+          onSubmit={handleSubmit(onSubmit)}
+          className="px-8 py-8 flex flex-col gap-y-5"
+        >
           <div className="flex flex-col gap-y-1.5">
-            <label htmlFor="username" className="text-sm font-medium text-gray-700 switzer-500">
+            <label
+              htmlFor="username"
+              className="text-sm font-medium text-gray-700 switzer-500"
+            >
               What should we call you?
             </label>
             <input
@@ -60,17 +70,24 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onComplete }) => {
               type="text"
               placeholder="e.g. Ali"
               className={`w-full px-4 py-2.5 rounded-lg border ${
-                errors.username ? 'border-red-500 focus:ring-red-200' : 'border-gray-200 focus:ring-blue-100 focus:border-blue-500'
+                errors.username
+                  ? "border-red-500 focus:ring-red-200"
+                  : "border-gray-200 focus:ring-blue-100 focus:border-blue-500"
               } focus:outline-none focus:ring-4 transition-all duration-200 switzer-400`}
-              {...register('username')}
+              {...register("username")}
             />
             {errors.username && (
-              <p className="text-xs text-red-500 switzer-500">{errors.username.message}</p>
+              <p className="text-xs text-red-500 switzer-500">
+                {errors.username.message}
+              </p>
             )}
           </div>
 
           <div className="flex flex-col gap-y-1.5">
-            <label htmlFor="age" className="text-sm font-medium text-gray-700 switzer-500">
+            <label
+              htmlFor="age"
+              className="text-sm font-medium text-gray-700 switzer-500"
+            >
               How old are you?
             </label>
             <input
@@ -78,21 +95,25 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onComplete }) => {
               type="number"
               placeholder="e.g. 15"
               className={`w-full px-4 py-2.5 rounded-lg border ${
-                errors.age ? 'border-red-500 focus:ring-red-200' : 'border-gray-200 focus:ring-blue-100 focus:border-blue-500'
+                errors.age
+                  ? "border-red-500 focus:ring-red-200"
+                  : "border-gray-200 focus:ring-blue-100 focus:border-blue-500"
               } focus:outline-none focus:ring-4 transition-all duration-200 switzer-400`}
-              {...register('age')}
+              {...register("age")}
             />
             {errors.age && (
-              <p className="text-xs text-red-500 switzer-500">{errors.age.message}</p>
+              <p className="text-xs text-red-500 switzer-500">
+                {errors.age.message}
+              </p>
             )}
           </div>
 
           <button
             type="submit"
             disabled={isSubmitting}
-            className="mt-2 w-full bg-black text-white font-medium py-3 rounded-lg hover:bg-neutral-800 transition-colors disabled:opacity-50 switzer-500 shadow-md"
+            className="mt-2 w-full bg-black text-white font-medium py-3 rounded-lg hover:bg-neutral-800 transition-colors disabled:opacity-50 switzer-500 shadow-md cursor-pointer"
           >
-            {isSubmitting ? 'Starting...' : 'Start Chatting'}
+            {isSubmitting ? "Starting..." : "Start Chatting"}
           </button>
         </form>
       </motion.div>

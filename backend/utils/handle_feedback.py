@@ -7,9 +7,8 @@ from config.db import get_supabase_client
 
 def get_rules_grouped_by_category(supabase_client):
     try:
-        res = supabase_client.table('chat_rules') \
-            .select('rule_id', 'rule', 'category', 'weight') \
-            .execute()
+        # get only soft rules
+        res = supabase_client.table('chat_rules').select('rule_id', 'rule', 'category', 'weight').eq("hard_rule", False).execute()
 
         grouped = defaultdict(list)
         if res.data:
@@ -32,10 +31,8 @@ def get_rules_grouped_by_category(supabase_client):
         return []
 
 
-def submit_feedback(user_feedback:Literal['like', 'dislike'], assistant_response:str, message_id:str):
-    try:
-        # initialize supabase_client
-        supabase_client = get_supabase_client()        
+def submit_feedback(user_feedback:Literal['like', 'dislike'], assistant_response:str, message_id:str, supabase_client):
+    try:        
         response = trait_classifier.invoke({"user_feedback": user_feedback, "assistant_response": assistant_response})
 
         all_traits = response.all_traits
@@ -45,7 +42,6 @@ def submit_feedback(user_feedback:Literal['like', 'dislike'], assistant_response
 
         categories = get_rules_grouped_by_category(supabase_client)
 
-        print("All categories", categories)
         for record in all_traits:
             trait_category = record.category
             trait = record.trait
@@ -61,7 +57,6 @@ def submit_feedback(user_feedback:Literal['like', 'dislike'], assistant_response
 
                     if trait_category == category:
                         response = rule_similarity_evaluator.invoke({"existing_rules": rules, "trait": trait})
-                        print("Similarity Response", response)
                         # insert those with no existing rule using a small weight
                         if response.existing_rule:
                             # if rule exists increase weight by 0.1
@@ -105,3 +100,20 @@ def submit_feedback(user_feedback:Literal['like', 'dislike'], assistant_response
         print("Some error occured while submitting feedback", error)
         raise
         
+
+
+def handle_feedback(type, message, message_id):
+    try:    
+        print("Submitting user feedback")
+        # initialize supabase_client
+        supabase_client = get_supabase_client()
+        submit_feedback(type, message, message_id, supabase_client)
+
+        supabase_client.table("chat_messages") \
+            .update({"feedback": type}) \
+            .eq("message_id", message_id) \
+            .execute()
+
+        print("✅ Successfully submitted user feedback!")
+    except Exception as e:
+        print("❌ Failed to submit user feedback", e)

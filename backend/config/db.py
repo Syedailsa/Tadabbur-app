@@ -10,7 +10,6 @@ TADABBUR_API_KEY = os.getenv('TADABBUR_API_KEY')
 
 def get_supabase_client():
     try:
-        print("Connecting to Database for saving user messages")
         supabase_client: Client = create_client(
             TADABBUR_PROJECT_URL,
             TADABBUR_API_KEY,

@@ -103,35 +103,35 @@ export default function ChatPage() {
 
   useEffect(() => {
     const handleMicStart = () => {
-        setIsRecording(true);
-        tempSpeechRef.current = ""; 
+      setIsRecording(true);
+      tempSpeechRef.current = "";
     };
 
     const handleMicStop = () => {
-        setIsRecording(false);
+      setIsRecording(false);
     };
 
     const handleSTTResult = (e: Event) => {
-        const customEvent = e as CustomEvent;
-        const text = customEvent.detail;
-        
-        if (inputRef.current && text) {
-            const currentText = inputRef.current.innerText.trim();
-            const newText = currentText ? `${currentText} ${text}` : text;
-            
-            inputRef.current.innerText = newText;
-            committedTextRef.current = newText;
+      const customEvent = e as CustomEvent;
+      const text = customEvent.detail;
 
-            const range = document.createRange();
-            const sel = window.getSelection();
-            if(inputRef.current.lastChild) {
-                 range.selectNodeContents(inputRef.current);
-                 range.collapse(false);
-                 sel?.removeAllRanges();
-                 sel?.addRange(range);
-            }
-            setShowPlaceholder(false);
+      if (inputRef.current && text) {
+        const currentText = inputRef.current.innerText.trim();
+        const newText = currentText ? `${currentText} ${text}` : text;
+
+        inputRef.current.innerText = newText;
+        committedTextRef.current = newText;
+
+        const range = document.createRange();
+        const sel = window.getSelection();
+        if (inputRef.current.lastChild) {
+          range.selectNodeContents(inputRef.current);
+          range.collapse(false);
+          sel?.removeAllRanges();
+          sel?.addRange(range);
         }
+        setShowPlaceholder(false);
+      }
     };
 
     window.addEventListener("tadabbur-mic-start", handleMicStart);
@@ -139,9 +139,9 @@ export default function ChatPage() {
     window.addEventListener("tadabbur-stt-result", handleSTTResult);
 
     return () => {
-        window.removeEventListener("tadabbur-mic-start", handleMicStart);
-        window.removeEventListener("tadabbur-mic-stop", handleMicStop);
-        window.removeEventListener("tadabbur-stt-result", handleSTTResult);
+      window.removeEventListener("tadabbur-mic-start", handleMicStart);
+      window.removeEventListener("tadabbur-mic-stop", handleMicStop);
+      window.removeEventListener("tadabbur-stt-result", handleSTTResult);
     };
   }, []);
   // In your element
@@ -1077,7 +1077,7 @@ export default function ChatPage() {
               hideReportContentDialogueBox={hideReportContentDialogueBox}
               setHideReportContentDialogueBox={setHideReportContentDialogueBox}
             />
-            <audio controls ref={audioRef} />
+            <audio className="hidden" controls ref={audioRef} />
           </ChatProvider>
         </div>
       )}

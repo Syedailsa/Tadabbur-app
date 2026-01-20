@@ -1,6 +1,6 @@
 from tadabbur_agents.report_rule_generator import report_rule_generator
 
-def insert_report_rule(rule: str, supabase_client, message_id: str, feedback:str):
+def insert_report_rule(supabase_client, message_id: str, feedback:str):
     for i in range(8):
         try:
             print("Inserting hard rule...")

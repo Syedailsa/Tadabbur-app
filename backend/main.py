@@ -14,12 +14,14 @@ from agents import InputGuardrailTripwireTriggered, OutputGuardrailTripwireTrigg
 from tadabbur_agents.report_rule_generator import report_rule_generator
 from collections import defaultdict
 import agent as agent_module
-from utils.submit_feedback import submit_feedback
+from story_agent import story_agent
+from utils.handle_feedback import handle_feedback
 from utils.generate_title_description import generate_title_description
 from utils.save_system_message import save_system_message_to_db
-from Clean_text import clean_text_with_groq
 from utils.generate_uuid import generate_uuid
 from utils.report_rule import insert_report_rule, delete_report_rule
+from utils.refresh_instructions import refresh_system_instructions
+from Clean_text import clean_text_with_groq
 import story_agent as story_module
 import logging
 import secrets
@@ -111,9 +113,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+dynamic_system_instruction = {"text": ""}
+
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database pool on startup"""
+    """Initialize database pool and refresh system loops on startup"""
+    # ✅ correct
+    asyncio.create_task(refresh_system_instructions(dynamic_system_instruction))
     await init_db_pool()
 
 @app.on_event("shutdown")
@@ -209,16 +216,15 @@ async def upload_file(
         existing_context = session_file_context.get(session_id, "")
         updated_context = existing_context + "\n\n--- UPLOADED FILE CONTENT ---\n" + extracted_text 
         clean_context = clean_text(updated_context)
-        print("Content to be inserted text", clean_context)
-        print("1 done")
+        
+        # print("Content to be inserted text", clean_context)
+
         session_file_context[session_id] = updated_context
-        print("2 done")
-        print("3 done")
+        
         supabase_client = get_supabase_client()
         supabase_client.table('chat_sessions').update({
             'file_context': clean_context
         }).eq('session_id', session_id).execute()
-        print("Context inserted successfully!")
         
         logger.info(f"File processed for session {session_id}. Text length: {len(extracted_text)}")
         return {"status": "success", "message": "File processed successfully."}
@@ -287,39 +293,6 @@ def _normalize_name(name: Optional[str]) -> Optional[str]:
     return "".join(c for c in name.lower() if c.isalnum())
 
 
-# Helper: try to map an agent name to the actual Agent object using configured handoffs (STREAMING)
-def _map_name_to_agent(name: Optional[str]):
-    if not name:
-        return None
-    normalized = _normalize_name(name)
-    # Check known modules (main agent has handoffs list containing mapping dicts)
-    try:
-        handoff_entries = getattr(agent_module.agent, "handoffs", None) or []
-        for entry in handoff_entries:
-            if isinstance(entry, dict):
-                for k, v in entry.items():
-                    if _normalize_name(k) == normalized:
-                        return v
-    except Exception:
-        pass
-    # fallback modules
-    if _normalize_name(getattr(story_module, "story_agent", None).name if getattr(story_module, "story_agent", None) else None) == normalized:
-        return getattr(story_module, "story_agent", None)
-    # try Tafsir agent
-    try:
-        taf = getattr(agent_module, "Tafsir_Agent", None) or getattr(agent_module, "Tafsir_Agent", None)
-    except Exception:
-        taf = None
-    # If tafser agent exists in module scope under tafseer_agent module
-    import tafseer_agent as taf_mod
-    try:
-        if _normalize_name(getattr(taf_mod, "Tafsir_Agent", None).name if getattr(taf_mod, "Tafsir_Agent", None) else None) == normalized:
-            return getattr(taf_mod, "Tafsir_Agent", None)
-    except Exception:
-        pass
-    return None
-
-
 async def stream_tts_audio(tts_engine, clean_text, websocket, message_id_ref):
     async for audio_chunk in tts_engine.stream_audio(clean_text):
         await websocket.send_json({
@@ -327,6 +300,7 @@ async def stream_tts_audio(tts_engine, clean_text, websocket, message_id_ref):
             "message_id": message_id_ref,
             "audio": audio_chunk
         })
+
 
 @app.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
@@ -344,7 +318,6 @@ async def websocket_chat(websocket: WebSocket):
     unique_message_ids = []
     tts_engine = TextToSpeechEngine()
 
-    
     # ====== SESSION CODE START ======
     current_session = None
     session_id = None
@@ -352,6 +325,7 @@ async def websocket_chat(websocket: WebSocket):
     session_model_key: str = "gpt-oss-20b"
     active_agent = agent_module.main_agent
     current_agent_name = active_agent.name
+    dynamic_system_instruction_string = ""
 
     try:
         while True:
@@ -655,55 +629,17 @@ async def websocket_chat(websocket: WebSocket):
                     })
                 continue
 
-            # ============================= MODEL SELECTION HANDLER =============================
-            # if data.get("type") == "model-selection":
-            #     requested_model = data.get("model")  # e.g., "kimi-k2-instruct-0905", "deepseek-v3p1-terminus"
-
-            #     # Validate against supported models
-            #     if requested_model in agent_module.SUPPORTED_MODELS:
-            #         session_model_key = requested_model
-            #         model_info = agent_module.SUPPORTED_MODELS[requested_model]
-
-
-            #         await websocket.send_json({
-            #             "type": "model-selection",
-            #             "status": "acknowledged",
-            #             "model": requested_model,
-            #             "display_name": model_info["name"]
-            #         })
-            #         await websocket.send_json({
-            #             "type": "loading_message",
-            #             "content": f"Switched to **{model_info['name']}**"
-            #         })
-            #         logger.info(f"Model switched to: {requested_model} ({model_info['name']})")
-            #     else:
-            #         await websocket.send_json({
-            #             "type": "model-selection",
-            #             "status": "not-acknowledged",
-            #             "model": requested_model,
-            #             "error": "This model is not supported.",
-            #             "available": list(agent_module.SUPPORTED_MODELS.keys())
-            #         })
-            #     continue  # Skip to next message
-            
             # === AGENT SWITCH ===
             if data.get("type") == "agent":
                 agent_name = data.get("agent")
-                mapped = _map_name_to_agent(agent_name)
-                if mapped:
-                    active_agent = mapped
-                    active_config = getattr(mapped, "config", active_config)
-                    current_agent_name = getattr(mapped, "name", agent_name)
-                elif agent_name == "story-telling":
-                    active_agent = story_module.story_agent
-                    # active_config = getattr(story_module, "config", None)
-                    # current_agent_name = "Quran Storyteller"
-                else:
-                    active_agent = agent_module.agent
-                    # active_config = getattr(agent_module, "config", None)
-                    # current_agent_name = "Quran Tadabbur Agent"
+                if agent_name:
+                    if agent_name == "story-telling":
+                        print("Main agent set to story")
+                        active_agent = story_agent        
+                    else:
+                        active_agent = agent_module.main_agent
+                        print("Main agent sent to main agent")
 
-                current_agent_normalized = _normalize_name(current_agent_name)
                 await websocket.send_json({
                     "type": "loading_message",
                     "content": f"Switched to **{current_agent_name}** mode"
@@ -756,7 +692,7 @@ async def websocket_chat(websocket: WebSocket):
                         try:
                             # insert hard rule in a different thread for optimization
                             print("Reported assistant message",reported_assistant_message['content'] )
-                            response = await asyncio.to_thread(insert_report_rule, rule, supabase_client, message_id, feedback)
+                            response = await asyncio.to_thread(insert_report_rule, supabase_client, message_id, feedback)
 
                             print("Report response", response)
                             if not response:
@@ -797,21 +733,10 @@ async def websocket_chat(websocket: WebSocket):
                 if not session_id or not message_id or not message:
                     print("No message or session ID, can't proceed to feedback submission")
                     continue
-                try:
-                    print("Submitting user feedback")
-                    # create a new task with a thread to optimize operations
-                    await asyncio.to_thread(submit_feedback, type, message, message_id)
-                    
-                    supabase_client.table("chat_messages").update({"feedback": type}).eq("message_id", message_id).execute()
-
-                    print("✅ Successfully submitted user feedback!")
-                except Exception as e:
-                    print("Failed to submit user feedback",e)
-                    continue
-
+                asyncio.create_task(asyncio.to_thread(handle_feedback, type, message, message_id))
                 continue
-            # === MAIN CHAT MESSAGE ===
 
+            # === MAIN CHAT MESSAGE ===
             if data.get("type") == "user_message":
                 role = data.get("role", "user")
                 message = data.get("content", "")
@@ -825,7 +750,6 @@ async def websocket_chat(websocket: WebSocket):
                     if not resend_message_id:
                         print("Can't proceed forward with the received message because of no message ID")
                         continue
-                print("New message received", message)
                 if not resend_flag:
                     if user_message_id:
                         unique_message_ids.append(user_message_id)
@@ -853,99 +777,30 @@ async def websocket_chat(websocket: WebSocket):
                 # File Feature
                 file_context = session_file_context.get(session_id, "")
                 
-                message_for_history = message 
-
                 if file_context:
                     logger.info(f"📚 Found context for session {session_id}: {len(file_context)} chars")
                     safe_context = (file_context[:8000] + '... [TRUNCATED]') if len(file_context) > 8000 else file_context
-                    injected_message = (
-                        f"SYSTEM: The user has attached a file. Use the following content to answer their question:\n"
+                    message_string = (
+                        f"The user has attached a file. Use the following content to answer the user's question:\n"
                         f"========================================\n"
                         f"{safe_context}\n"
                         f"========================================\n\n"
-                        f"USER QUESTION: {message}"
+                        f"USER QUESTION: {message_string}"
                     )
                     
-                    message_for_history = injected_message
                     logger.info(f"✅ Injected file context into prompt for {session_id}")
-                    # append user message to conversation history
-                    conversation_history.append(HumanMessage(message_for_history))
-                    
-                dynamic_system_instruction_string = ""
-                try:
-                    # fetch those rules whose weight exceeds 0.8 and build the dynamic system instructions
-                    print("Fetching rules with weights >= 0.8")
-                    system_rules = supabase_client.table('chat_rules').select('rule','category', 'hard_rule').or_("weight.gte.0.7,hard_rule.eq.True").execute().data
-                    hard_rules_injected = False
-                    if system_rules:
-                        system_rules = group_by_category(system_rules)
-                        print("System rules after being grouped by category", system_rules)
-                        dynamic_system_instruction_string += f"## STRICT RULES\n\n"
-
-                        # iterate and build strict guidelines
-                        for record in system_rules:
-                            category = record["category"]
-                            rules = record["rules"]
-                            hard_rule_count = 1
-                            for rule in rules:
-                                rule_text = rule["text"]
-                                hard_rule = rule["hard_rule"]
-                                if not rule:
-                                    print("Rule is not present, can't add to system instruction")
-                                    continue
-                                if hard_rule:
-                                    dynamic_system_instruction_string += f"{hard_rule_count}.  {rule_text} \n"
-                                    hard_rule_count += 1
-                                    hard_rules_injected = True
-                        
-                        if not hard_rules_injected:
-                            dynamic_system_instruction_string = f'\n ## OTHER GUIDELINES \n'
-                        else:
-                            dynamic_system_instruction_string += f"\n ## GUIDELINES \n"
-                        # now build soft guidelines
-                        for record in system_rules:
-                            category = record["category"]
-                            rules = record["rules"]
-                            soft_rule_count = 1
-                            dynamic_system_instruction_string += f'\n {category}_Rules \n'
-                            for rule in rules:
-                                rule_text = rule['text']
-                                hard_rule = rule["hard_rule"]
-                                if not rule:
-                                    print("Rule is not present, can't add to system instruction")
-                                    continue
-                                if not hard_rule:        
-                                    dynamic_system_instruction_string += f'{soft_rule_count}. {rule_text} \n'
-                                    soft_rule_count += 1
-                            
-                            # iterate over all rules and add below corresponding category in the instruction string
-
-                        if dynamic_system_instruction_string != "":
-                            print("Dynamic system instructions string", dynamic_system_instruction_string)
-                            # save system message in db
-
-                            # use a different thread to optimize performance
-                            asyncio.create_task(asyncio.to_thread(save_system_message_to_db, session_id,  dynamic_system_instruction_string,  unique_message_ids, supabase_client))
-                            
-                            # the rules injection logic in system message here
-                        else:
-                            print("No system instructions, continuing...")
-                            continue
-                except Exception as e:
-                    print("Some error occured while building system instructions", e)
-                    raise
-
+                # print("Dynamic system instructions", dynamic_system_instruction["text"])
                 try:
                     # Prepare messages
                     base_messages = (
-                        [{"role": "system", "content": dynamic_system_instruction_string}]
-                        if dynamic_system_instruction_string else []
+                        [{"role": "system", "content": dynamic_system_instruction["text"]}]
+                        if dynamic_system_instruction["text"] else []
                     )
+                    print("Message string", message_string)
                     if not resend_flag:
                         # append user message to conversation history
                         conversation_history.append({"role": "user", "content": message_string, "id": user_message_id})
                         messages = base_messages + conversation_history
-                
                     else:
                         messages = base_messages + conversation_history + [{"role": "user", "content": message_string}]
                         
@@ -988,65 +843,7 @@ async def websocket_chat(websocket: WebSocket):
                         )
                     )
 
-                    # tool logic
-                    response_lower = response.lower() if response else ""
-
-                    # Pre-check indicators
-                    has_audio_indicators = any(indicator in response_lower for indicator in ["🎧", "http", "play", "listen", "audio", "recite"])
-                    has_verse_indicators = (
-                        any(indicator in response_lower for indicator in ["surah", "ayah", "verse", "chapter"]) 
-                        and bool(re.search(r'[\u0600-\u06FF]', response or ""))
-                    )
-
-                    # Initialize as None
-                    audio_data = None
-                    verse_data = None
-
-                    
-                    if has_audio_indicators:
-                        logging.info("[SMART-CHECK] 🎵 Audio indicators detected - calling extract_audio_data()")
-                        audio_data = extract_audio_data(response)
-                        logging.info(f"[DEBUG] Audio extracted: {audio_data is not None}")
-                    else:
-                        logging.info("[SMART-CHECK] ⏭️ No audio indicators - skipping extraction")
-
-                    if has_verse_indicators and not audio_data: 
-                        logging.info("[SMART-CHECK] 📖 Verse indicators detected - calling extract_verse_data()")
-                        verse_data = extract_verse_data(response)
-                        logging.info(f"[DEBUG] Verse extracted: {verse_data is not None}")
-                    else:
-                        if not has_verse_indicators:
-                            logging.info("[SMART-CHECK] ⏭️ No verse indicators - skipping extraction")
-                   
-                    logging.info(f"[DEBUG] Audio detected: {audio_data is not None}")
-                    logging.info(f"[DEBUG] Verse detected: {verse_data is not None}")
-
-                    if audio_data:
-                        await websocket.send_json({
-                            "type": "open_audio_dialog",  
-                            "parsed_request": {
-                                "surah": audio_data["surah_number"],
-                                "ayah": audio_data["ayah_number"]
-                            },
-                            "original_message": f"Play Surah {audio_data['surah_name']}",
-                            "available_reciters": get_available_reciters(), 
-                            "note": "Audio auto-detected"
-                        })
-                        logging.info("[WS]opening dialog cleanly")
-                      
-                    elif verse_data and isinstance(verse_data, dict) and verse_data.get("surah_number"):
-                        logging.info("[WS] Vers - opening Quran Verse ")
-                        await websocket.send_json({
-                            "type": "open_verse_dialog",
-                            "parsed_request": {
-                                "surah": verse_data["surah_number"],
-                                "ayah": verse_data["ayah_number"]
-                            },
-                            "original_message": "Quran Verse",
-                            "note": None  
-                        }) 
-                    
-                    else:
+                    if response:
                         await websocket.send_json({
                             "type": "assistance_response",
                             "message_id": response_message_id,
@@ -1055,6 +852,66 @@ async def websocket_chat(websocket: WebSocket):
                             "reply_to_message_id": user_message_id,
                             "final": True
                         })
+
+                    # # tool logic
+                    # response_lower = response.lower() if response else ""
+
+                    # # Pre-check indicators
+                    # has_audio_indicators = any(indicator in response_lower for indicator in ["🎧", "http", "play", "listen", "audio", "recite"])
+                    # has_verse_indicators = (
+                    #     any(indicator in response_lower for indicator in ["surah", "ayah", "verse", "chapter"]) 
+                    #     and bool(re.search(r'[\u0600-\u06FF]', response or ""))
+                    # )
+
+                    # # Initialize as None
+                    # audio_data = None
+                    # verse_data = None
+
+                    
+                    # if has_audio_indicators:
+                    #     logging.info("[SMART-CHECK] 🎵 Audio indicators detected - calling extract_audio_data()")
+                    #     audio_data = extract_audio_data(response)
+                    #     logging.info(f"[DEBUG] Audio extracted: {audio_data is not None}")
+                    # else:
+                    #     logging.info("[SMART-CHECK] ⏭️ No audio indicators - skipping extraction")
+
+                    # if has_verse_indicators and not audio_data: 
+                    #     logging.info("[SMART-CHECK] 📖 Verse indicators detected - calling extract_verse_data()")
+                    #     verse_data = extract_verse_data(response)
+                    #     logging.info(f"[DEBUG] Verse extracted: {verse_data is not None}")
+                    # else:
+                    #     if not has_verse_indicators:
+                    #         logging.info("[SMART-CHECK] ⏭️ No verse indicators - skipping extraction")
+                   
+                    # logging.info(f"[DEBUG] Audio detected: {audio_data is not None}")
+                    # logging.info(f"[DEBUG] Verse detected: {verse_data is not None}")
+
+                    # if audio_data:
+                    #     await websocket.send_json({
+                    #         "type": "open_audio_dialog",  
+                    #         "parsed_request": {
+                    #             "surah": audio_data["surah_number"],
+                    #             "ayah": audio_data["ayah_number"]
+                    #         },
+                    #         "original_message": f"Play Surah {audio_data['surah_name']}",
+                    #         "available_reciters": get_available_reciters(), 
+                    #         "note": "Audio auto-detected"
+                    #     })
+                    #     logging.info("[WS]opening dialog cleanly")
+                      
+                    # elif verse_data and isinstance(verse_data, dict) and verse_data.get("surah_number"):
+                    #     logging.info("[WS] Vers - opening Quran Verse ")
+                    #     await websocket.send_json({
+                    #         "type": "open_verse_dialog",
+                    #         "parsed_request": {
+                    #             "surah": verse_data["surah_number"],
+                    #             "ayah": verse_data["ayah_number"]
+                    #         },
+                    #         "original_message": "Quran Verse",
+                    #         "note": None  
+                    #     }) 
+                    
+                    # else:
 
 
                     await websocket.send_json({"type": "streaming_end"})

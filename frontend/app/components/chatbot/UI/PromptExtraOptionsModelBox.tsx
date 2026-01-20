@@ -84,7 +84,7 @@ const PromptExtraOptionsModelBox = () => {
           onClick={() => handleOptionClick({ type: "read_aloud" })}
           className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-pointer"
         >
-          {audioLoading && (
+          {/* {audioLoading && (
             <div>
               <div className="ml-2">
                 <motion.div
@@ -99,12 +99,12 @@ const PromptExtraOptionsModelBox = () => {
                 Loading
               </p>
             </div>
-          )}
+          )} */}
 
           {/* <Pause className="ml-2 w-5 h-5 fill-current text-black/80" />
           <p className="ml-2 switzer-500 text-[0.94rem]">Pause</p> */}
-          {/* <ReadAloud className="ml-2 w-5 h-5 fill-current text-black/80" />
-          <p className="ml-2 switzer-500 text-[0.94rem]">Read aloud</p> */}
+          <ReadAloud className="ml-2 w-5 h-5 fill-current text-black/80" />
+          <p className="ml-2 switzer-500 text-[0.94rem]">Read aloud</p>
         </div>
         <div
           onClick={() => handleOptionClick({ type: "report" })}
