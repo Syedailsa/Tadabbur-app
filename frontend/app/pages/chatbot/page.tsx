@@ -122,14 +122,9 @@ export default function ChatPage() {
 
   useEffect(() => {
     const handleMicStart = () => {
-<<<<<<< HEAD
-      setIsRecording(true);
-      tempSpeechRef.current = "";
-=======
         setIsRecording(true);
         setIsTranscribing(false);
         tempSpeechRef.current = ""; 
->>>>>>> f0b8f84efca08b3cc7af035e98bcd41eff8e67e8
     };
 
     const handleMicStop = () => {
@@ -145,10 +140,6 @@ export default function ChatPage() {
     };
 
     const handleSTTResult = (e: Event) => {
-<<<<<<< HEAD
-      const customEvent = e as CustomEvent;
-      const text = customEvent.detail;
-=======
         setIsTranscribing(false);
         const customEvent = e as CustomEvent;
         const text = customEvent.detail;
@@ -159,7 +150,6 @@ export default function ChatPage() {
             
             inputRef.current.innerText = newText;
             committedTextRef.current = newText;
->>>>>>> f0b8f84efca08b3cc7af035e98bcd41eff8e67e8
 
       if (inputRef.current && text) {
         const currentText = inputRef.current.innerText.trim();
@@ -187,17 +177,11 @@ export default function ChatPage() {
     window.addEventListener("tadabbur-stt-result", handleSTTResult);
 
     return () => {
-<<<<<<< HEAD
-      window.removeEventListener("tadabbur-mic-start", handleMicStart);
-      window.removeEventListener("tadabbur-mic-stop", handleMicStop);
-      window.removeEventListener("tadabbur-stt-result", handleSTTResult);
-=======
         window.removeEventListener("tadabbur-mic-start", handleMicStart);
         window.removeEventListener("tadabbur-mic-stop", handleMicStop);
         window.removeEventListener("tadabbur-transcription-start", handleTranscriptionStart);
         window.removeEventListener("tadabbur-transcription-error", handleTranscriptionEnd);
         window.removeEventListener("tadabbur-stt-result", handleSTTResult);
->>>>>>> f0b8f84efca08b3cc7af035e98bcd41eff8e67e8
     };
 }, []);
   // In your element
