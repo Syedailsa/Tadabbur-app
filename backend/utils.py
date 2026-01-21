@@ -36,11 +36,21 @@ def verify_password(password: str, hashed: str) -> bool:
 
 # ==================== JWT TOKEN MANAGEMENT ====================
 
-def create_access_token(user_id: str, firstname: str) -> str:
-    """Create JWT access token"""
+# def create_access_token(user_id: uuid, firstname: str) -> str:
+#     """Create JWT access token"""
+#     expire = datetime.utcnow() + timedelta(hours=TOKEN_EXPIRE_HOURS)
+#     payload = {
+#         "user_id": user_id,
+#         "firstname": firstname,
+#         "exp": expire,
+#         "iat": datetime.utcnow()
+#     }
+#     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+import uuid
+def create_access_token(user_id: uuid.UUID, firstname: str) -> str:
     expire = datetime.utcnow() + timedelta(hours=TOKEN_EXPIRE_HOURS)
     payload = {
-        "user_id": user_id,
+        "user_id": str(user_id),
         "firstname": firstname,
         "exp": expire,
         "iat": datetime.utcnow()
@@ -175,8 +185,11 @@ async def send_otp_email(email: str, otp: str, username: str = "User"):
 
 # ==================== ID GENERATORS ====================
 
-def generate_user_id() -> str:
-    return f"user_{secrets.token_hex(8)}"
+# def generate_user_id() -> str:
+#     return f"user_{secrets.token_hex(8)}"
+import uuid
+def generate_user_id():
+    return str(uuid.uuid4())
 
 def generate_notification_id() -> str:
     return f"notif_{secrets.token_hex(8)}"

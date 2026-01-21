@@ -101,6 +101,8 @@ async def login(req: LoginRequest):
             
             if not user or not verify_password(req.password, user['password_hash']):
                 raise HTTPException(status_code=401, detail="Invalid email or password")
+                
+            print("User",user)
             
             # Generate token
             token = create_access_token(user['user_id'], user['firstname'])

@@ -1,48 +1,50 @@
-# from fastapi import APIRouter, HTTPException, Depends
-# from pydantic import BaseModel, Field
-# from datetime import datetime
-# from typing import Optional
-# import secrets
 
-# from database import get_db_connection
-# from utils import get_current_user
+from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel, Field
+from datetime import datetime
+from typing import List, Optional
+import secrets
 
-# # ==================== MODELS ====================
+from typing import Optional
+from database import get_db_connection
+from utils import get_current_user
 
-# class RecentReflectionSave(BaseModel):
-#     surah_name_eng: str
-#     surah_name_arabic: str
-#     surah_no: int = Field(..., ge=1, le=114)
-#     total_ayah: int
-#     last_ayah_read: Optional[int] = None
+# ==================== MODELS ====================
 
-# class RecentReflectionResponse(BaseModel):
-#     id: str
-#     user_id: str
-#     surah_name_eng: str
-#     surah_name_arabic: str
-#     surah_no: int
-#     total_ayah: int
-#     last_ayah_read: Optional[int]
-#     last_read_at: datetime
-#     created_at: datetime
+class RecentReflectionSave(BaseModel):
+    surah_name_eng: str
+    surah_name_arabic: str
+    surah_no: int = Field(..., ge=1, le=114)
+    total_ayah: int
+    last_ayah_read: Optional[int] = None
+import uuid
+class RecentReflectionResponse(BaseModel):
+    id: str
+    user_id: uuid.UUID
+    surah_name_eng: str
+    surah_name_arabic: str
+    surah_no: int
+    total_ayah: int
+    last_ayah_read: Optional[int]
+    last_read_at: datetime
+    created_at: datetime
 
-# class SaveResponse(BaseModel):
-#     message: str
-#     status: str = "success"
-#     reflection_id: str
-#     timestamp: datetime
+class SaveResponse(BaseModel):
+    message: str
+    status: str = "success"
+    reflection_id: str
+    timestamp: datetime
 
-# # ==================== ROUTER ====================
+# ==================== ROUTER ====================
 
-# reflection_router = APIRouter(prefix="/recent-reflection", tags=["Recent Reflection"])
+reflection_router = APIRouter(prefix="/recent-reflection", tags=["Recent Reflection"])
 
-# # ==================== HELPER ====================
+# ==================== HELPER ====================
 
-# def generate_reflection_id() -> str:
-#     return f"ref_{secrets.token_hex(8)}"
+def generate_reflection_id() -> str:
+    return f"ref_{secrets.token_hex(8)}"
 
-# # ==================== ENDPOINTS ====================
+# ==================== ENDPOINTS ====================
 
 # @reflection_router.post("/save", response_model=SaveResponse)
 # async def save_recent_reflection(
@@ -98,110 +100,26 @@
 #             timestamp=current_time
 #         )
 
-
-# @reflection_router.get("", response_model=Optional[RecentReflectionResponse])
-# async def get_recent_reflection(user: dict = Depends(get_current_user)):
-#     """
-#     Get last read position
-    
-#     Headers:
-#         Authorization: Bearer {token}
-    
-#     Returns:
-#         Recent reflection data or null
-#     """
-#     async with get_db_connection() as conn:
-#         reflection = await conn.fetchrow("""
-#             SELECT 
-#                 reflection_id as id,
-#                 user_id,
-#                 surah_name_eng,
-#                 surah_name_arabic,
-#                 surah_no,
-#                 total_ayah,
-#                 last_ayah_read,
-#                 last_read_at,
-#                 created_at
-#             FROM recent_reflections 
-#             WHERE user_id = $1
-#         """, user['user_id'])
-        
-#         if not reflection:
-#             return None
-        
-        
-#         return dict(reflection)
-
-
-
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel, Field
-from datetime import datetime
-from typing import Optional
-import secrets
-
-from database import get_db_connection
-from utils import get_current_user
-
-# ==================== MODELS ====================
-
-class RecentReflectionSave(BaseModel):
-    surah_name_eng: str
-    surah_name_arabic: str
-    surah_no: int = Field(..., ge=1, le=114)
-    total_ayah: int
-    last_ayah_read: Optional[int] = None
-
-class RecentReflectionResponse(BaseModel):
-    id: str
-    user_id: str
-    surah_name_eng: str
-    surah_name_arabic: str
-    surah_no: int
-    total_ayah: int
-    last_ayah_read: Optional[int]
-    last_read_at: datetime
-    created_at: datetime
-
-class SaveResponse(BaseModel):
-    message: str
-    status: str = "success"
-    reflection_id: str
-    timestamp: datetime
-
-# ==================== ROUTER ====================
-
-reflection_router = APIRouter(prefix="/recent-reflection", tags=["Recent Reflection"])
-
-# ==================== HELPER ====================
-
-def generate_reflection_id() -> str:
-    return f"ref_{secrets.token_hex(8)}"
-
-# ==================== ENDPOINTS ====================
-
 @reflection_router.post("/save", response_model=SaveResponse)
 async def save_recent_reflection(
     req: RecentReflectionSave,
     user: dict = Depends(get_current_user)
 ):
     """
-    Save reflection (append-only)
-
-    Headers:
-        Authorization: Bearer {token}
-
-    Body:
-        surah_name_eng: Al-Fatihah
-        surah_name_arabic: الفاتحة
-        surah_no: 1
-        total_ayah: 7
-        last_ayah_read: 5
+    Save reflection - Update or Create
     """
     async with get_db_connection() as conn:
-        reflection_id = generate_reflection_id()
         current_time = datetime.utcnow()
 
+        # ✅ Check karo - DELETE old duplicates first
+        await conn.execute("""
+            DELETE FROM recent_reflections
+            WHERE user_id = $1 AND surah_no = $2
+        """, user["user_id"], req.surah_no)
+
+
+        # ✅ Ab fresh INSERT karo
+        reflection_id = generate_reflection_id()
         await conn.execute("""
             INSERT INTO recent_reflections (
                 reflection_id,
@@ -234,9 +152,8 @@ async def save_recent_reflection(
             timestamp=current_time
         )
 
-
-@reflection_router.get("", response_model=Optional[RecentReflectionResponse])
-async def get_recent_reflection(user: dict = Depends(get_current_user)):
+# @reflection_router.get("", response_model=Optional[RecentReflectionResponse])
+# async def get_recent_reflection(user: dict = Depends(get_current_user)):
     """
     Get last read position
     
@@ -266,3 +183,31 @@ async def get_recent_reflection(user: dict = Depends(get_current_user)):
             return None
         
         return dict(reflection)
+
+@reflection_router.get("", response_model=List[RecentReflectionResponse])
+async def get_recent_reflection(user: dict = Depends(get_current_user)):
+    """
+    Get recent reflections (max 20, latest first)
+    """
+    async with get_db_connection() as conn:
+        reflections = await conn.fetch("""
+            SELECT 
+                reflection_id as id,
+                user_id,
+                surah_name_eng,
+                surah_name_arabic,
+                surah_no,
+                total_ayah,
+                last_ayah_read,
+                last_read_at,
+                created_at
+            FROM recent_reflections 
+            WHERE user_id = $1
+            ORDER BY last_read_at DESC
+            LIMIT 20
+        """, user['user_id'])
+        
+        if not reflections:
+            return []
+        
+        return [dict(r) for r in reflections]
