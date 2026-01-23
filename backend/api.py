@@ -400,7 +400,7 @@ async def get_my_profile(user: dict = Depends(get_current_user)):
                 user_id as id,
                 firstname,
                 email,
-                COALESCE(image_url, profile_picture) as "profileImageUrl",
+                COALESCE(profile_image_url, profile_picture) as "profileImageUrl", 
                 created_at as "createdAt",
                 NULL as bio,
                 NULL as "lastName",
@@ -565,11 +565,11 @@ async def upload_profile_image(
     """
     try:
         # 1. Validate file type
-        allowed_types = ["image/jpeg", "image/png", "image/webp", "image/jpg"]
+        allowed_types = ["image/jpeg", "image/png", "image/webp", "image/jpg", "image/avif"]
         if file.content_type not in allowed_types:
             raise HTTPException(
                 status_code=400,
-                detail="Invalid file type. Only JPG, PNG, and WebP are allowed."
+                detail="Invalid file type. Only JPG, PNG, WebP, and AVIF are allowed."
             )
 
         # 2. Read and validate file size

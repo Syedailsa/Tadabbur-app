@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field, validator
 from typing import Optional, Literal
 from datetime import datetime, date
+from uuid import UUID
 
 # ==================== AUTH MODELS ====================
 
@@ -26,7 +27,7 @@ class AuthResponse(BaseModel):
     token: str
     message: str
     loginTime: datetime
-    user_id: str
+    user_id: UUID
     firstname: str
 
 # ==================== NOTIFICATION MODELS ====================
@@ -34,7 +35,7 @@ class AuthResponse(BaseModel):
 class NotificationCreate(BaseModel):
     title: str = Field(..., max_length=200)
     message: str = Field(..., max_length=1000)
-    recipientId: str
+    recipientId: UUID
 
 class NotificationResponse(BaseModel):
     id: str
@@ -84,7 +85,7 @@ class UserProfileResponse(BaseModel):
     Production-ready profile response
     Single profileImageUrl field - simple and clear!
     """
-    id: str
+    id: UUID
     firstname: str
     email: str
     profileImageUrl: Optional[str] = Field(None, description="URL to fetch profile image: /users/image/{id}")
@@ -126,7 +127,7 @@ class ImageUploadResponse(BaseModel):
 # ==================== FEEDBACK MODELS ====================
 
 class FeedbackCreate(BaseModel):
-    userId: str
+    userId: UUID
     message: str = Field(..., max_length=2000)
     rating: Literal["like", "dislike"]
 

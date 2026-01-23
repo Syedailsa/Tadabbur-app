@@ -3,7 +3,6 @@ import json
 import asyncio
 import pprint
 import re
-from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -85,7 +84,7 @@ import sys
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-load_dotenv()
+
 from data.data import comprehensive_surah_metadata
 
 logging.basicConfig(level=logging.INFO)
