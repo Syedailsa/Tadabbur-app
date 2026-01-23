@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import os
 
 from database import get_db_connection
-from utils import hash_password, generate_notification_id, send_otp_email
+from utils.authentication import hash_password, generate_notification_id, send_otp_email
 import random
 
 # ==================== MODELS ====================
@@ -41,6 +41,7 @@ async def save_otp_to_db(email: str, otp: str):
     """Save OTP to database with 10 minute expiry"""
     async with get_db_connection() as conn:
         # Delete any existing OTPs for this email
+        
         await conn.execute("""
             DELETE FROM password_reset_otps WHERE email = $1
         """, email)
@@ -48,11 +49,11 @@ async def save_otp_to_db(email: str, otp: str):
         # Insert new OTP with 10 minute expiry
         expires_at = datetime.utcnow() + timedelta(minutes=10)
         await conn.execute("""
-            INSERT INTO password_reset_otps (email, otp, expires_at, created_at)
-            VALUES ($1, $2, $3, NOW())
+            INSERT INTO password_reset_otps (email, otp, expires_at, created_at, verified)
+            VALUES ($1, $2, $3, NOW(), FALSE)
         """, email, otp, expires_at)
 
-async def verify_otp_from_db(email: str, otp: str) -> bool:
+async def verify_otp_from_db(email: str, otp: str):
     """Verify OTP from database and check expiry"""
     async with get_db_connection() as conn:
         result = await conn.fetchrow("""
@@ -155,6 +156,13 @@ async def verify_otp(req: VerifyOTPRequest):
             detail="Invalid or expired OTP. Please request a new one."
         )
     
+    async with get_db_connection() as conn:
+        await conn.execute("""
+            UPDATE password_reset_otps 
+            SET verified = TRUE 
+            WHERE email = $1 AND otp = $2
+        """, req.email, req.otp)
+    
     return PasswordResetResponse(
         message="OTP verified successfully. You can now change your password.",
         status="success"
@@ -230,6 +238,16 @@ async def change_password(req: ChangePasswordRequest):
         )
 
     async with get_db_connection() as conn:
+
+        # Security Check - Must verify OTP was validated first
+        otp_record = await conn.fetchrow("""
+            SELECT verified FROM password_reset_otps 
+            WHERE email = $1 AND verified = TRUE
+        """, req.email)
+
+        if not otp_record:
+            raise HTTPException(status_code=401, detail="Unauthorized: Please verify OTP first before changing password.")
+        
         # Check if email/password user exists
         user = await conn.fetchrow("""
             SELECT user_id, firstname, email

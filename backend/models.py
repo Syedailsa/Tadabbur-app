@@ -1,5 +1,5 @@
 
-
+from uuid import UUID
 from pydantic import BaseModel, EmailStr, Field, validator
 from typing import Optional, Literal
 from datetime import datetime, date
@@ -25,12 +25,11 @@ class LoginRequest(BaseModel):
 class GoogleSignInRequest(BaseModel):
     token: str = Field(..., description="Google OAuth token")
 
-import uuid
 class AuthResponse(BaseModel):
     token: str
     message: str
     loginTime: datetime
-    user_id: uuid.UUID
+    user_id: UUID
     firstname: str
     lastName: Optional[str] = None
     # lastName: str 
@@ -83,13 +82,14 @@ class BookmarkItem(BaseModel):
 class BookmarkDeleteRequest(BaseModel):
     bookmarkId: str
     
-# ==================== USER PROFILE MODELS ====================
+# # ==================== USER PROFILE MODELS ====================
+
 class UserProfileResponse(BaseModel):
     """
     Production-ready profile response
     Single profileImageUrl field - simple and clear!
     """
-    id: uuid.UUID
+    id: UUID
     firstname: str
     email: str
     profileImageUrl: Optional[str] = Field(None, description="URL to fetch profile image: /users/image/{id}")
@@ -117,7 +117,7 @@ class ProfileUpdate(BaseModel):
         populate_by_name = True
 
 class UserProfile(BaseModel):
-    id: uuid.UUID
+    id: UUID
     firstname: str
     email: str
     profileImageUrl: Optional[str] = Field(None, description="URL to fetch profile image: /users/image/{id}")
@@ -160,12 +160,12 @@ class ImageUploadResponse(BaseModel):
 # ==================== FEEDBACK MODELS ====================
 
 class FeedbackCreate(BaseModel):
-    userId: uuid.UUID
+    userId: UUID
     message: str = Field(..., max_length=2000)
     rating: Literal["like", "dislike"]
 
 class FeedbackResponse(BaseModel):
-    id: uuid.UUID
+    id: UUID
     message: str
     status: str
     createdAt: datetime

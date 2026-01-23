@@ -9,3 +9,8 @@ wheels/
 # Virtual environments
 .venv
 .env
+<<<<<<< HEAD
+=======
+main-backup.py
+
+>>>>>>> origin/MVP_2

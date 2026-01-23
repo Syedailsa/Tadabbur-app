@@ -426,10 +426,7 @@ async def create_tables():
             )
         """)
 
-        # ✅ FIXED: Remove UNIQUE constraint from firstname
-        # Multiple users can have same firstname (Ali, Ahmed, etc.)
-        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS firstname TEXT;")
-        
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS firstname TEXT UNIQUE;")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name TEXT;")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth DATE;")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT;")

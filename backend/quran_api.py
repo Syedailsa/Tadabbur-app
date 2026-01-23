@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Optional
 import httpx
@@ -397,6 +396,7 @@ async def get_surah_audio(
     
     try:
         async with httpx.AsyncClient() as client:
+            
             # Get surah with audio
             response = await client.get(
                 f"{QURAN_API_BASE}/surah/{surahId}/{reciter}",

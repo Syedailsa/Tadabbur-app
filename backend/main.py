@@ -1,36 +1,30 @@
 import os
 import json
+import asyncio
+import pprint
 import re
 from dotenv import load_dotenv
-from pathlib import Path
-load_dotenv()
-
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
 from typing import List, Optional
-from tools.audio_playback import (
-    play_quran_audio,
-    parse_quran_audio_request,
-    get_available_reciters,
-    InvalidSurahError,
-    InvalidAyahError,
-    QuranAPIError
-)
-from tools.verse_reader import (
-    fetch_quran_verse,
-    parse_verse_request,
-    get_verse_range,
-    InvalidSurahError,
-    InvalidAyahError,
-    QuranVerseAPIError
-)
+import asyncio 
+from langchain.messages import HumanMessage, AIMessage, SystemMessage
 from agents import Runner
-from agents import Agent, InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered, SQLiteSession
+from agents import InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered
+from tadabbur_agents.report_rule_generator import report_rule_generator
+from collections import defaultdict
 import agent as agent_module
+from story_agent import story_agent
+from utils.handle_feedback import handle_feedback
+from utils.generate_title_description import generate_title_description
+from utils.save_system_message import save_system_message_to_db
+from utils.generate_uuid import generate_uuid
+from utils.report_rule import insert_report_rule, delete_report_rule
+from utils.refresh_instructions import refresh_system_instructions
+from Clean_text import clean_text_with_groq
 import story_agent as story_module
-import sqlite3
 import logging
 import secrets
 from agents import ItemHelpers
@@ -51,18 +45,73 @@ from database import init_db_pool, close_db_pool, create_tables
 from fastapi.security import HTTPBearer
 # =========== Title Agent ============
 from title_agent import title_agent
+import random
+import string
+import uuid
+from agents import ItemHelpers  
+from fastapi import UploadFile, File, Form
+from file_service import process_uploaded_file
+import shutil
+import tempfile
+from speech_to_text import SpeechToTextEngine
+from text_to_speech import TextToSpeechEngine
+from murf import Murf
+from database import init_db_pool, close_db_pool
+from file_service import process_uploaded_file
+from tools.audio_playback import (
+    extract_audio_data,
+    get_quran_audio,
+    get_available_reciters,
+    InvalidSurahError,
+    InvalidAyahError,
+    QuranAPIError
+)
+from tools.verse_reader import extract_verse_data
+from tools.verse_reader import (
+    get_quran_verse,
+    InvalidSurahError,
+    InvalidAyahError,
+    QuranVerseAPIError
+)
 
-import pprint
-pp = pprint.PrettyPrinter(indent=2)
+from quran_api import quran_router , parah_router, story_router
+from reset_password_api import password_reset_router
+from reflection_api import reflection_router
+from api import (
+    auth_router,
+    notif_router,
+    bookmark_router,
+    profile_router,
+    feedback_router,
+    
+)
+from reset_password_api import password_reset_router
+from quran_api import quran_router , parah_router, story_router
+from reset_password_api import password_reset_router
+from reflection_api import reflection_router
+from database import init_db_pool, close_db_pool, create_tables
+from fastapi.security import HTTPBearer
+from fastapi.openapi.utils import get_openapi
+import secrets
+from speech_to_text import SpeechToTextEngine
+from text_to_speech import TextToSpeechEngine
+from config.db import get_supabase_client
+from agents import ItemHelpers  # used to extract message text from items (STREAMING)
+from data.data import comprehensive_surah_metadata
+from tools.verse_reader import SURAH_METADATA
+import sys
+
+if sys.platform.startswith("win"):
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
+load_dotenv()
+from data.data import comprehensive_surah_metadata
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ------------------- APP CONFIG -------------------
-
-app = FastAPI(title="Tadabbur Agent API",
-              description= "Backend API for Quranic Tadabbur Agent Application",
-              version="1.0.0")
+app = FastAPI(title="Tadabbur Agent API")
 
 def custom_openapi():
     if app.openapi_schema:
@@ -86,27 +135,18 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
+dynamic_system_instruction = {"text":""}
 @app.on_event("startup")
 async def startup_event():
     """Initialize database pool on startup"""
     await init_db_pool()
+    asyncio.create_task(refresh_system_instructions(dynamic_system_instruction))
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Close database pool on shutdown"""
     await close_db_pool()
 
-
-# ================= Routes =================
 app.include_router(auth_router)
 app.include_router(password_reset_router)
 app.include_router(notif_router)
@@ -118,275 +158,118 @@ app.include_router(parah_router)
 app.include_router(story_router)
 app.include_router(reflection_router)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-
+session_file_context = {}
 API_KEY = os.getenv("CHAT_API_KEY")
-
-
-# ------------------- SESSION CODE -------------------
-
-DB_PATH = "message_data.db"
-
-def init_db():
-    """Initialize clean database schema"""
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        
-        # Drop old tables if they exist
-        c.execute("DROP TABLE IF EXISTS agent_messages")
-        c.execute("DROP TABLE IF EXISTS agent_sessions")
-        
-        # Create NEW clean schema
-        c.execute('''
-            CREATE TABLE agent_sessions (
-                session_id TEXT PRIMARY KEY,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        c.execute('''
-            CREATE TABLE agent_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT NOT NULL,
-                role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
-                content TEXT NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (session_id) REFERENCES agent_sessions(session_id)
-            )
-        ''')
-        
-        c.execute('CREATE INDEX IF NOT EXISTS idx_session_time ON agent_messages(session_id, created_at)')
-        conn.commit()
-    
-    logger.info("✅ Database initialized with clean schema")
-
+# ------------------- OPTIONAL HTTP ENDPOINT -------------------
+# === SESSION CODE START ===
+DB_PATH = "chat.db"
+supabase_client = None
+TADABBUR_PROJECT_URL = os.getenv("TADABBUR_PROJECT_URL") 
+TADABBUR_API_KEY = os.getenv("TADABBUR_API_KEY")
 
 def generate_session_id() -> str:
-    """Generate unique session ID"""
+    """Generate unique session ID: sess_ + 12 hex chars"""
     return f"sess_{secrets.token_hex(6)}"
 
 
-def ensure_session_exists(session_id: str):
-    """Ensure session exists in database"""
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute("""
-            INSERT OR IGNORE INTO agent_sessions (session_id, created_at, updated_at)
-            VALUES (?, datetime('now'), datetime('now'))
-        """, (session_id,))
-        conn.commit()
-init_db()
+def get_chat_messages(session_id: str, supabase_client) -> List[str]:
+    """Get all messages of a specific session"""
+    if not session_id or not supabase_client:
+        print("Session id or supabase client none, so returning...")
+        return []
+        
+    chat_messages = supabase_client.table('chat_messages').select('message_id', 'role', 'content', 'reply_to_message_id', 'feedback').in_("role", ["user", "assistant"]).eq('session_id', session_id).order('created_at').execute().data
 
-def clean_message_content(content: str) -> str:
-    """Clean message content from role prefixes and conversation format"""
-    if not content:
-        return ""
     
-    content = content.strip()
+    # print("chat messages", chat_messages)
     
-    # Remove ALL role prefixes recursively
-    prev_content = ""
-    while prev_content != content:
-        prev_content = content
-        content = re.sub(r'^(user|assistant):\s*', '', content, flags=re.IGNORECASE | re.MULTILINE)
-        content = content.strip()
+    return chat_messages
+
+
+def get_message_ids(supabase_client) -> list[str | None]:
+    """Get all message IDs"""
+    if not supabase_client:
+        return []
+    for i in range(8):
+        try:
+            print("Fetching all message_ids from chat_messages table")
+
+            message_ids = supabase_client.table('chat_messages').select('message_id').order('created_at').execute().data
+            print("✅ Successfully fetched all message IDs")
+            return message_ids
+
+        except Exception as e:
+            print("Some error occurred while fetching all message IDs:", e)
+            print(f"Trying again, total tries {i+1}/8")
+            last_error = e
+    raise RuntimeError(
+    f"Failed to fetch all message IDs"
+    ) from last_error
     
-    # If multi-line with conversation format, extract LAST user input only
-    if '\n' in content:
-        lines = content.split('\n')
-        
-        # Check if conversation format exists
-        has_roles = any(
-            re.match(r'^(user|assistant):\s*', line.strip(), re.IGNORECASE)
-            for line in lines
-        )
-        
-        if has_roles:
-            # Find the LAST user message
-            for i in range(len(lines) - 1, -1, -1):
-                line = lines[i].strip()
-                if re.match(r'^user:\s*', line, re.IGNORECASE):
-                    clean_line = re.sub(r'^user:\s*', '', line, flags=re.IGNORECASE)
-                    return clean_line.strip()
-            
-            # If no "user:" found, return first non-empty line without role prefix
-            for line in lines:
-                cleaned = re.sub(r'^(user|assistant):\s*', '', line.strip(), flags=re.IGNORECASE)
-                if cleaned:
-                    return cleaned
-    
-    return content.strip()
+def group_by_category(system_rules):
+    grouped_by_category = defaultdict(list)
 
-def save_message_to_db(session_id: str, role: str, content: str):
-    """Save ONLY clean role + content"""
-    content = content.strip()
-    if not content or role not in ["user", "assistant"]:
-        return
+    for item in system_rules:
+        grouped_by_category[item['category']].append({
+            "text": item['rule'],
+            "hard_rule": item['hard_rule']
+        })
 
-    # Clean content - remove any role prefixes
-    clean_content = clean_message_content(content)
-    if not clean_content:
-        return
+    result = []
+    for category, rules in grouped_by_category.items():
+        result.append({
+            "category": category,
+            "rules": rules
+        })
 
-    try:
-        with sqlite3.connect(DB_PATH) as conn:
-            c = conn.cursor()
-            
-            # Check for duplicates
-            c.execute("""
-                SELECT 1 FROM agent_messages 
-                WHERE session_id = ? AND role = ? AND content = ? 
-                AND created_at > datetime('now', '-10 seconds')
-            """, (session_id, role, clean_content))
-            
-            if c.fetchone():
-                logger.info(f"⚠️ Duplicate {role} message skipped")
-                return
-            
-            # Ensure session exists
-            ensure_session_exists(session_id)
-            
-            # Insert clean message
-            c.execute("""
-                INSERT INTO agent_messages (session_id, role, content, created_at)
-                VALUES (?, ?, ?, datetime('now'))
-            """, (session_id, role, clean_content))
-            
-            # Update session timestamp
-            c.execute("""
-                UPDATE agent_sessions 
-                SET updated_at = datetime('now') 
-                WHERE session_id = ?
-            """, (session_id,))
-            
-            conn.commit()
-            
-        logger.info(f"✅ Saved {role}: {clean_content[:50]}...")
-    except Exception as e:
-        logger.error(f"❌ DB Save failed: {e}")
-
-
-def get_chat_messages(session_id: str):
-    """Get clean chat messages - direct from columns"""
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT role, content 
-            FROM agent_messages 
-            WHERE session_id = ? 
-            ORDER BY created_at ASC
-        """, (session_id,))
-        
-        messages = []
-        for role, content in c.fetchall():
-            if role in ["user", "assistant"] and content.strip():
-                messages.append({
-                    "role": role,
-                    "content": content.strip()
-                })
-        
-        logger.info(f"✅ Loaded {len(messages)} messages for {session_id}")
-        return messages
-
-
-def get_all_sessions_from_db():
-    """Get all sessions with clean data"""
-    import datetime
-    
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT s.session_id, s.created_at, s.updated_at 
-            FROM agent_sessions s
-            WHERE EXISTS (
-                SELECT 1 FROM agent_messages m 
-                WHERE m.session_id = s.session_id
-            )
-            ORDER BY s.updated_at DESC
-        """)
-        
-        sessions = []
-        today = datetime.date.today()
-        
-        for sid, created_at, updated_at in c.fetchall():
-            # Get first user message for title
-            c.execute("""
-                SELECT content FROM agent_messages 
-                WHERE session_id = ? AND role = 'user' 
-                ORDER BY created_at ASC LIMIT 1
-            """, (sid,))
-            
-            user_row = c.fetchone()
-            if not user_row:
-                continue
-            
-            user_msg = user_row[0]
-            title = "Quranic Reflection"
-            
-            try:
-                result = Runner.run_sync(
-                    title_agent, 
-                    f"Create a beautiful short title for: {user_msg[:80]}"
-                )
-                smart = result.final_output.strip().strip('"\'')
-                if smart and 5 < len(smart) < 60:
-                    title = smart
-            except Exception as e:
-                logger.error(f"Title generation failed: {e}")
-                title = user_msg[:50] + "..." if len(user_msg) > 50 else user_msg
-            
-            # Get first assistant response for description
-            c.execute("""
-                SELECT content FROM agent_messages 
-                WHERE session_id = ? AND role = 'assistant' 
-                ORDER BY created_at ASC LIMIT 1
-            """, (sid,))
-            
-            desc_row = c.fetchone()
-            description = desc_row[0][:100] + "..." if desc_row else "New conversation"
-            
-            # Format date
-            try:
-                date_obj = datetime.datetime.fromisoformat(updated_at.replace('Z', '+00:00')).date()
-                if date_obj == today:
-                    display_date = "Today"
-                elif date_obj == today - datetime.timedelta(days=1):
-                    display_date = "Yesterday"
-                else:
-                    display_date = date_obj.strftime("%b %d")
-            except:
-                display_date = "Recently"
-            
-            # Get message count
-            c.execute("""
-                SELECT COUNT(*) FROM agent_messages WHERE session_id = ?
-            """, (sid,))
-            msg_count = c.fetchone()[0]
-            
-            sessions.append({
-                "session_id": sid,
-                "title": title,
-                "description": description,
-                "created_at": display_date,
-                "date": display_date,
-                "language": "english",
-                "message_count": msg_count
-            })
-        
-        logger.info(f"✅ Found {len(sessions)} sessions")
-        return sessions
-    
+    return result
 
 # ------------------- OPTIONAL HTTP ENDPOINT -------------------
 class Message(BaseModel):
     role: str
     content: str
 
-
 class ChatRequest(BaseModel):
     messages: List[Message]
 
+
+def clean_text(text: str) -> str:
+    return text.replace("\x00", "")
+
+
+@app.post("/api/upload")
+async def upload_file(
+    file: UploadFile = File(...), 
+    session_id: str = Form(...)
+):
+    try:
+        extracted_text = await process_uploaded_file(file)
+        existing_context = session_file_context.get(session_id, "")
+        updated_context = existing_context + "\n\n--- UPLOADED FILE CONTENT ---\n" + extracted_text 
+        clean_context = clean_text(updated_context)
+        
+        # print("Content to be inserted text", clean_context)
+
+        session_file_context[session_id] = updated_context
+        
+        supabase_client = get_supabase_client()
+        supabase_client.table('chat_sessions').update({
+            'file_context': clean_context
+        }).eq('session_id', session_id).execute()
+        
+        logger.info(f"File processed for session {session_id}. Text length: {len(extracted_text)}")
+        return {"status": "success", "message": "File processed successfully."}
+    except Exception as e:
+        logger.error(f"Upload failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest, authorization: str | None = Header(None)):
@@ -399,20 +282,46 @@ async def chat(req: ChatRequest, authorization: str | None = Header(None)):
             run_config=getattr(agent_module, "config", None)
         )
 
+
         reply_text = getattr(result, "final_output", None) or getattr(result, "output_text", None) or str(result)
         return {"reply": reply_text}
 
+
     except InputGuardrailTripwireTriggered as e:
-        msg = getattr(e.guardrail_result, "output_info",
-                      "Sorry, your question seems unrelated to the Quranic context.")
+        msg = getattr(e.guardrail_result, "output_info", "Sorry, your question seems unrelated to the Quranic context.")
         return {"reply": msg}
+
 
     except OutputGuardrailTripwireTriggered as e:
         msg = getattr(e.guardrail_result, "output_info",
                       "Sorry, I can only respond within Quranic context.")
         return {"reply": msg}
 
+
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+stt_engine = SpeechToTextEngine()
+
+@app.post("/api/transcribe")
+async def transcribe_audio(file: UploadFile = File(...)):
+    """
+    Receives an audio file (Blob) from frontend, saves it temporarily,
+    and sends it to Fireworks for transcription.
+    """
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_audio:
+            shutil.copyfileobj(file.file, temp_audio)
+            temp_path = temp_audio.name
+
+        text = await stt_engine.transcribe(temp_path)
+
+        os.remove(temp_path)
+
+        return {"text": text}
+
+    except Exception as e:
+        logger.error(f"Transcription endpoint error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -423,64 +332,212 @@ def _normalize_name(name: Optional[str]) -> Optional[str]:
     return "".join(c for c in name.lower() if c.isalnum())
 
 
-# Helper: try to map an agent name to the actual Agent object using configured handoffs (STREAMING)
-def _map_name_to_agent(name: Optional[str]):
-    if not name:
-        return None
-    normalized = _normalize_name(name)
-    # Check known modules (main agent has handoffs list containing mapping dicts)
-    try:
-        handoff_entries = getattr(agent_module.agent, "handoffs", None) or []
-        for entry in handoff_entries:
-            if isinstance(entry, dict):
-                for k, v in entry.items():
-                    if _normalize_name(k) == normalized:
-                        return v
-    except Exception:
-        pass
-    # fallback modules
-    if _normalize_name(getattr(story_module, "story_agent", None).name if getattr(story_module, "story_agent", None) else None) == normalized:
-        return getattr(story_module, "story_agent", None)
-    # try Tafsir agent
-    try:
-        taf = getattr(agent_module, "Tafsir_Agent", None) or getattr(agent_module, "Tafsir_Agent", None)
-    except Exception:
-        taf = None
-    # If tafser agent exists in module scope under tafseer_agent module
-    import tafseer_agent as taf_mod
-    try:
-        if _normalize_name(getattr(taf_mod, "Tafsir_Agent", None).name if getattr(taf_mod, "Tafsir_Agent", None) else None) == normalized:
-            return getattr(taf_mod, "Tafsir_Agent", None)
-    except Exception:
-        pass
-    return None
+async def stream_tts_audio(tts_engine, clean_text, websocket, message_id_ref):
+    async for audio_chunk in tts_engine.stream_audio(clean_text):
+        await websocket.send_json({
+            "type": "tts_audio_chunk",
+            "message_id": message_id_ref,
+            "audio": audio_chunk
+        })
+
 
 @app.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
     await websocket.accept()
     logger.info("WebSocket connected successfully")
 
-    # print(f"Data {data}")
+    try:
+
+        supabase_client = get_supabase_client()
+    except Exception as e:
+        print("Some error occured initiating supabase connection", e)
+
+    # initialize the conversation history and message_IDs set
+    conversation_history = []
+    unique_message_ids = []
+    tts_engine = TextToSpeechEngine()
 
     # ====== SESSION CODE START ======
-
     current_session = None
     session_id = None
-
     # ========== SESSION END  ======
-
     session_model_key: str = "gpt-oss-20b"
-    active_agent = agent_module.agent
-    active_config = getattr(agent_module, "config", None)
-    current_agent_name = getattr(active_agent, "name", "QuranTadabburAgent")
-    current_agent_normalized = _normalize_name(current_agent_name)
-
+    active_agent = agent_module.main_agent
+    current_agent_name = active_agent.name
 
     try:
         while True:
-            raw_data = await websocket.receive_text()
-            data = json.loads(raw_data)
-            print(f"received: {data}")
+            message = await websocket.receive()
+            if "text" in message:
+                try:
+                    data = json.loads(message["text"])
+                except json.JSONDecodeError:
+                    continue
+
+
+                if data.get("type") == "tts_request":
+                    print("Got tts request, data", data)
+                    raw_text = data.get("text")
+                    message_id_ref = data.get("message_id")
+                    
+                    if raw_text:
+                        logger.info(f"≡ƒº╣ Cleaning text with Groq Agent...")
+                        
+                        clean_text = await clean_text_with_groq(raw_text)
+                        
+                        logger.info(f"≡ƒÄñ Stream audio for: {clean_text[:50]}...")
+                        client = Murf(
+                            api_key=os.getenv("MURF_AI_API_KEY") # Not required if you have set the MURF_API_KEY environment variable
+                        )
+                        try:
+                            res = client.text_to_speech.generate(
+                                text=clean_text,
+                                voice_id ="Finley",
+                                style ="Promo",
+                                rate = 0,
+                                pitch = 0,
+                                variation = 1
+                            )
+                            # await websocket.send_json({
+                            # "type": "tts_audio_chunk",
+                            # "message_id": message_id_ref,
+                            # "audio": audio_chunk
+                            # })
+                            if res.audio_file:
+                                print("Audio url", res.audio_file)
+                                await websocket.send_json({
+                                    "type": "tts_audio_chunk",
+                                    "message_id": message_id_ref,
+                                    "audio_url": res.audio_file
+                                })
+                                
+                        except Exception as e:
+                            print("Some error occured while generating audio for text", e)
+                            continue
+
+                        # try:
+                        #     # fire-and-forget
+                        #     asyncio.create_task(
+                        #         stream_tts_audio(tts_engine, clean_text, websocket, message_id_ref)
+                        #     )
+                        # except Exception as e:
+                        #     print("TTS Error", e)
+                        #     logger.error(f"TTS Error: {e}")
+                        #     continue
+                    continue
+
+
+            if data.get("type") == "audio_request":
+                surah = data.get("surah")
+                ayah = data.get("ayah")
+                reciter = data.get("reciter", "alafasy")
+                
+                logger.info(f"≡ƒÄ╡ Audio request: Surah {surah}, Ayah {ayah}, Reciter: {reciter}")
+                
+                try:
+                    audio_result = get_quran_audio(
+                        surah=surah,
+                        ayah=ayah,
+                        reciter=reciter
+                    )
+                    # ========================================================
+                    
+                    if audio_result.get("success"):
+                        await websocket.send_json({
+                            "type": "audio_response",
+                            "status": "success",
+                            "data": audio_result
+                        })
+                        logger.info("Γ£à Audio data sent successfully")
+                    else:
+                        error_msg = audio_result.get("error", "Failed to fetch audio")
+                        await websocket.send_json({
+                            "type": "audio_response",
+                            "status": "error",
+                            "message": error_msg
+                        })
+                        logger.error(f"Γ¥î Audio fetch failed: {error_msg}")
+                
+                except (InvalidSurahError, InvalidAyahError) as e:
+                    await websocket.send_json({
+                        "type": "audio_response",
+                        "status": "error",
+                        "message": str(e)
+                    })
+                    logger.warning(f"ΓÜá∩╕Å Validation error: {e}")
+                
+                except QuranAPIError as e:
+                    await websocket.send_json({
+                        "type": "audio_response",
+                        "status": "error",
+                        "message": f"API error: {str(e)}"
+                    })
+                    logger.error(f"Γ¥î API error: {e}")
+                
+                except Exception as e:
+                    logger.exception("Unexpected audio error")
+                    await websocket.send_json({
+                        "type": "audio_response",
+                        "status": "error",
+                        "message": "An unexpected error occurred"
+                    })
+                
+                continue
+
+
+            if data.get("type") == "verse_request":
+                surah = data.get("surah")
+                ayah = data.get("ayah")
+                include_audio = data.get("include_audio", False)
+                
+                logger.info(f"≡ƒôû Verse request: Surah {surah}, Ayah {ayah}, Audio: {include_audio}")
+                
+                try:
+                    verse_result = get_quran_verse(
+                    surah=surah,
+                    ayah=ayah,
+                    include_audio=include_audio
+                    )
+
+                    if verse_result.get("success"):
+                        await websocket.send_json({
+                        "type": "verse_response",
+                        "status": "success",
+                        "data": verse_result
+                        })
+                        logger.info(f"Γ£à Verse data sent: {surah}:{ayah}")
+                    else:
+                        await websocket.send_json({
+                        "type": "verse_response",
+                        "status": "error",
+                        "message": verse_result.get("error", "Failed to fetch verse")
+                        })
+                
+                except (InvalidSurahError, InvalidAyahError) as e:
+                    await websocket.send_json({
+                        "type": "verse_response",
+                        "status": "error",
+                        "message": str(e)
+                    })
+                    logger.warning(f"ΓÜá∩╕Å Validation error: {e}")
+                
+                except QuranVerseAPIError as e:
+                    await websocket.send_json({
+                        "type": "verse_response",
+                        "status": "error",
+                        "message": f"API error: {str(e)}"
+                    })
+                    logger.error(f"Γ¥î API error: {e}")
+                
+                except Exception as e:
+                    logger.exception("Unexpected verse error")
+                    await websocket.send_json({
+                        "type": "verse_response",
+                        "status": "error",
+                        "message": "An unexpected error occurred"
+                    })
+                
+                continue
 
             if data.get("type") == "audio_request":
                 surah = data.get("surah")
@@ -602,152 +659,96 @@ async def websocket_chat(websocket: WebSocket):
                 continue
             
             # ========== SESsION CODE START ==========
-            # SESSION INIT 
+            # SESSION INIT
             if data.get("type") == "session-init":
                 requested_session_id = data.get("session_id", "").strip()
-
-                if not requested_session_id or requested_session_id == "new":
+                if not requested_session_id:
                     # Create brand new session
                     session_id = generate_session_id()
-                    ensure_session_exists(session_id)
                     logger.info(f"New session created: {session_id}")
                 else:
                     # Resume existing session
                     session_id = requested_session_id
-                    ensure_session_exists(session_id)
                     logger.info(f"Session resumed: {session_id}")
+                    try:
+                        if supabase_client:
+                            response = supabase_client.table('chat_sessions')\
+                                .select('file_context')\
+                                .eq('session_id', session_id)\
+                                .execute()
+                            
+                            if response.data and response.data[0].get('file_context'):
+                                restored_context = response.data[0]['file_context']
+                                session_file_context[session_id] = restored_context
+                                logger.info(f"Restored file context from DB: {len(restored_context)} chars")
+                    except Exception as e:
+                        logger.error(f"Failed to restore file context: {e}")
+                # add a record in chat_sessions table
+                try:    
+                    print("🔃 Creating a new session record")
+                    supabase_client.table("chat_sessions").insert({'session_id': session_id, "title": "Chat Title", "description":"Description for the chat session" }).execute()
 
-                # Send confirmation — this unblocks frontend
-                await websocket.send_json({
-                    "type": "session_id",
-                    "status": "acknowledged",
-                    "session_id": session_id,
-                    "current_agent": current_agent_name,
-                    "current_model": session_model_key
-                })
-
-                continue  
-
-            if data.get("type") == "session_id":
-                # check if frontend sent empty session_id (new chat request)
-
-                frontend_session_id = data.get("session_id", "").strip()
-
-                if not frontend_session_id:
-                    # generate new session ID 
-                    session_id = generate_session_id()
-
-                    ensure_session_exists(session_id)
-
+                    message_ids = get_message_ids(supabase_client)
+                    # convert message IDs to a list
+                    unique_message_ids = list({record['message_id'] for record in message_ids})
+                    # reset the conversation history and unique message ids
+                    conversation_history = []
+                    print("✅ Successfully created a new session record!")            
+                    # Send confirmation — this unblocks frontend
                     await websocket.send_json({
                         "type": "session_id",
                         "status": "acknowledged",
-                        "session_id": session_id
+                        "session_id": session_id,
+                        "current_agent": current_agent_name,
+                        "current_model": session_model_key,
+                        "message_ids": unique_message_ids
                     })
-                    logger.info(f"New session created {session_id}")
-                else:
-                    # use existing session id from frontend
-
-                    session_id = frontend_session_id
-                    ensure_session_exists(session_id)
-
-                    await websocket.send_json({
-                        "type": "session_id",
-                        "status": "acknowledged",
-                        "session_id": session_id
-                    })
-
-                continue
-            # Handle CHAT HISTORY request
-
-            if data.get("type") in ["like", "dislike", "report_content"]:
-                feedback_type = data["type"]                    # "like" / "dislike" / "report_content"
-                index = data.get("index")
-                sess_id = data.get("session_id") or session_id  # Use provided session_id or current session_id
-
-                # Validation
-                if not sess_id:
-                    await websocket.send_json({"type": "error", "message": "session_id missing"})
-                    continue
-                if not isinstance(index, int) or index < 0:
-                    await websocket.send_json({"type": "error", "message": "invalid index"})
-                    continue
-
-                # Save to PostgreSQL (Supabase)
-                try:
-                    conn = await asyncpg.connect(os.getenv("DATABASE_URL"))
-                    await conn.execute(
-                        """
-                        INSERT INTO content_feedback (session_id, item_index, feedback_type)
-                        VALUES ($1, $2, $3)
-                        ON CONFLICT (session_id, item_index, feedback_type) DO NOTHING
-                        """,
-                        sess_id, index, feedback_type
-                    )
-                    await conn.close()
-
-                    # Success response
-                    await websocket.send_json({
-                        "type": "feedback_ack",
-                        "status": "success",
-                        "action": feedback_type,
-                        "index": index
-                    })
-
-                    # Optional: 10+ reports pe alert
-                    if feedback_type == "report_content":
-                        conn = await asyncpg.connect(os.getenv("DATABASE_URL"))
-                        reports = await conn.fetchval(
-                            "SELECT COUNT(*) FROM content_feedback WHERE item_index = $1 AND feedback_type = 'report_content'",
-                            index
-                        )
-                        await conn.close()
-                        if reports and reports > 10:
-                            await websocket.send_json({
-                                "type": "content_reported",
-                                "index": index,
-                                "reports": reports
-                            })
-
                 except Exception as e:
-                    logger.error(f"Feedback save failed: {e}")
+                    print("Some error occured while adding a new session record", e)
                     await websocket.send_json({
-                        "type": "error",
-                        "message": "feedback save failed"
+                        "type": "session_id",
+                        "status": "not-acknowledged",
+                        "error": e
                     })
+                    raise
 
                 continue  
 
-
-
+            # Handle CHAT HISTORY request
             if data.get("type") == "chat_history":
                 try:
-                    sessions_list = get_all_sessions_from_db()
+                    # first get all unique session IDs from chat_messages
+                    all_session_ids = supabase_client.table("chat_messages").select("session_id").execute().data
+                    # unique session_ids as a list
+                    unique_session_ids = list({
+                        record["session_id"]
+                        for record in all_session_ids
+                    })
 
+                    chat_sessions = supabase_client.table('chat_sessions').select('session_id', 'title', 'description', 'created_at').in_('session_id', unique_session_ids).execute().data
+
+                    print("All sessions", chat_sessions)
                     await websocket.send_json({
                         "type": "chat_history",
                         "status":"acknowledged",
-                        "chat_history": sessions_list
+                        "chat_history": chat_sessions
                     })
-                    logger.info(f"Sent {len(sessions_list)} sessions to frontend")
+                    logger.info(f"Sent {len(chat_sessions)} sessions to frontend")
                 except Exception as e:
                     logger.error(f"Error fetching chat history: {e}")
 
-                    await websocket.send_json({
-                        "type": "chat_history",
-                        "status": "non-acknowledged",
-                        "chat_history": [],
-                        "error": str(e)
-                    })
-                continue
+            #         await websocket.send_json({
+            #             "type": "chat_history",
+            #             "status": "non-acknowledged",
+            #             "chat_history": [],
+            #             "error": str(e)
+            #         })
+            #     continue
+
 
             # Handle Get SPECIFIC REQUEST
-
-            # Handle Get SPECIFIC REQUEST
-
             if data.get("type") == "get_chat":
                 requested_session_id = data.get("session_id", "")
-
                 if not requested_session_id:
                     await websocket.send_json({
                         "type": "get_chat",
@@ -755,437 +756,394 @@ async def websocket_chat(websocket: WebSocket):
                         "error": "session_id is required"
                     })
                     continue
-                    
                 try:
-                    # Get chat messages
-                    messages = get_chat_messages(requested_session_id)
-                    
-                    # DEBUG: Log what we're sending
-                    logger.info(f"📤 Sending chat history for {requested_session_id}:")
-                    for i, msg in enumerate(messages):
-                        logger.info(f"  {i+1}. [{msg['role']}]: {msg['content'][:50]}...")
-                    
-                    #  VALIDATE: Check for role errors
-                    for msg in messages:
-                        if msg['role'] not in ['user', 'assistant']:
-                            logger.error(f"❌ Invalid role detected: {msg['role']}")
-                    
                     # switch to this session
                     session_id = requested_session_id
-                    ensure_session_exists(session_id)
-                    
+                    print(f"🔃 Retrieving messages for chat with session-id {session_id}")
+                    # get chat messages
+                    chat_history = get_chat_messages(session_id, supabase_client)
+                    # get all message ids
+                    message_ids = get_message_ids(supabase_client)
+                    # convert message IDs to a list
+                    unique_message_ids = list({record['message_id'] for record in message_ids})
+
+                    # override conversation_history with new_chat_history
+                    conversation_history = chat_history or []
                     await websocket.send_json({
                         "type": "get_chat",
                         "status": "acknowledged",
                         "session_id": session_id,
-                        "chat_history": messages
+                        "chat_history": chat_history,
+                        "unique_message_ids": unique_message_ids 
                     })
-                    logger.info(f"✅ Loaded chat: {session_id} with {len(messages)} messages")
-                    
+                    logger.info(f"Loaded chat: {session_id} with {len(chat_history)} messages")
                 except Exception as e:
-                    logger.exception(f"❌ Error loading chat: {e}")
+                    logger.error(f"Error loading chat: {e}")
                     await websocket.send_json({
                         "type": "get_chat",
-                        "status": "non-acknowledged",
-                        "session_id": requested_session_id,
+                        "status": "not-acknowledged",
                         "error": str(e)
                     })
                 continue
 
-            if data.get("type") == "message":
-                if not current_session:
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": "Session not initialized!"
-                    })
-                    continue
-
-                messages = data.get("messages", [])
-                if not messages:
-                    continue
-
-            # ======= SESSION CODE END ============
-
+            # === AGENT SWITCH ===
+            if data.get("type") == "agent":
+                agent_name = data.get("agent")
+                if agent_name:
+                    if agent_name == "story-telling":
+                        print("Main agent set to story")
+                        active_agent = story_agent        
+                    else:
+                        active_agent = agent_module.main_agent
+                        print("Main agent sent to main agent")
+                continue
             # ============================= MODEL SELECTION HANDLER =============================
             if data.get("type") == "model-selection":
-                requested_model = data.get("model")  # e.g., "kimi-k2-instruct-0905", "deepseek-v3p1-terminus"
+                requested_model = data.get("model")
+                
+                is_valid = (requested_model in agent_module.SUPPORTED_CHAT_MODELS or 
+                            requested_model in agent_module.SUPPORTED_CHAT_MODELS.values())
 
-                # Validate against supported models
-                if requested_model in agent_module.SUPPORTED_MODELS:
+                if is_valid:
                     session_model_key = requested_model
-                    model_info = agent_module.SUPPORTED_MODELS[requested_model]
+                    
+                    display_name = requested_model
+                    if requested_model in agent_module.SUPPORTED_CHAT_MODELS:
+                        display_name = requested_model 
+                    
+                    if current_agent_name == "QuranTadabburAgent":
+                        print(f"🔄 Hot-swapping Main Agent to model: {session_model_key}")
+                        active_agent = agent_module.get_agent_by_user_age(
+                            age=25, 
+                            username="DefaultUser", 
+                            model_key=session_model_key
+                        )
+                    else:
+                        print(f"⚠️ Model pref saved as {session_model_key}, but not applied immediately because user is in {current_agent_name} mode.")
 
                     await websocket.send_json({
                         "type": "model-selection",
                         "status": "acknowledged",
                         "model": requested_model,
-                        "display_name": model_info["name"] 
+                        "display_name": display_name
                     })
+                    
                     await websocket.send_json({
                         "type": "loading_message",
-                        "content": f"Switched to **{model_info['name']}**"
+                        "content": f"Switched to **{display_name}**"
                     })
-                    logger.info(f"Model switched to: {requested_model} ({model_info['name']})")
+                    
+                    logger.info(f"Model preference updated to: {display_name}")
+                
                 else:
                     await websocket.send_json({
                         "type": "model-selection",
                         "status": "not-acknowledged",
                         "model": requested_model,
                         "error": "This model is not supported.",
-                        "available": list(agent_module.SUPPORTED_MODELS.keys())
+                        "available": list(agent_module.SUPPORTED_CHAT_MODELS.keys())
                     })
-                continue  # Skip to next message
+                continue  
+            
 
-            # === AGENT SWITCH ===
-            if data.get("type") == "agent":
-                agent_name = data.get("agent")
-                mapped = _map_name_to_agent(agent_name)
-                if mapped:
-                    active_agent = mapped
-                    active_config = getattr(mapped, "config", active_config)
-                    current_agent_name = getattr(mapped, "name", agent_name)
-                elif agent_name == "story-telling":
-                    active_agent = story_module.story_agent
-                    active_config = getattr(story_module, "config", None)
-                    current_agent_name = "Quran Storyteller"
-                else:
-                    active_agent = agent_module.agent
-                    active_config = getattr(agent_module, "config", None)
-                    current_agent_name = "Quran Tadabbur Agent"
+            if data.get("type") == "undo-report":
+                message_id = data.get("message_id")
+                if not message_id:
+                    print("No message ID found for reported message, can't proceed to undo")
+                    continue
+                try:
+                    # delete hard rule in a different thread for optimization
+                    await asyncio.to_thread(delete_report_rule, supabase_client, message_id)
+                    await websocket.send_json({
+                        "type": "undo-report",
+                        "message_id": message_id,
+                        "status": "acknowledged"
+                    })
+                except Exception as e:
+                    await websocket.send_json({
+                        "type": "undo-report",
+                        "status": "not-acknowledged"
+                    })
+                    continue
+                continue
 
-                current_agent_normalized = _normalize_name(current_agent_name)
-                await websocket.send_json({
-                    "type": "loading_message",
-                    "content": f"Switched to **{current_agent_name}** mode"
-                })
+
+            if data.get("type") == "report":
+                print("A response is reported")
+                ack_sent = False
+                try:
+                    message_id = data.get("message_id", "")
+                    feedback = data.get("feedback", "")
+                    
+                    if not message_id or not feedback:
+                        print("No variant/message ID/feedback, can't proceed to report content")
+                        await websocket.send_json({
+                        "type": "report",
+                        "status": "not-acknowledged"
+                    })
+                        ack_sent = True
+                        continue
+                    
+                    reported_assistant_message = next(
+                    (msg for msg in conversation_history if msg["id"] == message_id),
+                    None
+                    )
+                    if reported_assistant_message:
+                        try:
+                            # insert hard rule in a different thread for optimization
+                            print("Reported assistant message",reported_assistant_message['content'] )
+                            response = await asyncio.to_thread(insert_report_rule, supabase_client, message_id, feedback)
+
+                            print("Report response", response)
+                            if not response:
+                                await websocket.send_json({
+                                    "type": "report",
+                                    "status": "not-acknowledged"
+                                })
+                            else:
+                                await websocket.send_json(response)
+                            ack_sent = True
+                            
+                        except Exception as e:
+                            await websocket.send_json({
+                            "type": "report",
+                            "status": "not-acknowledged"
+                            })
+                            ack_sent = True
+                        continue
+                            
+                    else:
+                        print(f"No assistant message found for message_id {message_id}, can't report message. Proceeding...")
+                        continue
+                                
+                except Exception as e:
+                    print(f"An error occured while the assistant's response {message_id}")    
+                    if not ack_sent:
+                        await websocket.send_json({
+                        "type": "report",
+                        "status": "not-acknowledged"
+                    })
+                continue
+
+            if data.get("type") in ["like", "dislike"]:
+                type = data.get("type")
+                session_id = data.get('session_id')
+                message_id = data.get('message_id')
+                message = data.get("message")
+                if not session_id or not message_id or not message:
+                    print("No message or session ID, can't proceed to feedback submission")
+                    continue
+                asyncio.create_task(asyncio.to_thread(handle_feedback, type, message, message_id))
                 continue
 
             # === MAIN CHAT MESSAGE ===
-            messages = data.get("messages", [])
-            if messages:
-                latest_message = messages[-1]["content"]
+            if data.get("type") == "user_message":
+                role = data.get("role", "user")
+                message = data.get("content", "")
+                user_message_id = data.get("message_id")
+                additional_instructions = data.get("system_instructions")
+                resend_flag = data.get("resend_flag")
+                resend_message_id = data.get("resend_message_id")
 
-                if latest_message.strip():
-                    latest_message_lower = latest_message.lower()
-                    
-                    # Enhanced audio keyword detection
-                    audio_keywords = [
-                        "listen", "play", "recite", "audio", "hear",
-                         "recitation", "tilawat"
-                    ]
-                    
-                    is_audio_request = any(
-                        keyword in latest_message_lower 
-                        for keyword in audio_keywords
-                    )
-                    
-                    if is_audio_request:
-                        logger.info(f"🎵 Audio keyword detected: '{latest_message[:50]}'")
-                        
-                        # Try to parse the request
-                        parsed = parse_quran_audio_request(latest_message)
-                        
-                        if parsed:
-                            logger.info(f"✅ Parsed request: {parsed}")
-                            
-                            # Send parsed data to frontend
-                            await websocket.send_json({
-                                "type": "open_audio_dialog",
-                                "parsed_request": parsed,
-                                "original_message": latest_message,
-                                "available_reciters": get_available_reciters()
-                            })
-                            
-                            logger.info("⏭️ Audio dialog triggered, skipping normal chat")
-                            continue
-                        else:
-                            # Could not parse, open dialog with defaults
-                            logger.warning("⚠️ Could not parse audio request, using defaults")
-                            await websocket.send_json({
-                                "type": "open_audio_dialog",
-                                "parsed_request": {"surah": 1, "ayah": None},
-                                "original_message": latest_message,
-                                "available_reciters": get_available_reciters(),
-                                "note": "Please specify surah and ayah number"
-                            })
-                            continue
-                
-                if latest_message.strip():
-                    latest_message_lower = latest_message.lower()
-                    
-                    # Verse keyword detection
-                    verse_keywords = [
-                        "verse", "ayah", "read verse", "show verse",
-                        "display verse", "surah", "reading verse"
-                    ]
-                    
-                    is_verse_request = any(
-                        keyword in latest_message_lower 
-                        for keyword in verse_keywords
-                    )
-                    
-                    if is_verse_request:
-                        logger.info(f"📖 Verse keyword detected: '{latest_message[:50]}'")
-                        
-                        parsed = parse_verse_request(latest_message)
-                        
-                        if parsed:
-                            logger.info(f"✅ Parsed verse request: {parsed}")
-                            
-                            await websocket.send_json({
-                                "type": "open_verse_dialog",
-                                "parsed_request": parsed,
-                                "original_message": latest_message
-                            })
-                            
-                            logger.info("⏭️ Verse dialog triggered")
-                            continue
-                        else:
-                            logger.warning("⚠️ Could not parse verse request")
-                            await websocket.send_json({
-                                "type": "open_verse_dialog",
-                                "parsed_request": {"surah": 1, "ayah": 1},
-                                "original_message": latest_message,
-                                "note": "Please specify surah and ayah number"
-                            })
-                            continue
-
-
-                if latest_message.strip() and session_id:
-
-                    latest_role = messages[-1].get("role", "user")
-
-                    if latest_role == 'user':
-                        cleaned_content = clean_message_content(latest_message.strip())
-                        if cleaned_content:
-                            save_message_to_db(session_id, "user", cleaned_content)
-                            logger.info(f"💾 User message saved: '{cleaned_content[:30]}...'")
-                        
-                else:
-                    logger.warning(f"⚠️ Skipping non-user message from frontend: {latest_role}")
-
-
-                # if latest_message.strip() and session_id:
-               
-            if len(messages) == 1 and messages[0]["role"] == "user":
-                try:
-                    temp_config = agent_module.get_model_config(session_model_key)
-                    result = await Runner.run(
-                        title_agent,
-                        f"Generate a short title for this first message: {messages[0]['content']}",
-                        run_config=temp_config
-                    )
-                    smart_title = result.final_output.strip()
-                    if smart_title and len(smart_title) > 3:
-                        await websocket.send_json({
-                            "type": "chat_title",
-                            "title": smart_title
-                        })
+                # check resend_message_id if resend flag is True
+                if resend_flag:
+                    if not resend_message_id:
+                        print("Can't proceed forward with the received message because of no message ID")
+                        continue
+                if not resend_flag:
+                    if user_message_id:
+                        unique_message_ids.append(user_message_id)
                     else:
-                        await websocket.send_json({"type": "chat_title", "title": "Quranic Reflection"})
-                        logger.info(f"Live title sent: {smart_title}")
-                except:
-                    await websocket.send_json({"type": "chat_title", "title": "Quranic Reflection"})
-              
-            else:
-                latest_message = ""
+                        user_message_id = generate_uuid()
+                        while user_message_id in unique_message_ids:
+                            user_message_id = generate_uuid()
+                        unique_message_ids.append(user_message_id)
+                # save user message in db
+                message_string = message + f"\n\n {additional_instructions}" if additional_instructions else message
+                if not resend_flag:
+                    try:
+                        supabase_client.table('chat_messages').insert({
+                            "message_id": user_message_id,
+                            "session_id": session_id,
+                            "role": role,
+                            "content": message_string,
+                        }).execute()
+                        print("✅ User message saved successfully!")
+                    except Exception as e:
+                        print("Some error occured while inserting user messages", e)
+                        raise
 
-            logger.info(f"[{current_agent_name}] Session: {session_id} | Message: {latest_message[:50]} ...")
+                logger.info(f"[{current_agent_name}] Session: {session_id} | Message: {message_string} ...")
+                # File Feature
+                file_context = session_file_context.get(session_id, "")
+                
+                if file_context:
+                    logger.info(f"📚 Found context for session {session_id}: {len(file_context)} chars")
+                    safe_context = (file_context[:8000] + '... [TRUNCATED]') if len(file_context) > 8000 else file_context
+                    message_string = (
+                        f"The user has attached a file. Use the following content to answer the user's question:\n"
+                        f"========================================\n"
+                        f"{safe_context}\n"
+                        f"========================================\n\n"
+                        f"USER QUESTION: {message_string}"
+                    )
+                    
+                    logger.info(f"✅ Injected file context into prompt for {session_id}")
+                # print("Dynamic system instructions", dynamic_system_instruction["text"])
+                try:
+                    # Prepare messages
+                    base_messages = (
+                        [{"role": "system", "content": dynamic_system_instruction["text"]}]
+                        if dynamic_system_instruction["text"] else []
+                    )
+                    print("Message string", message_string)
+                    if not resend_flag:
+                        # append user message to conversation history
+                        conversation_history.append({"role": "user", "content": message_string, "id": user_message_id})
+                        messages = base_messages + conversation_history
+                    else:
+                        messages = base_messages + conversation_history + [{"role": "user", "content": message_string}]
+                        
+                    response = active_agent.invoke(
+                        {"messages": messages},
+                    )
 
-            run_result = None
+                    response = response['messages'][-1].content
+                    
+                    # generate a message id for response message
+                    response_message_id = generate_uuid()
+                    while response_message_id in unique_message_ids:
+                        response_message_id = generate_uuid()
+                    unique_message_ids.append(response_message_id)
 
+                    user_message_id = user_message_id if not resend_flag else resend_message_id
+                    # append assistant message to conversation history
+                    conversation_history.append({"role": "assistant", "content": response or "", "id": response_message_id, "reply_to_message_id": user_message_id})
 
-            conversation = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
-            logger.info(f"[{current_agent_name}] Processing with model: {session_model_key}")
+                    try:
+                        supabase_client.table('chat_messages').insert({
+                            "message_id": response_message_id,
+                            "session_id": session_id,
+                            "role": "assistant",
+                            "content": response or "",
+                            "reply_to_message_id": user_message_id
+                        }).execute()
+                        print("✅ Assistant message saved successfully!")
+                    except Exception as e:
+                        print("Some error occured while inserting assistant messages", e)
 
-            try:
-                dynamic_config = agent_module.get_model_config(session_model_key)
-                base_config = getattr(active_agent, "config", None) or agent_module.config
-                if base_config and hasattr(base_config, "model_settings"):
-                    dynamic_config.model_settings = base_config.model_settings
+                    # generate title and description for the current chat history if there are 2 user/assistant messages each
+                    # run the below logic in a seperate thread
+                    asyncio.create_task(
+                        asyncio.to_thread(
+                            generate_title_description,
+                            conversation_history,
+                            session_id,
+                            supabase_client
+                        )
+                    )
 
-                # Show initial thinking
-                # await websocket.send_json({
-                #     "type": "loading_message",
-                #     "content": "Thinking deeply about your question..."
-                # })
-
-                print("Conversation", conversation)
-                run_result = Runner.run_streamed(
-                    active_agent,
-                    conversation,
-                    run_config=dynamic_config,
-                    session= None
-                )
-
-                final_text = ""  # Will collect all visible text
-
-                async for event in run_result.stream_events():
-
-                    # # === LLM TOKEN STREAMING ====
-                    if event.type == "raw_response_event":
-                        delta = getattr(event.data, "delta", None) or getattr(event.data, "text", None)
-                        if delta and delta.strip():
-                            # Block raw tool call JSON
-                            if not (delta.strip().startswith("{") and ("name" in delta or "arguments" in delta)):
-                                # await websocket.send_json({
-                                #     "type": "assistance_response_chunk",
-                                #     "content": delta
-                                # })
-                               
-                                final_text += delta
-                        continue
-
-                    # === AGENT HAND-OFF ===
-                    elif event.type == "agent_updated_stream_event":
-                        new_name = None
-                        try:
-                            obj = getattr(event, "new_agent", None)
-                            new_name = getattr(obj, "name", None) if obj else getattr(event.data, "new_agent_name", None)
-                        except:
-                            pass
-                        if new_name and _normalize_name(new_name) != current_agent_normalized:
-                            mapped = _map_name_to_agent(new_name)
-                            if mapped:
-                                active_agent = mapped
-                                active_config = getattr(mapped, "config", active_config)
-                                current_agent_name = getattr(mapped, "name", new_name)
-                            else:
-                                current_agent_name = new_name
-                            current_agent_normalized = _normalize_name(current_agent_name)
-
-                            await websocket.send_json({
-                                "type": "loading_message",
-                                "content": f"Handing to expert..**"
-                            })
-                        continue
-
-                    # === TOOL CALL & OUTPUT ===
-                    elif event.type == "run_item_stream_event":
-                        item = event.item
-                        itype = getattr(item, "type", None)
-
-                    elif event.type == "tool_call_item":
+                    if response:
                         await websocket.send_json({
-                            "type": "loading_message",
-                            "content": "Searching authentic Quranic sources..."
+                            "type": "assistance_response",
+                            "message_id": response_message_id,
+                            "content": response or "",
+                            "resend_flag": resend_flag,
+                            "reply_to_message_id": user_message_id,
+                            "final": True
                         })
 
-                    elif event.type == "tool_call_output_item":
-                        output = getattr(event.item, "output", "")
-                        if isinstance(output, str) and output.strip():
-                            await websocket.send_json({
-                                "type": "assistance_response_chunk",
-                                "content": output
-                            })
+                    # # tool logic
+                    # response_lower = response.lower() if response else ""
 
-                    elif event.type == "message_output_item":
-                        try:
-                            text = ItemHelpers.text_message_output(event.item)
-                        except:
-                            text = str(event.item)
-                        if text and text.strip():
-                            await websocket.send_json({
-                                "type": "assistance_response_chunk",
-                                "content": text
-                            })
-                        
+                    # # Pre-check indicators
+                    # has_audio_indicators = any(indicator in response_lower for indicator in ["🎧", "http", "play", "listen", "audio", "recite"])
+                    # has_verse_indicators = (
+                    #     any(indicator in response_lower for indicator in ["surah", "ayah", "verse", "chapter"]) 
+                    #     and bool(re.search(r'[\u0600-\u06FF]', response or ""))
+                    # )
 
-                final_output = (
-                    getattr(run_result, "final_output", None) or
-                    getattr(run_result, "output_text", None) or
-                    getattr(run_result, "assistance_response", None) or
-                    ""
-                )
-                if final_output and isinstance(final_output, str) and final_output.strip():
-                    if session_id:
-                        cleaned_output = clean_message_content(final_output.strip())
-                        if cleaned_output:
-                            # BAS ITNA — SIRF EK LINE!
-                            save_message_to_db(session_id, "assistant", cleaned_output)
-                            logger.info(f"Assistant response saved: '{cleaned_output[:50]}...'")
+                    # # Initialize as None
+                    # audio_data = None
+                    # verse_data = None
 
-                    await websocket.send_json({
-                        "type": "assistance_response",
-                        "content": final_output.strip(),
-                        "final": True
-                    })
+                    
+                    # if has_audio_indicators:
+                    #     logging.info("[SMART-CHECK] 🎵 Audio indicators detected - calling extract_audio_data()")
+                    #     audio_data = extract_audio_data(response)
+                    #     logging.info(f"[DEBUG] Audio extracted: {audio_data is not None}")
+                    # else:
+                    #     logging.info("[SMART-CHECK] ⏭️ No audio indicators - skipping extraction")
 
-                await websocket.send_json({"type": "streaming_end"})
-                await websocket.send_json({"type": "run_complete"}) 
+                    # if has_verse_indicators and not audio_data: 
+                    #     logging.info("[SMART-CHECK] 📖 Verse indicators detected - calling extract_verse_data()")
+                    #     verse_data = extract_verse_data(response)
+                    #     logging.info(f"[DEBUG] Verse extracted: {verse_data is not None}")
+                    # else:
+                    #     if not has_verse_indicators:
+                    #         logging.info("[SMART-CHECK] ⏭️ No verse indicators - skipping extraction")
+                   
+                    # logging.info(f"[DEBUG] Audio detected: {audio_data is not None}")
+                    # logging.info(f"[DEBUG] Verse detected: {verse_data is not None}")
 
-            except InputGuardrailTripwireTriggered as e:
-                            msg = getattr(e.guardrail_result, "output_info", None)
+                    # if audio_data:
+                    #     await websocket.send_json({
+                    #         "type": "open_audio_dialog",  
+                    #         "parsed_request": {
+                    #             "surah": audio_data["surah_number"],
+                    #             "ayah": audio_data["ayah_number"]
+                    #         },
+                    #         "original_message": f"Play Surah {audio_data['surah_name']}",
+                    #         "available_reciters": get_available_reciters(), 
+                    #         "note": "Audio auto-detected"
+                    #     })
+                    #     logging.info("[WS]opening dialog cleanly")
+                      
+                    # elif verse_data and isinstance(verse_data, dict) and verse_data.get("surah_number"):
+                    #     logging.info("[WS] Vers - opening Quran Verse ")
+                    #     await websocket.send_json({
+                    #         "type": "open_verse_dialog",
+                    #         "parsed_request": {
+                    #             "surah": verse_data["surah_number"],
+                    #             "ayah": verse_data["ayah_number"]
+                    #         },
+                    #         "original_message": "Quran Verse",
+                    #         "note": None  
+                    #     }) 
+                    
+                    # else:
 
-                            # If guardrail didn't provide a message → use fallback agent
-                            if not msg or not msg.strip():
-                                logger.info("Input guardrail triggered → trying fallback agent")
 
-                                # Choose correct fallback agent based on current active agent
-                                if getattr(active_agent, "name", "").startswith("QuranTadabburAgent"):
-                                    fallback_agent = getattr(agent_module, "fallback_agent", None)
-                                elif "Story" in getattr(active_agent, "name", "") or getattr(active_agent, "name", "") == "QuranStoryTeller":
-                                    fallback_agent = getattr(story_module, "fallback_agent", None)
-                                else:
-                                    fallback_agent = getattr(agent_module, "fallback_agent", None)
+                    await websocket.send_json({"type": "streaming_end"})
+                    await websocket.send_json({"type": "run_complete"})
 
-                                if fallback_agent:
-                                    try:
-                                        fallback_result = await Runner.run(
-                                            fallback_agent,
-                                            conversation,
-                                            run_config=active_config or dynamic_config
-                                        )
-                                        msg = getattr(fallback_result, "final_output", None) or \
-                                            getattr(fallback_result, "output_text", None) or \
-                                            "I'm sorry, I can't assist with that topic."
-                                    except Exception as fallback_err:
-                                        logger.error(f"Fallback agent failed: {fallback_err}")
-                                        msg = "I'm sorry, I can't assist with that topic."
-                                else:
-                                    msg = "This question is outside my allowed scope."
-                            if msg and msg.strip() and session_id:
-                                save_message_to_db(session_id, "assistant", msg.strip())
-                                logger.info(f"Guardrail/Fallback response saved")
 
-                            # Send final response 
-                            await websocket.send_json({
-                                "type": "assistance_response",
-                                "content": msg.strip()
-                            })
-                            await websocket.send_json({"type": "streaming_end"})
-                            await websocket.send_json({"type": "run_complete"})
+                except WebSocketDisconnect:
+                    logger.info("Client disconnected")
+                    print("Closing websocket...")
+                    websocket.close()
+                    break
 
-            except OutputGuardrailTripwireTriggered as e:
-                msg = getattr(e.guardrail_result, "output_info",
-                              "Sorry, I can only respond within the context of the Quran and authentic Islamic sources.")
-                if msg and msg.strip() and session_id:
-                    save_message_to_db(session_id, "assistant", msg.strip())
-                    logger.info(f"💾 Output guardrail response saved")
 
-                await websocket.send_json({
-                    "type": "assistance_response",
-                    "content": msg.strip()
-                })
-                await websocket.send_json({"type": "streaming_end"})
-                await websocket.send_json({"type": "run_complete"})
+                except Exception as e:
+                    await websocket.send_json({"type": "assistance_response", "content": "Sorry, something went wrong."})
+                    await websocket.send_json({"type": "streaming_end"})
+                    await websocket.send_json({"type": "run_complete"})
+                    raise
 
-            except WebSocketDisconnect:
-                logger.info("Client disconnected")
-                break
-
-            except Exception as e:
-                logger.exception("Streaming error")
-                await websocket.send_json({"type": "assistance_response", "content": "Sorry, something went wrong."})
-                await websocket.send_json({"type": "streaming_end"})
-                await websocket.send_json({"type": "run_complete"})
 
     except WebSocketDisconnect:
         logger.info("WebSocket closed")
+        
+
     except Exception as e:
         logger.exception("WebSocket error")
+
+
 # ------------------- APP RUNNER -------------------
+
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    # uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True) 
+    uvicorn.run("main:app", host="0.0.0.0", port=8000)

@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile
 from datetime import datetime, timedelta
 from models import BookmarkDeleteRequest
@@ -8,16 +7,41 @@ from fastapi.responses import StreamingResponse
 
 # Local imports
 from models import *
-from utils import (
+from utilities import hash_password,verify_password, create_access_token, verify_google_token, generate_user_id, generate_notification_id, generate_bookmark_id, generate_feedback_id, get_current_user
+import base64
+
+import logging
+from fastapi.responses import StreamingResponse
+import os
+from supabase import create_client, Client
+
+# Local imports
+
+from models import *
+
+from utils.authentication import (
     hash_password, verify_password, create_access_token,
-    verify_google_token, generate_user_id, generate_notification_id,
+    verify_google_token, generate_notification_id,
     generate_bookmark_id, generate_feedback_id, get_current_user
 )
+from utils.generate_uuid import generate_uuid
 from database import get_db_connection
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# ==================== SUPABASE SETUP ====================
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_STORAGE_BUCKET = os.getenv("SUPABASE_STORAGE_BUCKET", "profile-images")
+
+# Initialize Supabase client
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+logger.info(f"Supabase client created: {supabase is not None}")
+
+profile_router = APIRouter(prefix="/users", tags=["User Profile"])
 
 # ==================== AUTH ROUTER ====================
 
@@ -105,7 +129,8 @@ async def login(req: LoginRequest):
             print("User",user)
             
             # Generate token
-            token = create_access_token(user['user_id'], user['firstname'])
+            # token = create_access_token(user['user_id'], user['firstname'])
+            token = create_access_token(str(user['user_id']), user['firstname'])
             login_time = datetime.utcnow()
 
             # Save token
@@ -586,6 +611,8 @@ async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current
 
 # ==================== IMAGE ENDPOINTS ====================
 
+from fastapi import File, UploadFile
+
 @profile_router.post("/upload-image", response_model=ImageUploadResponse)
 async def upload_profile_image(
     file: UploadFile = File(...), 
@@ -650,46 +677,52 @@ async def upload_profile_image(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Image upload error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Image upload failed")
+        logger.exception(f"❌ Upload error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Image upload failed: {str(e)}")
 
 
-@profile_router.get("/image/{image_id}")
-async def get_profile_image(image_id: int, user: dict = Depends(get_current_user)):
-    """Fetch profile image"""
+@profile_router.get("/image/{user_id}")
+async def get_profile_image_redirect(user_id: str):
+    """
+    Get user's profile image URL (redirects to Supabase CDN)
+    
+    This is a helper endpoint - in production, frontend should use
+    the profileImageUrl directly from GET /users/me
+    """
     try:
         async with get_db_connection() as conn:
-            result = await conn.fetchrow(
-                """SELECT image_data, content_type, image_name, user_id 
-                   FROM user_images WHERE id = $1""", 
-                image_id
+            # Check Google users first
+            image_url = await conn.fetchval(
+                "SELECT profile_image_url FROM google_users WHERE user_id = $1",
+                user_id
             )
             
-            if not result:
-                raise HTTPException(status_code=404, detail="Image not found")
+            if not image_url:
+                # Check regular users
+                image_url = await conn.fetchval(
+                    "SELECT profile_image_url FROM users WHERE user_id = $1",
+                    user_id
+                )
             
-            if result['user_id'] != user['user_id']:
-                raise HTTPException(status_code=403, detail="Access denied")
+            if not image_url:
+                raise HTTPException(status_code=404, detail="No profile image found")
             
-            return StreamingResponse(
-                iter([result['image_data']]),
-                media_type=result['content_type'],
-                headers={
-                    "Content-Disposition": f"inline; filename={result['image_name']}",
-                    "Cache-Control": "public, max-age=31536000"
-                }
-            )
+            # Return JSON with URL (or redirect)
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(url=image_url)
             
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error serving image {image_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to serve image")
+        logger.error(f"Error fetching image URL: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch image")
 
 
 @profile_router.delete("/delete-image", response_model=SuccessResponse)
 async def delete_profile_image(user: dict = Depends(get_current_user)):
-    """Delete current profile image"""
+    """
+    ✅ Delete profile image from Supabase Storage
+    """
     try:
         async with get_db_connection() as conn:
             is_google = await conn.fetchval(
@@ -697,42 +730,52 @@ async def delete_profile_image(user: dict = Depends(get_current_user)):
                 user['user_id']
             )
             
+            # Get current image URL
             image_url = await conn.fetchval(
-                f"SELECT image_url FROM {'google_users' if is_google else 'users'} WHERE user_id = $1",
+                f"SELECT profile_image_url FROM {'google_users' if is_google else 'users'} WHERE user_id = $1",
                 user['user_id']
             )
             
-            if not image_url or not image_url.startswith('/users/image/'):
+            if not image_url:
                 raise HTTPException(status_code=404, detail="No profile image to delete")
             
-            image_id = int(image_url.split('/')[-1])
-            result = await conn.execute(
-                "DELETE FROM user_images WHERE id = $1 AND user_id = $2", 
-                image_id, user['user_id']
-            )
+            # Extract path from Supabase URL
+            if SUPABASE_STORAGE_BUCKET in image_url:
+                try:
+                    image_path = image_url.split(f'{SUPABASE_STORAGE_BUCKET}/')[-1]
+                    logger.info(f"Deleting from Supabase: {image_path}")
+
+                    # Delete from Supabase Storage
+                    supabase.storage.from_(SUPABASE_STORAGE_BUCKET).remove([image_path])
+                    logger.info(f"Deleted from Supabase: {image_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete from Supabase: {str(e)}")
             
-            if result == "DELETE 1":
-                if is_google:
-                    await conn.execute(
-                        "UPDATE google_users SET image_url = NULL WHERE user_id = $1",
-                        user['user_id']
-                    )
-                else:
-                    await conn.execute(
-                        "UPDATE users SET image_url = NULL, updated_at = NOW() WHERE user_id = $1",
-                        user['user_id']
-                    )
-                
-                logger.info(f"Image deleted: user={user['user_id']}, image_id={image_id}")
-                return SuccessResponse(message="Profile image deleted successfully")
+            # Clear from database
+            if is_google:
+                await conn.execute(
+                    "UPDATE google_users SET profile_image_url = NULL WHERE user_id = $1",
+                    user['user_id']
+                )
             else:
-                raise HTTPException(status_code=404, detail="Image not found")
+                await conn.execute(
+                    "UPDATE users SET profile_image_url = NULL, updated_at = NOW() WHERE user_id = $1",
+                    user['user_id']
+                )
+            
+            logger.info(f"✅ Profile image deleted for user {user['user_id']}")
+            
+            return SuccessResponse(
+                message="Profile image deleted successfully",
+                timestamp=datetime.utcnow()
+            )
             
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Image deletion error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to delete image")
+
 
 
 # ==================== FEEDBACK ROUTER ====================
@@ -757,3 +800,765 @@ async def submit_feedback(req: FeedbackCreate, user: dict = Depends(get_current_
         status="received",
         createdAt=created_time
     )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# """
+# 📁 routes/main.py (ya app.py)
+# ✅ ALL ENDPOINTS - Auth, Notifications, Bookmarks, Profile, Feedback
+# """
+
+# from fastapi import APIRouter, Depends, HTTPException, File, UploadFile
+# from datetime import datetime, timedelta
+# from typing import List
+# import logging
+# import os
+# from io import BytesIO
+# import uuid
+
+# # Local imports
+# from database import get_db_connection
+# from models import *
+# from utils.authentication import (
+#     hash_password, verify_password, create_access_token,
+#     verify_google_token, generate_user_id, generate_notification_id,
+#     generate_bookmark_id, generate_feedback_id, get_current_user
+# )
+# from supabase import create_client, Client
+
+# # Logger
+# logger = logging.getLogger(__name__)
+# logging.basicConfig(level=logging.INFO)
+
+# # ==================== SUPABASE SETUP ====================
+
+# SUPABASE_URL = os.getenv("SUPABASE_URL")
+# SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+# STORAGE_BUCKET = os.getenv("SUPABASE_STORAGE_BUCKET", "profile-images")
+
+# supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# logger.info("✅ Supabase initialized")
+
+# # ==================== ROUTERS ====================
+
+# auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
+# notif_router = APIRouter(prefix="/notifications", tags=["Notifications"])
+# bookmark_router = APIRouter(prefix="/bookmarks", tags=["Bookmarks"])
+# profile_router = APIRouter(prefix="/users", tags=["User Profile"])
+# feedback_router = APIRouter(prefix="/feedback", tags=["Feedback"])
+
+
+# # ==================== AUTH ENDPOINTS ====================
+
+# @auth_router.post("/signup", response_model=AuthResponse)
+# async def signup(req: SignupRequest):
+#     """Register new user with email & password"""
+#     try:
+#         async with get_db_connection() as conn:
+#             # Check if email exists
+#             email_exists = await conn.fetchrow(
+#                 "SELECT user_id FROM users WHERE email = $1",
+#                 req.email
+#             )
+
+#             if email_exists:
+#                 raise HTTPException(
+#                     status_code=400, 
+#                     detail="Email already registered"
+#                 )
+
+#             # Create user
+#             user_id = generate_user_id()
+#             pwd_hash = hash_password(req.password)
+#             login_time = datetime.utcnow()
+
+#             await conn.execute("""
+#                 INSERT INTO users (user_id, firstname, last_name, email, password_hash, created_at)
+#                 VALUES ($1, $2, $3, $4, $5, $6)
+#             """, user_id, req.firstname, req.lastName, req.email, pwd_hash, login_time)
+
+#             # Generate token
+#             token = create_access_token(str(user_id), req.firstname)
+
+#             # Save token
+#             expires_at = login_time + timedelta(hours=24*7)
+#             await conn.execute("""
+#                 INSERT INTO auth_tokens (user_id, token, expires_at)
+#                 VALUES ($1, $2, $3)
+#             """, user_id, token, expires_at)
+
+#             logger.info(f"✅ User signup: {user_id}")
+
+#             return AuthResponse(
+#                 token=token,
+#                 message="Signup successful",
+#                 loginTime=login_time,
+#                 user_id=user_id,
+#                 firstname=req.firstname,
+#                 lastName=req.lastName
+#             )
+    
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.error(f"❌ Signup error: {str(e)}")
+#         raise HTTPException(status_code=500, detail=f"Signup failed: {str(e)}")
+
+
+# @auth_router.post("/login", response_model=AuthResponse)
+# async def login(req: LoginRequest):
+#     """Login with email & password"""
+#     try:
+#         async with get_db_connection() as conn:
+#             user = await conn.fetchrow("""
+#                 SELECT user_id, firstname, last_name, password_hash
+#                 FROM users WHERE email = $1
+#             """, req.email)
+            
+#             if not user or not verify_password(req.password, user['password_hash']):
+#                 raise HTTPException(status_code=401, detail="Invalid email or password")
+            
+#             # Generate token
+#             token = create_access_token(str(user['user_id']), user['firstname'])
+#             login_time = datetime.utcnow()
+
+#             # Save token
+#             expires_at = login_time + timedelta(hours=24*7)
+#             await conn.execute("""
+#                 INSERT INTO auth_tokens (user_id, token, expires_at)
+#                 VALUES ($1, $2, $3)
+#             """, user['user_id'], token, expires_at)
+
+#             # Auto notification
+#             notif_id = generate_notification_id()
+#             await conn.execute("""
+#                 INSERT INTO notifications (notification_id, user_id, title, message, created_at)
+#                 VALUES ($1, $2, $3, $4, $5)
+#             """, notif_id, user['user_id'], "Login Successful",
+#                 "You logged into your account", login_time)
+
+#             logger.info(f"✅ User login: {user['user_id']}")
+
+#             return AuthResponse(
+#                 token=token,
+#                 message="Login successful",
+#                 loginTime=login_time,
+#                 user_id=user['user_id'],
+#                 firstname=user['firstname'],
+#                 lastName=user['last_name']
+#             )
+    
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.error(f"❌ Login error: {str(e)}")
+#         raise HTTPException(status_code=500, detail=f"Login failed: {str(e)}")
+
+
+# @auth_router.post("/google-signin", response_model=AuthResponse)
+# async def google_signin(req: GoogleSignInRequest):
+#     """Sign in with Google OAuth"""
+#     try:
+#         google_data = await verify_google_token(req.token)
+        
+#         async with get_db_connection() as conn:
+#             user = await conn.fetchrow("""
+#                 SELECT user_id, firstname, email
+#                 FROM google_users WHERE google_id = $1
+#             """, google_data['google_id'])
+            
+#             if not user:
+#                 # Create new user
+#                 user_id = generate_user_id()
+#                 username = google_data['name'] or google_data['email'].split('@')[0]
+                
+#                 await conn.execute("""
+#                     INSERT INTO google_users (user_id, google_id, email, firstname, profile_picture)
+#                     VALUES ($1, $2, $3, $4, $5)
+#                 """, user_id, google_data['google_id'], google_data['email'],
+#                     username, google_data.get('picture'))
+
+#                 user = {'user_id': user_id, 'firstname': username, 'email': google_data['email']}
+            
+#             token = create_access_token(str(user['user_id']), user['firstname'])
+#             login_time = datetime.utcnow()
+
+#             # Auto notification
+#             notif_id = generate_notification_id()
+#             await conn.execute("""
+#                 INSERT INTO notifications (notification_id, user_id, title, message, created_at)
+#                 VALUES ($1, $2, $3, $4, $5)
+#             """, notif_id, user['user_id'], "Login Successful",
+#                 "You logged into your account via Google", login_time)
+
+#             logger.info(f"✅ Google signin: {user['user_id']}")
+
+#             return AuthResponse(
+#                 token=token,
+#                 message="Google sign-in successful",
+#                 loginTime=login_time,
+#                 user_id=user['user_id'],
+#                 firstname=user['firstname'],
+#                 lastName=None
+#             )
+    
+#     except Exception as e:
+#         logger.error(f"❌ Google signin error: {str(e)}")
+#         raise HTTPException(status_code=401, detail="Google authentication failed")
+
+
+# # ==================== NOTIFICATION ENDPOINTS ====================
+
+# @notif_router.post("/send", response_model=SuccessResponse)
+# async def send_notification(req: NotificationCreate, user: dict = Depends(get_current_user)):
+#     """Send notification"""
+#     notif_id = generate_notification_id()
+    
+#     async with get_db_connection() as conn:
+#         await conn.execute("""
+#             INSERT INTO notifications (notification_id, user_id, title, message, created_at)
+#             VALUES ($1, $2, $3, $4, NOW())
+#         """, notif_id, req.recipientId, req.title, req.message)
+    
+#     return SuccessResponse(message="Notification sent successfully")
+
+
+# @notif_router.get("", response_model=List[NotificationResponse])
+# async def get_notifications(user: dict = Depends(get_current_user)):
+#     """Get all notifications"""
+#     async with get_db_connection() as conn:
+#         rows = await conn.fetch("""
+#             SELECT notification_id as id, title, message, COALESCE(is_read, FALSE) as is_read, created_at as time
+#             FROM notifications WHERE user_id = $1
+#             ORDER BY created_at DESC
+#         """, user['user_id'])
+
+#     return [dict(row) for row in rows]
+
+
+# @notif_router.get("/{notification_id}", response_model=NotificationResponse)
+# async def get_notification(notification_id: str, user: dict = Depends(get_current_user)):
+#     """Get specific notification"""
+#     async with get_db_connection() as conn:
+#         row = await conn.fetchrow("""
+#             SELECT notification_id as id, title, message, COALESCE(is_read, FALSE) as is_read, created_at as time
+#             FROM notifications WHERE notification_id = $1 AND user_id = $2
+#         """, notification_id, user['user_id'])
+
+#         if not row:
+#             raise HTTPException(status_code=404, detail="Notification not found")
+
+#     return dict(row)
+
+
+# @notif_router.put("/mark-read", response_model=SuccessResponse)
+# async def mark_notifications_as_read(req: MarkNotificationReadRequest, user: dict = Depends(get_current_user)):
+#     """Mark notification(s) as read"""
+#     async with get_db_connection() as conn:
+#         if req.mark_all:
+#             await conn.execute("""
+#                 UPDATE notifications 
+#                 SET is_read = TRUE 
+#                 WHERE user_id = $1 AND (is_read = FALSE OR is_read IS NULL)
+#             """, user['user_id'])
+            
+#             return SuccessResponse(message="All notifications marked as read")
+        
+#         elif req.notification_id:
+#             await conn.execute("""
+#                 UPDATE notifications 
+#                 SET is_read = TRUE 
+#                 WHERE notification_id = $1 AND user_id = $2
+#             """, req.notification_id, user['user_id'])
+            
+#             return SuccessResponse(message="Notification marked as read")
+        
+#         else:
+#             raise HTTPException(
+#                 status_code=400, 
+#                 detail="Either notification_id or mark_all required"
+#             )
+
+
+# # ==================== BOOKMARK ENDPOINTS ====================
+
+# @bookmark_router.post("", response_model=BookmarkResponse)
+# async def create_bookmark(req: BookmarkCreate, user: dict = Depends(get_current_user)):
+#     """Save bookmark"""
+#     bookmark_id = generate_bookmark_id()
+#     created_time = datetime.utcnow()
+
+#     async with get_db_connection() as conn:
+#         existing = await conn.fetchrow("""
+#             SELECT bookmark_id FROM bookmarks
+#             WHERE user_id = $1 AND surah_no = $2 AND ayah_no = $3
+#         """, user['user_id'], req.surah_no, req.ayah_no)
+
+#         if existing:
+#             raise HTTPException(status_code=400, detail="Already bookmarked")
+
+#         await conn.execute("""
+#             INSERT INTO bookmarks (
+#                 bookmark_id, user_id, type,
+#                 surah_name_eng, surah_name_arb, surah_no, ayah_no, total_ayah, ayah,
+#                 created_at)
+#             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+#         """, bookmark_id, user['user_id'],
+#             req.type, req.surah_name_eng, req.surah_name_arb, req.surah_no, req.ayah_no, req.total_ayah, req.ayah,
+#             created_time)
+        
+#         notif_id = generate_notification_id()
+#         await conn.execute("""
+#             INSERT INTO notifications (notification_id, user_id, title, message, created_at)
+#             VALUES ($1, $2, $3, $4, $5)
+#         """, notif_id, user['user_id'], "Bookmark Saved",
+#             f"You saved {req.surah_name_eng}, Ayah {req.ayah_no}", created_time)
+
+#     return BookmarkResponse(
+#         message="Bookmark saved successfully",
+#         bookmarkId=bookmark_id,
+#         time=created_time
+#     )
+
+
+# @bookmark_router.get("", response_model=List[BookmarkItem])
+# async def get_bookmarks(user: dict = Depends(get_current_user)):
+#     """Get all bookmarks"""
+#     async with get_db_connection() as conn:
+#         rows = await conn.fetch("""
+#             SELECT
+#                 bookmark_id as "bookmarkId",
+#                 COALESCE(surah_name_eng, 'Unknown') as "surahNameEng",
+#                 COALESCE(surah_name_arb, 'Unknown') as "surahNameArb",
+#                 surah_no as "surahNo",
+#                 type,
+#                 ayah_no as "ayahNo",
+#                 total_ayah as "totalAyah",
+#                 COALESCE(ayah, '') as ayah,
+#                 created_at as time
+#             FROM bookmarks
+#             WHERE user_id = $1
+#             ORDER BY created_at DESC
+#         """, user['user_id'])
+
+#     return [dict(row) for row in rows]
+
+
+# @bookmark_router.get("/{bookmark_id}", response_model=BookmarkItem)
+# async def get_bookmark(bookmark_id: str, user: dict = Depends(get_current_user)):
+#     """Get specific bookmark"""
+#     async with get_db_connection() as conn:
+#         row = await conn.fetchrow("""
+#             SELECT
+#                 bookmark_id as "bookmarkId",
+#                 COALESCE(surah_name_eng, 'Unknown') as "surahNameEng",
+#                 COALESCE(surah_name_arb, 'Unknown') as "surahNameArb",
+#                 surah_no as "surahNo",
+#                 type,
+#                 ayah_no as "ayahNo",
+#                 total_ayah as "totalAyah",
+#                 COALESCE(ayah, '') as ayah,
+#                 created_at as time
+#             FROM bookmarks WHERE bookmark_id = $1 AND user_id = $2
+#         """, bookmark_id, user['user_id'])
+
+#         if not row:
+#             raise HTTPException(status_code=404, detail="Bookmark not found")
+
+#     return dict(row)
+
+
+# @bookmark_router.delete("", response_model=SuccessResponse)
+# async def delete_bookmark(req: BookmarkDeleteRequest, user: dict = Depends(get_current_user)):
+#     """Delete bookmark"""
+#     async with get_db_connection() as conn:
+#         bookmark = await conn.fetchrow("""
+#             SELECT surah_name_eng, ayah_no FROM bookmarks
+#             WHERE bookmark_id = $1 AND user_id = $2
+#         """, req.bookmarkId, user['user_id'])
+        
+#         if not bookmark:
+#             raise HTTPException(status_code=404, detail="Bookmark not found")
+        
+#         await conn.execute("""
+#             DELETE FROM bookmarks 
+#             WHERE bookmark_id = $1 AND user_id = $2
+#         """, req.bookmarkId, user['user_id'])
+
+#         # Notification
+#         notif_id = generate_notification_id()
+#         await conn.execute("""
+#             INSERT INTO notifications (notification_id, user_id, title, message, created_at)
+#             VALUES ($1, $2, $3, $4, $5)
+#         """, notif_id, user['user_id'], "Bookmark Removed",
+#             f"You removed {bookmark['surah_name_eng']}, Ayah {bookmark['ayah_no']}", 
+#             datetime.utcnow())
+    
+#     return SuccessResponse(message="Bookmark deleted")
+
+
+# # ==================== PROFILE ENDPOINTS ====================
+
+# @profile_router.get("/me", response_model=UserProfileResponse)
+# async def get_my_profile(user: dict = Depends(get_current_user)):
+#     """Get current user profile"""
+#     try:
+#         async with get_db_connection() as conn:
+#             # Try Google users
+#             profile = await conn.fetchrow("""
+#                 SELECT
+#                     user_id as id,
+#                     firstname,
+#                     email,
+#                     image_url as "profileImageUrl",
+#                     created_at as "createdAt",
+#                     NULL as bio,
+#                     NULL as "lastName",
+#                     NULL as "dateofBirth",
+#                     NULL as address,
+#                     NULL as "phoneNumber",
+#                     NULL as gender
+#                 FROM google_users
+#                 WHERE user_id = $1
+#             """, user['user_id'])
+
+#             if not profile:
+#                 profile = await conn.fetchrow("""
+#                     SELECT
+#                         user_id as id,
+#                         firstname,
+#                         email,
+#                         image_url as "profileImageUrl",
+#                         bio,
+#                         created_at as "createdAt",
+#                         last_name as "lastName",
+#                         date_of_birth as "dateofBirth",
+#                         address,
+#                         phone_number as "phoneNumber",
+#                         gender
+#                     FROM users
+#                     WHERE user_id = $1
+#                 """, user['user_id'])
+
+#             if not profile:
+#                 raise HTTPException(status_code=404, detail="Profile not found")
+
+#             logger.info(f"✅ Profile fetched: {user['user_id']}")
+#             return dict(profile)
+
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.error(f"❌ Profile error: {str(e)}")
+#         raise HTTPException(status_code=500, detail="Failed to fetch profile")
+
+
+# @profile_router.put("/edit-profile", response_model=EditProfileResponse)
+# async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current_user)):
+#     """Edit user profile"""
+#     try:
+#         async with get_db_connection() as conn:
+#             is_google = await conn.fetchval(
+#                 "SELECT 1 FROM google_users WHERE user_id = $1",
+#                 user['user_id']
+#             )
+
+#             updates = []
+#             values = []
+#             updated_fields = []
+
+#             if is_google:
+#                 if req.email:
+#                     existing = await conn.fetchrow(
+#                         "SELECT user_id FROM google_users WHERE email = $1 AND user_id != $2",
+#                         req.email, user['user_id']
+#                     )
+#                     if existing:
+#                         raise HTTPException(status_code=400, detail="Email already in use")
+#                     updates.append(f"email = ${len(values) + 1}")
+#                     values.append(req.email)
+#                     updated_fields.append("email")
+
+#                 if req.firstname:
+#                     updates.append(f"firstname = ${len(values) + 1}")
+#                     values.append(req.firstname)
+#                     updated_fields.append("firstname")
+
+#                 if not updates:
+#                     raise HTTPException(status_code=400, detail="No fields to update")
+
+#                 values.append(user['user_id'])
+#                 query = f"UPDATE google_users SET {', '.join(updates)} WHERE user_id = ${len(values)}"
+#                 await conn.execute(query, *values)
+
+#             else:
+#                 if req.email:
+#                     existing = await conn.fetchrow(
+#                         "SELECT user_id FROM users WHERE email = $1 AND user_id != $2",
+#                         req.email, user['user_id']
+#                     )
+#                     if existing:
+#                         raise HTTPException(status_code=400, detail="Email already in use")
+#                     updates.append(f"email = ${len(values) + 1}")
+#                     values.append(req.email)
+#                     updated_fields.append("email")
+
+#                 if req.firstname:
+#                     updates.append(f"firstname = ${len(values) + 1}")
+#                     values.append(req.firstname)
+#                     updated_fields.append("firstname")
+
+#                 if req.lastName:
+#                     updates.append(f"last_name = ${len(values) + 1}")
+#                     values.append(req.lastName)
+#                     updated_fields.append("lastName")
+
+#                 if req.phoneNumber:
+#                     updates.append(f"phone_number = ${len(values) + 1}")
+#                     values.append(req.phoneNumber)
+#                     updated_fields.append("phoneNumber")
+
+#                 if req.dateofBirth:
+#                     updates.append(f"date_of_birth = ${len(values) + 1}")
+#                     values.append(req.dateofBirth)
+#                     updated_fields.append("dateofBirth")
+
+#                 if req.gender:
+#                     updates.append(f"gender = ${len(values) + 1}")
+#                     values.append(req.gender)
+#                     updated_fields.append("gender")
+
+#                 if req.bio is not None:
+#                     updates.append(f"bio = ${len(values) + 1}")
+#                     values.append(req.bio)
+#                     updated_fields.append("bio")
+
+#                 if req.address is not None:
+#                     updates.append(f"address = ${len(values) + 1}")
+#                     values.append(req.address)
+#                     updated_fields.append("address")
+
+#                 if not updates:
+#                     raise HTTPException(status_code=400, detail="No fields to update")
+
+#                 updates.append("updated_at = NOW()")
+#                 values.append(user['user_id'])
+#                 query = f"UPDATE users SET {', '.join(updates)} WHERE user_id = ${len(values)}"
+#                 await conn.execute(query, *values)
+
+#             logger.info(f"✅ Profile updated: {updated_fields}")
+
+#             return EditProfileResponse(
+#                 message="Profile updated successfully",
+#                 updatedFields=updated_fields,
+#                 timestamp=datetime.utcnow()
+#             )
+
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.error(f"❌ Update error: {str(e)}")
+#         raise HTTPException(status_code=500, detail=f"Failed to update: {str(e)}")
+
+
+# @profile_router.post("/upload-image", response_model=ImageUploadResponse)
+# async def upload_profile_image(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+#     """
+#     ✅ Upload image to Supabase - ONLY URL SAVED IN DB
+#     """
+#     try:
+#         # Validate
+#         ALLOWED = {"image/jpeg", "image/png", "image/webp"}
+#         if file.content_type not in ALLOWED:
+#             raise HTTPException(
+#                 status_code=400,
+#                 detail="Invalid file type. Only JPG, PNG, WebP allowed."
+#             )
+
+#         MAX_SIZE = 5 * 1024 * 1024
+#         image_data = await file.read()
+
+#         if len(image_data) > MAX_SIZE:
+#             raise HTTPException(status_code=400, detail="Image too large (max 5MB)")
+
+#         logger.info(f"✅ File validated: {file.filename}")
+
+#         # Create unique path
+#         file_ext = file.filename.split(".")[-1]
+#         unique_name = f"{user['user_id']}_{uuid.uuid4()}.{file_ext}"
+#         file_path = f"users/{user['user_id']}/{unique_name}"
+
+#         logger.info(f"Uploading: {file_path}")
+
+#         # Upload to Supabase
+#         file_stream = BytesIO(image_data)
+#         supabase.storage.from_(STORAGE_BUCKET).upload(
+#             path=file_path,
+#             file=file_stream,
+#             file_options={"content-type": file.content_type}
+#         )
+
+#         # ✅ GET PUBLIC URL
+#         public_url = supabase.storage.from_(STORAGE_BUCKET).get_public_url(file_path)
+#         logger.info(f"✅ Public URL: {public_url}")
+
+#         # Delete old image
+#         async with get_db_connection() as conn:
+#             is_google = await conn.fetchval(
+#                 "SELECT 1 FROM google_users WHERE user_id = $1",
+#                 user['user_id']
+#             )
+
+#             old_url = await conn.fetchval(
+#                 f"SELECT image_url FROM {'google_users' if is_google else 'users'} WHERE user_id = $1",
+#                 user['user_id']
+#             )
+
+#             if old_url and STORAGE_BUCKET in old_url:
+#                 try:
+#                     old_path = old_url.split(f"{STORAGE_BUCKET}/")[-1]
+#                     supabase.storage.from_(STORAGE_BUCKET).remove([old_path])
+#                     logger.info(f"✅ Old deleted: {old_path}")
+#                 except Exception as e:
+#                     logger.warning(f"⚠️ Could not delete old: {str(e)}")
+
+#             # ✅ SAVE ONLY PUBLIC URL - NOT LOCAL PATH
+#             if is_google:
+#                 await conn.execute(
+#                     "UPDATE google_users SET image_url = $1 WHERE user_id = $2",
+#                     public_url,  # ✅ SUPABASE PUBLIC URL
+#                     user['user_id']
+#                 )
+#             else:
+#                 await conn.execute(
+#                     "UPDATE users SET image_url = $1, updated_at = NOW() WHERE user_id = $2",
+#                     public_url,  # ✅ SUPABASE PUBLIC URL
+#                     user['user_id']
+#                 )
+
+#             logger.info(f"✅ URL saved to DB: {public_url}")
+
+#         return ImageUploadResponse(
+#             message="Profile image uploaded successfully",
+#             profileImageUrl=public_url,
+#             timestamp=datetime.utcnow()
+#         )
+
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.error(f"❌ Upload error: {str(e)}", exc_info=True)
+#         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+
+# @profile_router.delete("/delete-image", response_model=SuccessResponse)
+# async def delete_profile_image(user: dict = Depends(get_current_user)):
+#     """Delete profile image"""
+#     try:
+#         async with get_db_connection() as conn:
+#             is_google = await conn.fetchval(
+#                 "SELECT 1 FROM google_users WHERE user_id = $1",
+#                 user['user_id']
+#             )
+
+#             image_url = await conn.fetchval(
+#                 f"SELECT image_url FROM {'google_users' if is_google else 'users'} WHERE user_id = $1",
+#                 user['user_id']
+#             )
+
+#             if not image_url:
+#                 raise HTTPException(status_code=404, detail="No image to delete")
+
+#             # Delete from Supabase
+#             if STORAGE_BUCKET in image_url:
+#                 try:
+#                     file_path = image_url.split(f"{STORAGE_BUCKET}/")[-1]
+#                     supabase.storage.from_(STORAGE_BUCKET).remove([file_path])
+#                     logger.info(f"✅ Deleted: {file_path}")
+#                 except Exception as e:
+#                     logger.warning(f"⚠️ Delete error: {str(e)}")
+
+#             # Clear from DB
+#             if is_google:
+#                 await conn.execute(
+#                     "UPDATE google_users SET image_url = NULL WHERE user_id = $1",
+#                     user['user_id']
+#                 )
+#             else:
+#                 await conn.execute(
+#                     "UPDATE users SET image_url = NULL, updated_at = NOW() WHERE user_id = $1",
+#                     user['user_id']
+#                 )
+
+#             logger.info(f"✅ Image deleted: {user['user_id']}")
+
+#             return SuccessResponse(
+#                 message="Profile image deleted successfully",
+#                 timestamp=datetime.utcnow()
+#             )
+
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.error(f"❌ Delete error: {str(e)}")
+#         raise HTTPException(status_code=500, detail=f"Delete failed: {str(e)}")
+
+
+# # ==================== FEEDBACK ENDPOINTS ====================
+
+# @feedback_router.post("", response_model=FeedbackResponse)
+# async def submit_feedback(req: FeedbackCreate, user: dict = Depends(get_current_user)):
+#     """Submit feedback"""
+#     feedback_id = generate_feedback_id()
+#     created_time = datetime.utcnow()
+    
+#     async with get_db_connection() as conn:
+#         await conn.execute("""
+#             INSERT INTO feedback (feedback_id, user_id, message, rating, created_at)
+#             VALUES ($1, $2, $3, $4, $5)
+#         """, feedback_id, user['user_id'], req.message, req.rating, created_time)
+    
+#     return FeedbackResponse(
+#         id=feedback_id,
+#         message="Feedback submitted successfully",
+#         status="received",
+#         createdAt=created_time
+#     )

@@ -7,7 +7,7 @@ import secrets
 
 from typing import Optional
 from database import get_db_connection
-from utils import get_current_user
+from utilities import get_current_user
 
 # ==================== MODELS ====================
 
