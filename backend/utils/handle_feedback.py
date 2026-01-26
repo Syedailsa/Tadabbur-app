@@ -102,7 +102,7 @@ def submit_feedback(user_feedback:Literal['like', 'dislike'], assistant_response
         
 
 
-def handle_feedback(type, message, message_id):
+def handle_feedback(type, message, message_id, user_id):
     try:    
         print("Submitting user feedback")
         # initialize supabase_client
@@ -112,6 +112,7 @@ def handle_feedback(type, message, message_id):
         supabase_client.table("chat_messages") \
             .update({"feedback": type}) \
             .eq("message_id", message_id) \
+            .eq("user_id", user_id) \
             .execute()
 
         print("✅ Successfully submitted user feedback!")

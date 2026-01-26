@@ -45,6 +45,7 @@ import QuranAudioDialog from "../../components/chatbot/UI/AudioDialogBox";
 import QuranVerseDialog from "../../components/chatbot/UI/QuranVerseDialog";
 import groupChatMessages from "@/utils/groupChatMessages";
 import WaveForm from "../../components/chatbot/UI/WaveForm";
+import { useRouter } from "next/navigation";
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -84,6 +85,7 @@ export default function ChatPage() {
   const [hideReportContentDialogueBox, setHideReportContentDialogueBox] =
     useState<boolean | null>(true);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [fileContext, setFileContext] = useState<string | null>(null);
 
   const [isUploading, setIsUploading] = useState(false);
   const [uploadResponse, setUploadResponse] = useState<any>(null);
@@ -96,6 +98,7 @@ export default function ChatPage() {
 
   const oldMessagesRef = useRef<AssistantMessage[]>([]);
   const controls = useAnimationControls();
+  const router = useRouter();
 
   function preprocessContent(content: string) {
     if (!content) return "";
@@ -109,6 +112,13 @@ export default function ChatPage() {
 
     return processed;
   }
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+
+    router.push('/pages/auth');
+  };
 
   function chunkText(text: string, size = 4) {
     const words = text.split(/\s+/);
@@ -128,7 +138,7 @@ export default function ChatPage() {
     };
 
     const handleMicStop = () => {
-      setIsRecording(false);
+        setIsRecording(false);
     };
 
     const handleTranscriptionStart = () => {
@@ -151,23 +161,16 @@ export default function ChatPage() {
             inputRef.current.innerText = newText;
             committedTextRef.current = newText;
 
-      if (inputRef.current && text) {
-        const currentText = inputRef.current.innerText.trim();
-        const newText = currentText ? `${currentText} ${text}` : text;
-
-        inputRef.current.innerText = newText;
-        committedTextRef.current = newText;
-
-        const range = document.createRange();
-        const sel = window.getSelection();
-        if (inputRef.current.lastChild) {
-          range.selectNodeContents(inputRef.current);
-          range.collapse(false);
-          sel?.removeAllRanges();
-          sel?.addRange(range);
+            const range = document.createRange();
+            const sel = window.getSelection();
+            if(inputRef.current.lastChild) {
+                 range.selectNodeContents(inputRef.current);
+                 range.collapse(false);
+                 sel?.removeAllRanges();
+                 sel?.addRange(range);
+            }
+            setShowPlaceholder(false);
         }
-        setShowPlaceholder(false);
-      }
     };
 
     window.addEventListener("tadabbur-mic-start", handleMicStart);
@@ -186,7 +189,14 @@ export default function ChatPage() {
 }, []);
   // In your element
   useEffect(() => {
-    const websocket = new WebSocket("ws://localhost:8000/ws/chat");
+    const token = localStorage.getItem("token"); 
+
+    if (!token) {
+        console.error("No authentication token found. Cannot connect to chat.");
+        return;
+    }
+
+    const websocket = new WebSocket(`ws://localhost:8000/ws/chat?token=${token}`); 
     wsRef.current = websocket;
 
     wsRef.current.onopen = () => {
@@ -445,42 +455,50 @@ export default function ChatPage() {
     };
   }, []);
 
-  const performBackgroundUpload = async (file: File) => {
-    setIsUploading(true);
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("session_id", sessionID || "default_session");
-
-    try {
-      const response = await fetch("http://localhost:8000/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const err = await response.json();
-        console.error(`Upload failed: ${err.detail}`);
-        setAttachedFile(null); // Clear file on error
-        setIsUploading(false);
-        return;
-      }
-
-      const data = await response.json();
-      // Store the data to be used when user hits Enter
-      setUploadResponse(data); 
-    } catch (error) {
-      console.error("Upload error:", error);
-      setAttachedFile(null);
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
   useEffect(() => {
-    if (attachedFile && !uploadResponse && !isUploading) {
-      performBackgroundUpload(attachedFile);
-    }
-  }, [attachedFile, uploadResponse, isUploading]);
+    let isCancelled = false; 
+
+    const processFile = async () => {
+        if (attachedFile && !fileContext && !isUploading) {
+            setIsUploading(true);
+            const formData = new FormData();
+            formData.append("file", attachedFile);
+            formData.append("session_id", sessionID || "default_session");
+
+            try {
+                const response = await fetch("http://localhost:8000/api/upload", {
+                    method: "POST",
+                    body: formData,
+                });
+
+                if (!response.ok) throw new Error("Upload failed");
+
+                const data = await response.json();
+                
+                if (!isCancelled && data.extracted_text) {
+                    setFileContext(data.extracted_text);
+                    console.log("File parsed. Text ready to send on Enter.");
+                }
+            } catch (error) {
+                if (!isCancelled) {
+                    console.error("Upload error:", error);
+                    alert("Failed to process file.");
+                    setAttachedFile(null); 
+                }
+            } finally {
+                if (!isCancelled) {
+                    setIsUploading(false);
+                }
+            }
+        }
+    };
+
+    processFile();
+
+    return () => {
+        isCancelled = true;
+    };
+  }, [attachedFile, sessionID]);
 
   const ask = async (
     input: string,
@@ -489,7 +507,7 @@ export default function ChatPage() {
     resend_message_id: string | null = null,
     old_assistant_responses = []
   ) => {
-    if (streamingMessageIndex !== null || !input.trim()) return;
+    if (streamingMessageIndex!== null || (!input.trim() && !fileContext)) return;
 
     if (resend_flag) {
       if (!old_assistant_responses || old_assistant_responses.length === 0) {
@@ -520,10 +538,15 @@ export default function ChatPage() {
       return;
     }
 
+    let finalInputContent = input;
+    if (attachedFile) {
+     finalInputContent = input ? `${input}\n\n📂 [Attached: ${attachedFile.name}]` : `📂 [Attached: ${attachedFile.name}]`;
+    }
+
     const userMessage: ChatMessage = {
       message_id: messageID,
       role: "user",
-      content: input,
+      content: finalInputContent,
       // add a dummy response message for loading state
       responses: [
         {
@@ -568,10 +591,15 @@ export default function ChatPage() {
           role: "user",
           system_instructions: guidelines || "",
           content: input,
+          new_file_context: fileContext,
           resend_flag: resend_flag,
           resend_message_id: resend_message_id || "",
         })
       );
+      if (fileContext){
+        setAttachedFile(null);
+        setFileContext(null);
+      }
       if (inputRef.current) {
         inputRef.current.innerText = "";
         setShowPlaceholder(true);
@@ -587,32 +615,14 @@ export default function ChatPage() {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
 
-      if (attachedFile) {
-        if (isUploading) {
-          alert("File is still uploading, please wait a moment...");
-          return;
-        }
-
-        if (uploadResponse) {
-          setMessages((prev: any) => [
-            ...(prev || []),
-            {
-              message_id: uploadResponse.message_id, // Use ID from the background upload
-              role: "user",
-              content: `📂 Attached file: ${attachedFile.name}`,
-              feedback: null,
-            },
-          ]);
-          
-          // Reset file states
-          setAttachedFile(null);
-          setUploadResponse(null);
-        }
+      if (isUploading) {
+        alert("File is still uploading/processing... please wait.");
+        return;
       }
 
       const input = inputRef.current?.innerText;
-      if (input.trim() != "") {
-        ask(input);
+      if (input.trim() != "" || fileContext) {
+        ask(input.trim());
       }
     }
   };
@@ -735,7 +745,15 @@ export default function ChatPage() {
             )}
             <div className="w-full h-full flex flex-col items-center overflow-y-auto">
               <div className="absolute top-0 p-2 w-full">
-                <Controls wsRef={wsRef} />
+                  <div className="pointer-events-auto">
+                    <Controls wsRef={wsRef} />
+                  </div>
+                  <button 
+                    onClick={handleLogout}
+                    className="pointer-events-auto mr-2 mt-2 px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm font-medium rounded-md shadow-md transition-colors"
+                  >
+                    Logout
+                  </button>
               </div>
               <div
                 className={`w-full ${
@@ -981,7 +999,7 @@ export default function ChatPage() {
                                       <tr className="hover:bg-gray-50" {...props} />
                                     ),
                                     th: ({ node, ...props }) => (
-                                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b" {...props} />
+                                      <th className="px-4 py-3 text-left text-sm font-medium text-black uppercase tracking-wider border-b" {...props} />
                                     ),
                                     td: ({ node, ...props }) => (
                                       <td className="px-4 py-3 text-sm text-gray-700 border-b whitespace-pre-wrap" {...props} />
@@ -1135,7 +1153,7 @@ export default function ChatPage() {
                     <button
                       onClick={() => {
                         setAttachedFile(null);
-                        setUploadResponse(null);
+                        setFileContext(null);
                         setIsUploading(false);
                       }}
                       className="text-gray-400 hover:text-red-500 font-bold px-1"
@@ -1175,7 +1193,7 @@ export default function ChatPage() {
               hideReportContentDialogueBox={hideReportContentDialogueBox}
               setHideReportContentDialogueBox={setHideReportContentDialogueBox}
             />
-            <audio className="hidden" controls ref={audioRef} />
+            <audio controls ref={audioRef} />
           </ChatProvider>
         </div>
       )}

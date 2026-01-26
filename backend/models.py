@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field, validator
 from typing import Optional, Literal
 from datetime import datetime, date
+import uuid
 
 # ==================== AUTH MODELS ====================
 
@@ -26,7 +27,7 @@ class AuthResponse(BaseModel):
     token: str
     message: str
     loginTime: datetime
-    user_id: str
+    user_id: uuid.UUID
     firstname: str
 
 # ==================== NOTIFICATION MODELS ====================

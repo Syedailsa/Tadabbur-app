@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from langchain_core.tools import StructuredTool
 from langchain.agents import create_agent
 from openai import OpenAI
-
+from langchain.agents.middleware import ToolRetryMiddleware
 from tools.audio_playback import play_quran_audio
 # from tools.verse_reader import fetch_quran_verse
 from tools.audio_playback import play_quran_audio
@@ -81,6 +81,16 @@ class QuranResponse(BaseModel):
     references: Optional[List[str]] = Field(None, description="List of Quranic Surah/Ayah references used")
 
 # response_schema = json.dumps(QuranResponse.model_json_schema(), indent=2)
+
+def custom_tool_error_handler(exception: Exception) -> str:
+    """
+    Returns a custom message to the agent when a tool fails.
+    """
+    return (
+        f"System Notice: The tool encountered a technical error: {str(exception)}. "
+        "Please inform the user effectively that you couldn't retrieve the specific data "
+        "and ask them to try again or rephrase."
+    )
 
 def submit_final_response(**kwargs):
     """
@@ -542,11 +552,18 @@ def get_agent_by_user_age( age: int , username: str, model_key: str = None ):
         user_context=user_context_str 
     )
 
+    tool_protection = ToolRetryMiddleware(
+        max_retries=1,  
+        on_failure=custom_tool_error_handler, 
+        backoff_factor=1.0,
+    )
+ 
     return create_agent(
         name="QuranTadabburAgent",
         model=llm,
         system_prompt=formatted_system_prompt,
         tools=[Search_Quran_By_filters, searchAsbabNuzul, final_response_tool, play_quran_audio, fetch_quran_verse, story_agent_tool],
+        middleware=[tool_protection],
     )
 
 main_agent = get_agent_by_user_age(age=25, username="DefaultUser")  

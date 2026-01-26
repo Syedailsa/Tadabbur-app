@@ -4,7 +4,8 @@ import asyncio
 import pprint
 import re
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, UploadFile, File, Form
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, UploadFile, File, Form, Query, status
+from jose import jwt, JWTError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -93,6 +94,8 @@ logger = logging.getLogger(__name__)
 
 # ------------------- APP CONFIG -------------------
 app = FastAPI(title="Tadabbur Agent API")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-this")
+ALGORITHM = "HS256"
 
 def custom_openapi():
     if app.openapi_schema:
@@ -121,7 +124,7 @@ dynamic_system_instruction = {"text":""}
 async def startup_event():
     """Initialize database pool on startup"""
     await init_db_pool()
-    asyncio.create_task(asyncio.to_thread(refresh_system_instructions,dynamic_system_instruction))
+    asyncio.create_task(refresh_system_instructions(dynamic_system_instruction))
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -161,13 +164,42 @@ def generate_session_id() -> str:
     return f"sess_{secrets.token_hex(6)}"
 
 
-def get_chat_messages(session_id: str, supabase_client) -> List[str]:
+def get_user_from_token(token: str):
+    """
+    Decodes the JWT token to get user_id.
+    """
+    if not SECRET_KEY:
+        logger.error(" CRITICAL: SECRET_KEY is missing in main.py")
+        return None
+
+    try:
+        if token.startswith("Bearer "):
+            token = token.split(" ")[1]
+
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+         
+        user_id: str = payload.get("user_id")
+        
+        if user_id is None:
+            logger.error(f" Token Valid but 'user_id' missing. Payload: {payload}")
+            return None
+            
+        return user_id
+
+    except JWTError as e:
+        logger.error(f" JWT Validation Failed: {str(e)}")
+        return None
+    except Exception as e:
+        logger.error(f" Unexpected Token Error: {str(e)}")
+        return None
+
+def get_chat_messages(session_id: str, user_id: str, supabase_client) -> List[str]:
     """Get all messages of a specific session"""
     if not session_id or not supabase_client:
         print("Session id or supabase client none, so returning...")
         return []
-        
-    chat_messages = supabase_client.table('chat_messages').select('message_id', 'role', 'content', 'reply_to_message_id', 'feedback').in_("role", ["user", "assistant"]).eq('session_id', session_id).order('created_at').execute().data
+         
+    chat_messages = supabase_client.table('chat_messages').select('message_id', 'user_id', 'role', 'content', 'reply_to_message_id', 'feedback').in_("role", ["user", "assistant"]).eq('session_id', session_id).eq('user_id', user_id).order('created_at').execute().data
 
     
     # print("chat messages", chat_messages)
@@ -233,21 +265,8 @@ async def upload_file(
 ):
     try:
         extracted_text = await process_uploaded_file(file)
-        existing_context = session_file_context.get(session_id, "")
-        updated_context = existing_context + "\n\n--- UPLOADED FILE CONTENT ---\n" + extracted_text 
-        clean_context = clean_text(updated_context)
-        
-        # print("Content to be inserted text", clean_context)
-
-        session_file_context[session_id] = updated_context
-        
-        supabase_client = get_supabase_client()
-        supabase_client.table('chat_sessions').update({
-            'file_context': clean_context
-        }).eq('session_id', session_id).execute()
-        
         logger.info(f"File processed for session {session_id}. Text length: {len(extracted_text)}")
-        return {"status": "success", "message": "File processed successfully."}
+        return {"status": "success", "message": "File processed successfully.", "extracted_text": clean_text(extracted_text)}
     except Exception as e:
         logger.error(f"Upload failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -323,11 +342,19 @@ async def stream_tts_audio(tts_engine, clean_text, websocket, message_id_ref):
 
 
 @app.websocket("/ws/chat")
-async def websocket_chat(websocket: WebSocket):
-    await websocket.accept()
-    logger.info("WebSocket connected successfully")
+async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
-    try:
+    user_id = get_user_from_token(token)
+    
+    if not user_id:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        logger.warning("WebSocket connection rejected: Invalid Token")
+        return 
+
+    await websocket.accept()
+    logger.info(f"WebSocket connected successfully for User ID: {user_id}")
+
+    try: 
 
         supabase_client = get_supabase_client()
     except Exception as e:
@@ -523,129 +550,103 @@ async def websocket_chat(websocket: WebSocket):
             # ========== SESsION CODE START ==========
             # SESSION INIT
             if data.get("type") == "session-init":
-                requested_session_id = data.get("session_id", "").strip()
-                if not requested_session_id:
-                    # Create brand new session
-                    session_id = generate_session_id()
-                    logger.info(f"New session created: {session_id}")
-                else:
-                    # Resume existing session
-                    session_id = requested_session_id
-                    logger.info(f"Session resumed: {session_id}")
+                    requested_session_id = data.get("session_id", "").strip()
+                    
+                    if requested_session_id:
+                        session_id = requested_session_id
+                    else:
+                        session_id = generate_session_id()
+
+                    logger.info(f"Processing session: {session_id}")
+
+                    # 2. Check DB securely
                     try:
-                        if supabase_client:
-                            response = supabase_client.table('chat_sessions')\
-                                .select('file_context')\
-                                .eq('session_id', session_id)\
-                                .execute()
+                        response = supabase_client.table('chat_sessions')\
+                            .select('user_id', 'file_context')\
+                            .eq('session_id', session_id)\
+                            .execute()
+                        
+                        existing_session = response.data[0] if response.data and len(response.data) > 0 else None
+
+                        if existing_session:
+                            # Session Exists: Check Ownership
+                            if existing_session.get('user_id') == user_id:
+                                if existing_session.get('file_context'):
+                                    session_file_context[session_id] = existing_session['file_context']
+                                
+                                # Load Messages
+                                msgs = supabase_client.table('chat_messages').select('message_id').eq('session_id', session_id).execute()
+                                unique_message_ids = [m['message_id'] for m in msgs.data] if msgs.data else []
+                                
+                                await websocket.send_json({
+                                    "type": "session_id", "status": "acknowledged", 
+                                    "session_id": session_id, "message_ids": unique_message_ids
+                                })
+                            else:
+                                await websocket.send_json({"type": "session_id", "status": "error", "error": "Unauthorized"})
+                                continue
+                        else:
+                            # --- Session Missing: Create New ---
+                            logger.info(f"🆕 Creating NEW session: {session_id}")
+                            supabase_client.table("chat_sessions").insert({
+                                'session_id': session_id, 
+                                'user_id': user_id,   
+                                "title": "New Chat", 
+                                "description": "New conversation started" 
+                            }).execute()
                             
-                            if response.data and response.data[0].get('file_context'):
-                                restored_context = response.data[0]['file_context']
-                                session_file_context[session_id] = restored_context
-                                logger.info(f"Restored file context from DB: {len(restored_context)} chars")
+                            conversation_history = []
+                            unique_message_ids = []
+                            
+                            await websocket.send_json({
+                                "type": "session_id", "status": "acknowledged",
+                                "session_id": session_id, "current_agent": current_agent_name,
+                                "message_ids": []
+                            })
+
                     except Exception as e:
-                        logger.error(f"Failed to restore file context: {e}")
-                # add a record in chat_sessions table
-                try:    
-                    print("🔃 Creating a new session record")
-                    supabase_client.table("chat_sessions").insert({'session_id': session_id, "title": "Chat Title", "description":"Description for the chat session" }).execute()
-
-                    message_ids = get_message_ids(supabase_client)
-                    # convert message IDs to a list
-                    unique_message_ids = list({record['message_id'] for record in message_ids})
-                    # reset the conversation history and unique message ids
-                    conversation_history = []
-                    print("✅ Successfully created a new session record!")            
-                    # Send confirmation — this unblocks frontend
-                    await websocket.send_json({
-                        "type": "session_id",
-                        "status": "acknowledged",
-                        "session_id": session_id,
-                        "current_agent": current_agent_name,
-                        "current_model": session_model_key,
-                        "message_ids": unique_message_ids
-                    })
-                except Exception as e:
-                    print("Some error occured while adding a new session record", e)
-                    await websocket.send_json({
-                        "type": "session_id",
-                        "status": "not-acknowledged",
-                        "error": e
-                    })
-                    raise
-
-                continue  
+                        logger.error(f"Session Init Error: {e}")
+                        await websocket.send_json({"type": "session_id", "status": "error", "error": str(e)})
+                    
+                    continue
 
             # Handle CHAT HISTORY request
             if data.get("type") == "chat_history":
                 try:
-                    # first get all unique session IDs from chat_messages
-                    all_session_ids = supabase_client.table("chat_messages").select("session_id").execute().data
-                    # unique session_ids as a list
-                    unique_session_ids = list({
-                        record["session_id"]
-                        for record in all_session_ids
-                    })
+                    chat_sessions = supabase_client.table('chat_sessions')\
+                        .select('session_id', 'title', 'description', 'created_at')\
+                        .eq('user_id', user_id)\
+                        .order('created_at', desc=True)\
+                        .execute().data
 
-                    chat_sessions = supabase_client.table('chat_sessions').select('session_id', 'title', 'description', 'created_at').in_('session_id', unique_session_ids).execute().data
-
-                    print("All sessions", chat_sessions)
                     await websocket.send_json({
                         "type": "chat_history",
                         "status":"acknowledged",
                         "chat_history": chat_sessions
                     })
-                    logger.info(f"Sent {len(chat_sessions)} sessions to frontend")
                 except Exception as e:
                     logger.error(f"Error fetching chat history: {e}")
 
-            #         await websocket.send_json({
-            #             "type": "chat_history",
-            #             "status": "non-acknowledged",
-            #             "chat_history": [],
-            #             "error": str(e)
-            #         })
-            #     continue
-
-
-            # Handle Get SPECIFIC REQUEST
             if data.get("type") == "get_chat":
                 requested_session_id = data.get("session_id", "")
-                if not requested_session_id:
-                    await websocket.send_json({
-                        "type": "get_chat",
-                        "status": "non-acknowledged",
-                        "error": "session_id is required"
-                    })
-                    continue
                 try:
-                    # switch to this session
+                    chat_history = get_chat_messages(requested_session_id, user_id, supabase_client)
+                    
+                    # Update local state
                     session_id = requested_session_id
-                    print(f"🔃 Retrieving messages for chat with session-id {session_id}")
-                    # get chat messages
-                    chat_history = get_chat_messages(session_id, supabase_client)
-                    # get all message ids
-                    message_ids = get_message_ids(supabase_client)
-                    # convert message IDs to a list
-                    unique_message_ids = list({record['message_id'] for record in message_ids})
-
-                    # override conversation_history with new_chat_history
                     conversation_history = chat_history or []
+                    unique_message_ids = [msg['message_id'] for msg in conversation_history]
+
                     await websocket.send_json({
                         "type": "get_chat",
                         "status": "acknowledged",
                         "session_id": session_id,
+                        "user_id": user_id,
                         "chat_history": chat_history,
                         "unique_message_ids": unique_message_ids 
                     })
-                    logger.info(f"Loaded chat: {session_id} with {len(chat_history)} messages")
                 except Exception as e:
                     logger.error(f"Error loading chat: {e}")
-                    await websocket.send_json({
-                        "type": "get_chat",
-                        "status": "not-acknowledged",
-                        "error": str(e)
-                    })
                 continue
 
             # === AGENT SWITCH ===
@@ -710,15 +711,16 @@ async def websocket_chat(websocket: WebSocket):
 
             if data.get("type") == "undo-report":
                 message_id = data.get("message_id")
-                if not message_id:
-                    print("No message ID found for reported message, can't proceed to undo")
+                if not message_id: 
+                    print("No message ID found for reported message")
                     continue
                 try:
                     # delete hard rule in a different thread for optimization
-                    await asyncio.to_thread(delete_report_rule, supabase_client, message_id)
+                    await asyncio.to_thread(delete_report_rule, supabase_client, message_id, user_id)
                     await websocket.send_json({
                         "type": "undo-report",
                         "message_id": message_id,
+                        "user_id": user_id,
                         "status": "acknowledged"
                     })
                 except Exception as e:
@@ -751,15 +753,17 @@ async def websocket_chat(websocket: WebSocket):
                     None
                     )
                     if reported_assistant_message:
-                        try:
+                        try: 
                             # insert hard rule in a different thread for optimization
                             print("Reported assistant message",reported_assistant_message['content'] )
-                            response = await asyncio.to_thread(insert_report_rule, supabase_client, message_id, feedback)
+                            response = await asyncio.to_thread(insert_report_rule, supabase_client, message_id, feedback, user_id)
 
                             print("Report response", response)
                             if not response:
                                 await websocket.send_json({
                                     "type": "report",
+                                    "user_id": user_id,
+                                    "message_id": message_id,
                                     "status": "not-acknowledged"
                                 })
                             else:
@@ -795,7 +799,7 @@ async def websocket_chat(websocket: WebSocket):
                 if not session_id or not message_id or not message:
                     print("No message or session ID, can't proceed to feedback submission")
                     continue
-                asyncio.create_task(asyncio.to_thread(handle_feedback, type, message, message_id))
+                asyncio.create_task(asyncio.to_thread(handle_feedback, type, message, message_id, user_id))
                 continue
 
             # === MAIN CHAT MESSAGE ===
@@ -806,26 +810,34 @@ async def websocket_chat(websocket: WebSocket):
                 additional_instructions = data.get("system_instructions")
                 resend_flag = data.get("resend_flag")
                 resend_message_id = data.get("resend_message_id")
+                new_file_text = data.get("new_file_context")
+                
+                if new_file_text:
+                    logger.info(f"💾 Committing new file context to session {session_id}")
+                    
+                    existing_context = session_file_context.get(session_id, "")
+                    updated_context = existing_context + "\n\n--- FILE CONTENT ---\n" + new_file_text
+                    session_file_context[session_id] = updated_context
+                    
+                    try:
+                        await asyncio.to_thread(
+                            lambda: supabase_client.table('chat_sessions').update({
+                                'file_context': updated_context
+                            }).eq('session_id', session_id).execute()
+                        )
+                    except Exception as db_e:
+                        logger.error(f"Failed to save file context to DB: {db_e}")
 
-                # check resend_message_id if resend flag is True
-                if resend_flag:
-                    if not resend_message_id:
-                        print("Can't proceed forward with the received message because of no message ID")
-                        continue
-                if not resend_flag:
-                    if user_message_id:
-                        unique_message_ids.append(user_message_id)
-                    else:
-                        user_message_id = generate_uuid()
-                        while user_message_id in unique_message_ids:
-                            user_message_id = generate_uuid()
-                        unique_message_ids.append(user_message_id)
-                # save user message in db
-                message_string = message + f"\n\n {additional_instructions}" if additional_instructions else message
+                if user_message_id not in unique_message_ids:
+                    unique_message_ids.append(user_message_id)
+
+                message_string = message + (f"\n\n {additional_instructions}" if additional_instructions else "")
+                
                 if not resend_flag:
                     try:
                         supabase_client.table('chat_messages').insert({
                             "message_id": user_message_id,
+                            "user_id": user_id, 
                             "session_id": session_id,
                             "role": role,
                             "content": message_string,
@@ -833,7 +845,7 @@ async def websocket_chat(websocket: WebSocket):
                         print("✅ User message saved successfully!")
                     except Exception as e:
                         print("Some error occured while inserting user messages", e)
-                        raise
+                        raise 
 
                 logger.info(f"[{current_agent_name}] Session: {session_id} | Message: {message_string} ...")
                 # File Feature
@@ -886,6 +898,7 @@ async def websocket_chat(websocket: WebSocket):
                         supabase_client.table('chat_messages').insert({
                             "message_id": response_message_id,
                             "session_id": session_id,
+                            "user_id": user_id,
                             "role": "assistant",
                             "content": response or "",
                             "reply_to_message_id": user_message_id
@@ -995,8 +1008,7 @@ async def websocket_chat(websocket: WebSocket):
 
 
     except WebSocketDisconnect:
-        logger.info("WebSocket closed")
-        
+        logger.info(f"WebSocket closed for user {user_id}")
 
     except Exception as e:
         logger.exception("WebSocket error")

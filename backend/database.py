@@ -112,7 +112,6 @@ async def create_tables():
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT;")
         
         # Add image_url column if not exists
-        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS image_url TEXT;")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();")
         

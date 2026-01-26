@@ -6,23 +6,25 @@ import LoginForm from '../../components/authentication/LoginForm';
 import SignupForm from '../../components/authentication/SignupForm';
 import GoogleLoginButton from '../../components/authentication/GoogleLoginButton';
 import ForgotPassword from '../../components/authentication/ForgotPassword';
+import { useRouter } from 'next/navigation';
 
 type AuthView = 'LOGIN' | 'SIGNUP' | 'FORGOT';
 
 export default function AuthPage() {
   const [view, setView] = useState<AuthView>('LOGIN');
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const router = useRouter();
 
   const handleAuthSuccess = (data: any) => {
     console.log("Auth Successful:", data);
     
-    sessionStorage.setItem('token', data.token);
-    sessionStorage.setItem('user', JSON.stringify({ 
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('user', JSON.stringify({ 
       id: data.user_id, 
       name: data.firstname 
     })); 
 
-    window.location.href = '/pages/chatbot';
+    router.push('/pages/chatbot');
   };
 
   const getHeaderText = () => {
