@@ -3,7 +3,7 @@ import json
 import asyncio
 import pprint
 import re
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, UploadFile, File, Form
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -69,7 +69,7 @@ from reset_password_api import password_reset_router
 from quran_api import quran_router , parah_router, story_router
 from reset_password_api import password_reset_router
 from reflection_api import reflection_router
-from database import init_db_pool, close_db_pool, create_tables
+from database import init_db_pool, close_db_pool, create_tables, delete_all_user_sessions, delete_user_session
 from fastapi.security import HTTPBearer
 from fastapi.openapi.utils import get_openapi
 import secrets
@@ -87,7 +87,14 @@ if sys.platform.startswith("win"):
 
 from data.data import comprehensive_surah_metadata
 
-logging.basicConfig(level=logging.INFO)
+# Production logging setup
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
 
 # ------------------- APP CONFIG -------------------
@@ -231,24 +238,164 @@ async def upload_file(
     session_id: str = Form(...)
 ):
     try:
-        extracted_text = await process_uploaded_file(file)
-        existing_context = session_file_context.get(session_id, "")
-        updated_context = existing_context + "\n\n--- UPLOADED FILE CONTENT ---\n" + extracted_text 
-        clean_context = clean_text(updated_context)
-        
-        # print("Content to be inserted text", clean_context)
+        # Step 1: Basic file validation
+        MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
-        session_file_context[session_id] = updated_context
-        
+        # Check file size
+        file.file.seek(0, 2)  # Move to end
+        file_size = file.file.tell()
+        file.file.seek(0)  # Reset
+
+        if file_size > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File too large! This file is {(file_size / 1024 / 1024):.1f}MB, but we only accept files up to 10MB. Please compress the file or choose a smaller one."
+            )
+
+        # Step 3: Extract text from file
+        extracted_text = await process_uploaded_file(file)
+        clean_content = clean_text(extracted_text)
+
+        # Step 4: Generate unique file ID
+        file_id = f"file_{secrets.token_hex(8)}"
+
+        # Step 5: Get Supabase client
         supabase_client = get_supabase_client()
+
+        # Step 6: Ensure session exists (create if needed)
+        session_check = supabase_client.table('chat_sessions')\
+            .select('session_id')\
+            .eq('session_id', session_id)\
+            .execute()
+
+        if not session_check.data:
+            # Create session if it doesn't exist
+            logger.info(f"Creating missing session: {session_id}")
+            try:
+                session_data = {
+                    'session_id': session_id,
+                    "title": "File Upload Session",
+                    "description": "Session created for file upload"
+                }
+                supabase_client.table("chat_sessions").insert(session_data).execute()
+                logger.info(f"✅ Created session: {session_id}")
+            except Exception as e:
+                logger.error(f"Failed to create session: {e}")
+                raise HTTPException(status_code=500, detail="Failed to create session")
+
+        # 🆕 Step 4: Save file record to database
+        file_record = {
+            'file_id': file_id,
+            'session_id': session_id,
+            'file_name': file.filename,
+            'file_type': file.content_type,
+            'file_content': clean_content,
+            'file_size': len(clean_content)
+        }
+        
+        supabase_client.table('session_files').insert(file_record).execute()
+        print(f"✅ File saved: {file.filename} for session {session_id}")
+        
+        # 🆕 Step 5: Get ALL files for this session (agar multiple files hain)
+        all_files = supabase_client.table('session_files')\
+            .select('file_content')\
+            .eq('session_id', session_id)\
+            .order('created_at')\
+            .execute()
+
+        # Step 6: Combine all file contents (filter out None values)
+        valid_contents = [
+            f['file_content'] for f in all_files.data
+            if f['file_content'] is not None and f['file_content'].strip()
+        ]
+        combined_context = "\n\n--- FILE SEPARATOR ---\n\n".join(valid_contents) if valid_contents else ""
+        
+        # Step 7: Update chat_sessions table (for quick access)
         supabase_client.table('chat_sessions').update({
-            'file_context': clean_context
+            'file_context': combined_context
         }).eq('session_id', session_id).execute()
         
-        logger.info(f"File processed for session {session_id}. Text length: {len(extracted_text)}")
-        return {"status": "success", "message": "File processed successfully."}
+        # Step 8: Update in-memory cache (for current session)
+        session_file_context[session_id] = combined_context
+        
+        logger.info(f"📁 Total files in session: {len(all_files.data)}")
+        
+        return {
+            "status": "success", 
+            "message": "File uploaded successfully",
+            "file_id": file_id,
+            "file_name": file.filename,
+            "total_files": len(all_files.data)
+        }
+        
     except Exception as e:
         logger.error(f"Upload failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/session/{session_id}/files")
+async def get_session_files(session_id: str):
+    """Get all uploaded files for a session"""
+    try:
+        supabase_client = get_supabase_client()
+
+        files = supabase_client.table('session_files')\
+            .select('file_id, file_name, file_type, file_size, created_at')\
+            .eq('session_id', session_id)\
+            .order('created_at', desc=True)\
+            .execute()
+
+        return {
+            "status": "success",
+            "session_id": session_id,
+            "files": files.data or []
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching files: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/session/{session_id}/files/{file_id}")
+async def delete_session_file(session_id: str, file_id: str):
+    """Delete a specific file from session"""
+    try:
+        supabase_client = get_supabase_client()
+
+        # Delete from session_files
+        supabase_client.table('session_files')\
+            .delete()\
+            .eq('file_id', file_id)\
+            .eq('session_id', session_id)\
+            .execute()
+
+        # Rebuild file_context from remaining files
+        remaining_files = supabase_client.table('session_files')\
+            .select('file_content')\
+            .eq('session_id', session_id)\
+            .order('created_at')\
+            .execute()
+
+        # Filter out None values
+        valid_contents = [
+            f['file_content'] for f in remaining_files.data
+            if f['file_content'] is not None and f['file_content'].strip()
+        ]
+        new_context = "\n\n--- FILE SEPARATOR ---\n\n".join(valid_contents) if valid_contents else ""
+
+        # Update chat_sessions
+        supabase_client.table('chat_sessions').update({
+            'file_context': new_context or None
+        }).eq('session_id', session_id).execute()
+
+        # Update cache
+        if new_context:
+            session_file_context[session_id] = new_context
+        else:
+            session_file_context.pop(session_id, None)
+
+        return {"status": "success", "message": "File deleted"}
+
+    except Exception as e:
+        logger.error(f"Error deleting file: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/chat")
@@ -523,80 +670,189 @@ async def websocket_chat(websocket: WebSocket):
             # SESSION INIT
             if data.get("type") == "session-init":
                 requested_session_id = data.get("session_id", "").strip()
+                user_id = data.get("user_id", "").strip()
                 if not requested_session_id:
                     # Create brand new session
                     session_id = generate_session_id()
                     logger.info(f"New session created: {session_id}")
-                else:
-                    # Resume existing session
-                    session_id = requested_session_id
-                    logger.info(f"Session resumed: {session_id}")
+                    # add a record in chat_sessions table
                     try:
-                        if supabase_client:
+                        print("🔃 Creating a new session record")
+                        session_data = {
+                            'session_id': session_id,
+                            "title": "Chat Title",
+                            "description": "Description for the chat session"
+                        }
+                        if user_id:
+                            session_data["user_id"] = user_id
+                        supabase_client.table("chat_sessions").insert(session_data).execute()
+
+                        # Get message IDs for new session
+                        message_ids = get_message_ids(supabase_client)
+                        unique_message_ids = list({record['message_id'] for record in message_ids})
+                        conversation_history = []
+
+                        # Send response to frontend to switch to new session
+                        await websocket.send_json({
+                            "type": "session_id",
+                            "status": "acknowledged",
+                            "session_id": session_id,
+                            "current_agent": current_agent_name,
+                            "current_model": session_model_key,
+                            "message_ids": unique_message_ids
+                        })
+                        print("✅ Successfully created a new session record and sent response!")
+                    except Exception as e:
+                        print(f"Error creating session record: {e}")
+                        await websocket.send_json({
+                            "type": "session_id",
+                            "status": "not-acknowledged",
+                            "error": str(e)
+                        })
+                else:
+                    # Check if session exists
+                    try:
+                        existing_session = supabase_client.table('chat_sessions')\
+                            .select('session_id')\
+                            .eq('session_id', requested_session_id)\
+                            .execute()
+
+                        if existing_session.data:
+                            # Session exists, resume it
+                            session_id = requested_session_id
+                            logger.info(f"Session resumed: {session_id}")
+                            # Update session with user_id if it doesn't have one
+                            supabase_client.table('chat_sessions')\
+                                .update({'user_id': user_id})\
+                                .eq('session_id', session_id)\
+                                .is_('user_id', None)\
+                                .execute()
+
                             response = supabase_client.table('chat_sessions')\
                                 .select('file_context')\
                                 .eq('session_id', session_id)\
                                 .execute()
-                            
+
                             if response.data and response.data[0].get('file_context'):
                                 restored_context = response.data[0]['file_context']
                                 session_file_context[session_id] = restored_context
-                                logger.info(f"Restored file context from DB: {len(restored_context)} chars")
-                    except Exception as e:
-                        logger.error(f"Failed to restore file context: {e}")
-                # add a record in chat_sessions table
-                try:    
-                    print("🔃 Creating a new session record")
-                    supabase_client.table("chat_sessions").insert({'session_id': session_id, "title": "Chat Title", "description":"Description for the chat session" }).execute()
+                                logger.info(f"✅ Restored file context: {len(restored_context)} chars")
 
-                    message_ids = get_message_ids(supabase_client)
-                    # convert message IDs to a list
-                    unique_message_ids = list({record['message_id'] for record in message_ids})
-                    # reset the conversation history and unique message ids
-                    conversation_history = []
-                    print("✅ Successfully created a new session record!")            
-                    # Send confirmation — this unblocks frontend
-                    await websocket.send_json({
-                        "type": "session_id",
-                        "status": "acknowledged",
-                        "session_id": session_id,
-                        "current_agent": current_agent_name,
-                        "current_model": session_model_key,
-                        "message_ids": unique_message_ids
-                    })
-                except Exception as e:
-                    print("Some error occured while adding a new session record", e)
-                    await websocket.send_json({
-                        "type": "session_id",
-                        "status": "not-acknowledged",
-                        "error": e
-                    })
-                    raise
+                            # Also get list of uploaded files for this session
+                            files_response = supabase_client.table('session_files')\
+                                .select('file_id, file_name, file_type, created_at')\
+                                .eq('session_id', session_id)\
+                                .order('created_at')\
+                                .execute()
+
+                            uploaded_files = files_response.data or []
+                            logger.info(f"📎 Found {len(uploaded_files)} uploaded files")
+
+                            # Get message IDs for existing session
+                            message_ids = get_message_ids(supabase_client)
+                            unique_message_ids = list({record['message_id'] for record in message_ids})
+                            conversation_history = []
+
+                            # Send response with file info
+                            await websocket.send_json({
+                                "type": "session_id",
+                                "status": "acknowledged",
+                                "session_id": session_id,
+                                "current_agent": current_agent_name,
+                                "current_model": session_model_key,
+                                "message_ids": unique_message_ids,
+                                "uploaded_files": uploaded_files 
+                            })
+                        else:
+                            # Session doesn't exist, create new one with the requested ID
+                            session_id = requested_session_id
+                            logger.info(f"Creating new session with requested ID: {session_id}")
+                            session_data = {
+                                'session_id': session_id,
+                                "title": "Chat Title",
+                                "description": "Description for the chat session"
+                            }
+                            if user_id:
+                                session_data["user_id"] = user_id
+                            supabase_client.table("chat_sessions").insert(session_data).execute()
+                    except Exception as e:
+                        logger.error(f"Error checking session existence: {e}")
+                        # Fallback: create new session
+                        session_id = generate_session_id()
+                        logger.info(f"Fallback: Created new session: {session_id}")
+                        session_data = {
+                            'session_id': session_id,
+                            "title": "Chat Title",
+                            "description": "Description for the chat session"
+                        }
+                        if user_id:
+                            session_data["user_id"] = user_id
+                        supabase_client.table("chat_sessions").insert(session_data).execute()
+
+                        message_ids = get_message_ids(supabase_client)
+                        # convert message IDs to a list
+                        unique_message_ids = list({record['message_id'] for record in message_ids})
+                        # reset the conversation history and unique message ids
+                        conversation_history = []
+                        print("✅ Successfully created a new session record!")
+                        # Send confirmation — this unblocks frontend
+                        await websocket.send_json({
+                            "type": "session_id",
+                            "status": "acknowledged",
+                            "session_id": session_id,
+                            "current_agent": current_agent_name,
+                            "current_model": session_model_key,
+                            "message_ids": unique_message_ids
+                        })
+                    except Exception as e:
+                        print("Some error occured while adding a new session record", e)
+                        await websocket.send_json({
+                            "type": "session_id",
+                            "status": "not-acknowledged",
+                            "error": e
+                        })
+                        raise
 
                 continue  
 
             # Handle CHAT HISTORY request
             if data.get("type") == "chat_history":
+                user_id = data.get("user_id", "").strip()
                 try:
-                    # first get all unique session IDs from chat_messages
-                    all_session_ids = supabase_client.table("chat_messages").select("session_id").execute().data
-                    # unique session_ids as a list
-                    unique_session_ids = list({
-                        record["session_id"]
-                        for record in all_session_ids
-                    })
+                    if not user_id:
+                        await websocket.send_json({
+                            "type": "chat_history",
+                            "status": "error",
+                            "error": "user_id is required"
+                        })
+                        continue
 
-                    chat_sessions = supabase_client.table('chat_sessions').select('session_id', 'title', 'description', 'created_at').in_('session_id', unique_session_ids).execute().data
+                    # Get ONLY sessions for the specific logged-in user
+                    chat_sessions = supabase_client.table('chat_sessions')\
+                        .select('session_id', 'title', 'description', 'created_at')\
+                        .eq('user_id', user_id)\
+                        .order('created_at', desc=True)\
+                        .execute().data
 
-                    print("All sessions", chat_sessions)
+                    # If no sessions found, return empty list (don't show other users' sessions)
+                    if not chat_sessions:
+                        chat_sessions = []
+
+                    print(f"Sessions for user {user_id}: {len(chat_sessions)} sessions")
                     await websocket.send_json({
                         "type": "chat_history",
                         "status":"acknowledged",
                         "chat_history": chat_sessions
                     })
-                    logger.info(f"Sent {len(chat_sessions)} sessions to frontend")
+                    logger.info(f"Sent {len(chat_sessions)} sessions to frontend for user {user_id}")
                 except Exception as e:
                     logger.error(f"Error fetching chat history: {e}")
+                    await websocket.send_json({
+                        "type": "chat_history",
+                        "status": "error",
+                        "error": str(e)
+                    })
+                continue
 
             #         await websocket.send_json({
             #             "type": "chat_history",
@@ -610,6 +866,7 @@ async def websocket_chat(websocket: WebSocket):
             # Handle Get SPECIFIC REQUEST
             if data.get("type") == "get_chat":
                 requested_session_id = data.get("session_id", "")
+                user_id = data.get("user_id", "")
                 if not requested_session_id:
                     await websocket.send_json({
                         "type": "get_chat",
@@ -618,6 +875,21 @@ async def websocket_chat(websocket: WebSocket):
                     })
                     continue
                 try:
+                    # Verify session belongs to user
+                    session_check = supabase_client.table('chat_sessions')\
+                        .select('session_id')\
+                        .eq('session_id', requested_session_id)\
+                        .eq('user_id', user_id)\
+                        .execute()
+
+                    if not session_check.data:
+                        await websocket.send_json({
+                            "type": "get_chat",
+                            "status": "non-acknowledged",
+                            "error": "Session not found or access denied"
+                        })
+                        continue
+
                     # switch to this session
                     session_id = requested_session_id
                     print(f"🔃 Retrieving messages for chat with session-id {session_id}")
@@ -628,6 +900,28 @@ async def websocket_chat(websocket: WebSocket):
                     # convert message IDs to a list
                     unique_message_ids = list({record['message_id'] for record in message_ids})
 
+                    # Get uploaded files for this session
+                    files_response = supabase_client.table('session_files')\
+                        .select('file_id, file_name, file_type, created_at')\
+                        .eq('session_id', session_id)\
+                        .order('created_at')\
+                        .execute()
+
+                    uploaded_files = files_response.data or []
+                    logger.info(f"📎 Found {len(uploaded_files)} uploaded files for session {session_id}")
+
+                    # Restore file context to memory
+                    if uploaded_files:
+                        # Get combined file context
+                        context_response = supabase_client.table('chat_sessions')\
+                            .select('file_context')\
+                            .eq('session_id', session_id)\
+                            .execute()
+
+                        if context_response.data and context_response.data[0].get('file_context'):
+                            session_file_context[session_id] = context_response.data[0]['file_context']
+                            logger.info(f"✅ Restored file context for session {session_id}")
+
                     # override conversation_history with new_chat_history
                     conversation_history = chat_history or []
                     await websocket.send_json({
@@ -635,7 +929,8 @@ async def websocket_chat(websocket: WebSocket):
                         "status": "acknowledged",
                         "session_id": session_id,
                         "chat_history": chat_history,
-                        "unique_message_ids": unique_message_ids 
+                        "unique_message_ids": unique_message_ids,
+                        "uploaded_files": uploaded_files  
                     })
                     logger.info(f"Loaded chat: {session_id} with {len(chat_history)} messages")
                 except Exception as e:
@@ -643,6 +938,74 @@ async def websocket_chat(websocket: WebSocket):
                     await websocket.send_json({
                         "type": "get_chat",
                         "status": "not-acknowledged",
+                        "error": str(e)
+                    })
+                continue
+
+            # Handle DELETE SESSION request
+            if data.get("type") == "delete_session":
+                user_id = data.get("user_id", "")
+                session_id_to_delete = data.get("session_id", "")
+                if not user_id or not session_id_to_delete:
+                    await websocket.send_json({
+                        "type": "delete_session",
+                        "status": "error",
+                        "error": "user_id and session_id are required"
+                    })
+                    continue
+                try:
+                    success = await delete_user_session(user_id, session_id_to_delete)
+                    if success:
+                        await websocket.send_json({
+                            "type": "delete_session",
+                            "status": "success",
+                            "session_id": session_id_to_delete
+                        })
+                        logger.info(f"Deleted session {session_id_to_delete} for user {user_id}")
+                    else:
+                        await websocket.send_json({
+                            "type": "delete_session",
+                            "status": "error",
+                            "error": "Session not found or access denied"
+                        })
+                except Exception as e:
+                    logger.error(f"Error deleting session: {e}")
+                    await websocket.send_json({
+                        "type": "delete_session",
+                        "status": "error",
+                        "error": str(e)
+                    })
+                continue
+
+            # Handle DELETE ALL SESSIONS request
+            if data.get("type") == "delete_all_sessions":
+                user_id = data.get("user_id", "")
+                if not user_id:
+                    await websocket.send_json({
+                        "type": "delete_all_sessions",
+                        "status": "error",
+                        "error": "user_id is required"
+                    })
+                    continue
+                try:
+                    success = await delete_all_user_sessions(user_id)
+                    if success:
+                        await websocket.send_json({
+                            "type": "delete_all_sessions",
+                            "status": "success"
+                        })
+                        logger.info(f"Deleted all sessions for user {user_id}")
+                    else:
+                        await websocket.send_json({
+                            "type": "delete_all_sessions",
+                            "status": "error",
+                            "error": "Failed to delete sessions"
+                        })
+                except Exception as e:
+                    logger.error(f"Error deleting all sessions: {e}")
+                    await websocket.send_json({
+                        "type": "delete_all_sessions",
+                        "status": "error",
                         "error": str(e)
                     })
                 continue
@@ -835,9 +1198,12 @@ async def websocket_chat(websocket: WebSocket):
                         raise
 
                 logger.info(f"[{current_agent_name}] Session: {session_id} | Message: {message_string} ...")
-                # File Feature
+                # File Feature - Check current session first, then fallback to default_session
                 file_context = session_file_context.get(session_id, "")
-                
+                if not file_context:
+                    # Fallback: check default_session for uploaded files
+                    file_context = session_file_context.get("default_session", "")
+
                 if file_context:
                     logger.info(f"📚 Found context for session {session_id}: {len(file_context)} chars")
                     safe_context = (file_context[:8000] + '... [TRUNCATED]') if len(file_context) > 8000 else file_context
@@ -848,7 +1214,7 @@ async def websocket_chat(websocket: WebSocket):
                         f"========================================\n\n"
                         f"USER QUESTION: {message_string}"
                     )
-                    
+
                     logger.info(f"✅ Injected file context into prompt for {session_id}")
                 # print("Dynamic system instructions", dynamic_system_instruction["text"])
                 try:

@@ -2,6 +2,7 @@ import { easeIn, easeInOut, motion } from "framer-motion";
 import { ChatContext, ChatRecord } from "@/app/context/chatbot/ChatContext";
 import { useContext, useEffect, useRef, useState } from "react";
 import ChatHistory from "../../../../icons/history_icon.svg";
+import { X } from "lucide-react";
 
 const formatDateToDMY = (dateString: string | null): string => {
   const date = new Date(dateString || new Date());
@@ -20,6 +21,7 @@ const ChatHisoryDialoguseBox = () => {
     openChatHistoryDialogueBox,
     setOpenChatHistoryDialogueBox,
     wsRef,
+    userId,
   } = useContext(ChatContext);
   const [translatePic, setTranslatePic] = useState<boolean | null>(null);
   const dialogueRef = useRef<HTMLDivElement>(null);
@@ -41,6 +43,27 @@ const ChatHisoryDialoguseBox = () => {
       document.removeEventListener("click", handleOutsideClick);
     };
   }, [openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox]);
+
+  useEffect(() => {
+    if (openChatHistoryDialogueBox) {
+      const user = sessionStorage.getItem('user');
+      let user_id = null;
+      if (user) {
+        try {
+          const userData = JSON.parse(user);
+          user_id = userData.id;
+        } catch (e) {
+          console.error("Error parsing user data:", e);
+        }
+      }
+      wsRef.current?.send(
+        JSON.stringify({
+          type: "chat_history",
+          user_id: user_id,
+        })
+      );
+    }
+  }, [openChatHistoryDialogueBox, wsRef]);
 
   if (!openChatHistoryDialogueBox) return null;
 
@@ -96,32 +119,61 @@ const ChatHisoryDialoguseBox = () => {
               </div>
             </div>
             <div className="flex flex-col gap-y-1">
-              <div className="px-1 flex justify-between">
+              <div className="px-1 flex justify-between items-center">
                 <p className="switzer-600 tracking-tighter text-black/50 text-sm">
                   Chat history
                 </p>
+                {chatHistory && chatHistory.length > 0 && (
+                  <button
+                    onClick={() => {
+                      if (window.confirm("Are you sure you want to delete all chat history?")) {
+                        const user = sessionStorage.getItem('user');
+                        let user_id = null;
+                        if (user) {
+                          try {
+                            const userData = JSON.parse(user);
+                            user_id = userData.id;
+                          } catch (e) {
+                            console.error("Error parsing user data:", e);
+                          }
+                        }
+                        wsRef.current?.send(
+                          JSON.stringify({
+                            type: "delete_all_sessions",
+                            user_id: user_id,
+                          })
+                        );
+                      }
+                    }}
+                    className="switzer-500 text-xs text-red-500 hover:text-red-700 underline"
+                  >
+                    Delete All
+                  </button>
+                )}
               </div>
               <motion.div className="grid grid-cols-1 gap-2 px-1 overflow-y-auto h-45">
                 {chatHistory ? (
                   chatHistory?.map((chat: ChatRecord, index: number) => (
                     <motion.div
                       whileHover={{ scale: 1.01 }}
-                      onClick={() => {
-                        setSelectedSessionID(chat.session_id);
-                        setOpenChatHistoryDialogueBox(false);
-                        wsRef.current?.send(
-                          JSON.stringify({
-                            type: "get_chat",
-                            session_id: chat.session_id,
-                          })
-                        );
-                      }}
-                      whileTap={{ scale: 0.98, transition: { duration: 0.5 } }}
                       transition={{ duration: 0.2 }}
                       key={chat.session_id || index}
-                      className="w-full bg-black cursor-pointer shadow-md h-max border border-black/10 rounded-md px-2 py-1 flex flex-col gap-y-1"
+                      className="w-full bg-black shadow-md h-max border border-black/10 rounded-md px-2 py-1 flex flex-col gap-y-1 relative group"
                     >
-                      <div className="flex justify-between">
+                      <div
+                        className="flex justify-between cursor-pointer"
+                        onClick={() => {
+                          setSelectedSessionID(chat.session_id);
+                          setOpenChatHistoryDialogueBox(false);
+                          wsRef.current?.send(
+                            JSON.stringify({
+                              type: "get_chat",
+                              session_id: chat.session_id,
+                              user_id: userId,
+                            })
+                          );
+                        }}
+                      >
                         <p className="switzer-500 text-sm text-white tracking-tight">
                           {chat.title}
                         </p>
@@ -129,9 +181,49 @@ const ChatHisoryDialoguseBox = () => {
                           {formatDateToDMY(chat.created_at)}
                         </p>
                       </div>
-                      <p className="switzer-500 text-sm text-white/70">
+                      <p
+                        className="switzer-500 text-sm text-white/70 cursor-pointer"
+                        onClick={() => {
+                          setSelectedSessionID(chat.session_id);
+                          setOpenChatHistoryDialogueBox(false);
+                          wsRef.current?.send(
+                            JSON.stringify({
+                              type: "get_chat",
+                              session_id: chat.session_id,
+                              user_id: userId,
+                            })
+                          );
+                        }}
+                      >
                         {chat.description}
                       </p>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (window.confirm(`Are you sure you want to delete "${chat.title}"?`)) {
+                            const user = sessionStorage.getItem('user');
+                            let user_id = null;
+                            if (user) {
+                              try {
+                                const userData = JSON.parse(user);
+                                user_id = userData.id;
+                              } catch (e) {
+                                console.error("Error parsing user data:", e);
+                              }
+                            }
+                            wsRef.current?.send(
+                              JSON.stringify({
+                                type: "delete_session",
+                                user_id: user_id,
+                                session_id: chat.session_id,
+                              })
+                            );
+                          }
+                        }}
+                        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-red-500 hover:bg-red-600 text-white rounded-full p-1"
+                      >
+                        <X size={12} />
+                      </button>
                     </motion.div>
                   ))
                 ) : (

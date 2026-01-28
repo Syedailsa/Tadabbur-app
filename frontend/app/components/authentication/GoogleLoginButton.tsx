@@ -1,24 +1,25 @@
 import React from "react";
 import { GoogleLogin } from "@react-oauth/google";
 import axios from "axios";
-
-interface GoogleLoginProps {
-  onSuccess: (data: any) => void;
-  onError: (message: string) => void;
-  text?: "signin_with" | "signup_with";
-}
+import {
+  GoogleCredentialResponse,
+  GoogleSignInRequest,
+  GoogleSignInResponse,
+  GoogleLoginProps,
+} from "../../utils/types";
 
 export default function GoogleLoginButton({
   onSuccess,
   onError,
   text = "signin_with",
 }: GoogleLoginProps) {
-  const handleGoogleSuccess = async (credentialResponse: any) => {
+  const handleGoogleSuccess = async (credentialResponse: GoogleCredentialResponse): Promise<void> => {
     try {
-      // Matches your backend model: class GoogleSignInRequest(BaseModel): token: str
-      const res = await axios.post("http://localhost:8000/auth/google-signin", {
-        token: credentialResponse.credential,
-      });
+      if (!credentialResponse.credential) {
+        throw new Error("No credential received");
+      }
+      const request: GoogleSignInRequest = { token: credentialResponse.credential };
+      const res = await axios.post<GoogleSignInResponse>("http://localhost:8000/auth/google-signin", request);
       onSuccess(res.data);
     } catch (error) {
       onError("Google authentication failed. Please try again.");

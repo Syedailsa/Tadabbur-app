@@ -15,14 +15,14 @@ export default function AuthPage() {
 
   const handleAuthSuccess = (data: any) => {
     console.log("Auth Successful:", data);
-    
-    sessionStorage.setItem('token', data.token);
-    sessionStorage.setItem('user', JSON.stringify({ 
-      id: data.user_id, 
-      name: data.firstname 
-    })); 
 
-    window.location.href = '/pages/chatbot';
+    sessionStorage.setItem('token', data.token);
+    sessionStorage.setItem('user', JSON.stringify({
+      id: data.user_id,
+      name: data.firstname
+    }));
+
+    window.location.href = '/chatbot';
   };
 
   const getHeaderText = () => {

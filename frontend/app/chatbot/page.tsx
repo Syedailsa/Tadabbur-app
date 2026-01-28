@@ -6,11 +6,10 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { ReactNode, useEffect, useRef, useState } from "react";
 import ChatProvider from "@/app/providers/chatbot/ChatProvider";
-import AttachIcon from "../../../icons/attach_icon.svg";
-import DisclaimerIcon from "../../../icons/disclaimer.svg";
-import UndoArrow from "../../../icons/refresh.svg";
-import DownArrow from ".../icons/arrow-down-head.svg";
-import SimpleAudioDialog from "../../components/chatbot/UI/AudioDialogBox";
+import AttachIcon from "../../icons/attach_icon.svg";
+import DisclaimerIcon from "../../icons/disclaimer.svg";
+import UndoArrow from "../../icons/refresh.svg";
+import DownArrow from "../../icons/arrow-down-head.svg";
 import { AssistantMessage } from "@/app/components/chatbot/interfaces/ChatMessage";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { dracula } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -25,29 +24,42 @@ import ProtectedRoute from "@/app/utils/ProtectedRoutes";
 import RegistrationForm, {
   RegistrationData,
 } from "@/app/components/chatbot/UI/ReactForm";
-import { audioScheduler } from "../../utils/AudioScheduler";
 import { ModelList } from "@/static/data";
-import BottomOptions from "../../components/chatbot/UI/BottomOptions";
-import ExtraOptions from "../../components/chatbot/UI/ExtraOptions";
+import BottomOptions from "../components/chatbot/UI/BottomOptions";
+import ExtraOptions from "../components/chatbot/UI/ExtraOptions";
 // import PromptSuggestion from ".../icons/prompt_suggestion.svg";
 import { defaultPrompts } from "@/static/data";
-import ModelBox from "../../components/chatbot/UI/ModelBox";
-import Controls from "../../components/chatbot/UI/Controls";
-import PromptExtraOptions from "../../components/chatbot/UI/PrompExtraOptions";
+import ModelBox from "../components/chatbot/UI/ModelBox";
+import Controls from "../components/chatbot/UI/Controls";
+import PromptExtraOptions from "../components/chatbot/UI/PrompExtraOptions";
 import generateUUID from "@/utils/generateShortId";
 import { generateNewSessionId } from "@/app/session/session";
-import { ChatHisoryDialoguseBox } from "../../components/chatbot/UI/ChatHistoryDialogueBox";
+import { ChatHisoryDialoguseBox } from "../components/chatbot/UI/ChatHistoryDialogueBox";
 import { ChatRecord } from "@/app/context/chatbot/ChatContext";
 import { PromptExtraOptionsContext } from "@/app/context/chatbot/PromptExtraOptionsContext";
-import ReportContentDialogueBox from "../../components/chatbot/UI/ReportContentDialogueBox";
-import { ChatMessage } from "../../components/chatbot/interfaces/ChatMessage";
-import QuranAudioDialog from "../../components/chatbot/UI/AudioDialogBox";
-import QuranVerseDialog from "../../components/chatbot/UI/QuranVerseDialog";
+import ReportContentDialogueBox from "../components/chatbot/UI/ReportContentDialogueBox";
+import { ChatMessage as ChatMessageInterface } from "../components/chatbot/interfaces/ChatMessage";
+import QuranAudioDialog from "../components/chatbot/UI/AudioDialogBox";
+import QuranVerseDialog from "../components/chatbot/UI/QuranVerseDialog";
 import groupChatMessages from "@/utils/groupChatMessages";
-import WaveForm from "../../components/chatbot/UI/WaveForm";
-
+import WaveForm from "../components/chatbot/UI/WaveForm";
+import {
+  AssistantMessages,
+  ChatMessages,
+  WebSocketMessage,
+  SessionInitMessage,
+  UserMessageOutgoing,
+  AudioRequest,
+  VerseRequest,
+  ChatRecordType,
+  UploadResponse,
+  RegistrationDataType,
+  PromptSuggestion,
+  ModelInfo,
+  STTResultEvent,
+} from "../utils/types"
 export default function ChatPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessages[]>([]);
   const inputRef = useRef<HTMLDivElement | null>(null);
   const [showPlaceholder, setShowPlaceholder] = useState<boolean | null>(true);
   const [isRecording, setIsRecording] = useState(false);
@@ -70,13 +82,13 @@ export default function ChatPage() {
   const [messageIDs, setMessageIDs] = useState<(string | null)[] | null>(null);
 
   const [showAudioDialog, setShowAudioDialog] = useState(false);
-  const [audioRequest, setAudioRequest] = useState<any>(null);
+  const [audioRequest, setAudioRequest] = useState<AudioRequest | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [showQuranVerseDialog, setShowQuranVerseDialog] = useState(false);
-  const [verseRequest, setVerseRequest] = useState<any>(null);
+  const [verseRequest, setVerseRequest] = useState<VerseRequest | null>(null);
 
   const [showQuranPlayer, setShowQuranPlayer] = useState(false);
-  const [chatHistory, setChatHistory] = useState<ChatRecord[] | null>(null);
+  const [chatHistory, setChatHistory] = useState<ChatRecordType[] | null>(null);
   const messageScrollFlag = useRef<boolean | null>(false);
   const committedTextRef = useRef<string>("");
   const tempSpeechRef = useRef<string>("");
@@ -86,15 +98,15 @@ export default function ChatPage() {
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
 
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadResponse, setUploadResponse] = useState<any>(null);
+  const [uploadResponse, setUploadResponse] = useState<UploadResponse | null>(null);
 
   const currentMessageIDRef = useRef<string | null>(null);
   const [reportedMessageIDs, setReportedMessageIDs] = useState<string[] | null>(
     []
   );
-  const [userData, setUserData] = useState<RegistrationData | null>(null);
+  const [userData, setUserData] = useState<RegistrationDataType | null>(null);
 
-  const oldMessagesRef = useRef<AssistantMessage[]>([]);
+  const oldMessagesRef = useRef<AssistantMessages[]>([]);
   const controls = useAnimationControls();
 
   function preprocessContent(content: string) {
@@ -168,7 +180,7 @@ export default function ChatPage() {
         }
         setShowPlaceholder(false);
       }
-    };
+      }}
 
     window.addEventListener("tadabbur-mic-start", handleMicStart);
     window.addEventListener("tadabbur-mic-stop", handleMicStop);
@@ -191,14 +203,24 @@ export default function ChatPage() {
 
     wsRef.current.onopen = () => {
       console.log("Connected to websocket successfully!");
-      const session_id = generateNewSessionId();
-      wsRef.current?.send(
-        JSON.stringify({
-          type: "session-init",
-          session_id: session_id,
-          model: "kimi-k2-instruct-0905",
-        })
-      );
+      // For new connection, don't specify session_id to create new session
+      const user = sessionStorage.getItem('user');
+      let user_id = null;
+      if (user) {
+        try {
+          const userData = JSON.parse(user);
+          user_id = userData.id;
+        } catch (e) {
+          console.error("Error parsing user data:", e);
+        }
+      }
+      const sessionInit: SessionInitMessage = {
+        type: "session-init",
+        session_id: "",  // Empty for new session
+        user_id: user_id,
+        model: "kimi-k2-instruct-0905",
+      };
+      wsRef.current?.send(JSON.stringify(sessionInit));
       setReportedMessageIDs([]);
     };
 
@@ -211,7 +233,7 @@ export default function ChatPage() {
     };
 
     wsRef.current.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+      const data: WebSocketMessage = JSON.parse(event.data);
       console.log("Data from websocket", event.data);
 
       const type = data.type;
@@ -222,7 +244,7 @@ export default function ChatPage() {
             parsed_request: data.parsed_request,
             original_message: data.original_message,
             available_reciters: data.available_reciters,
-            note: data.note || null,
+            note: data.note ?? undefined,
           });
           setShowAudioDialog(true);
           break;
@@ -231,7 +253,7 @@ export default function ChatPage() {
           setVerseRequest({
             parsed_request: data.parsed_request,
             original_message: data.original_message,
-            note: data.note || null,
+            note: data.note || undefined,
           });
           setShowQuranVerseDialog(true);
           break;
@@ -263,15 +285,12 @@ export default function ChatPage() {
           const isNew = session_id != sessionID;
           const session_status = data.status;
           const message_ids = data.message_ids;
-          if (isNew && session_status === "acknowledged") {
+          if (session_status === "acknowledged") {
             setSessionID(session_id);
-            // Use functional update to ensure we're working with latest state
-            setMessages((prevMessages) => {
-              if (prevMessages && prevMessages.length > 0) {
-                return [];
-              }
-              return prevMessages; // Return unchanged if no messages
-            });
+            if (isNew) {
+              // For new sessions, always clear messages
+              setMessages([]);
+            }
             setMessageIDs(message_ids);
           }
           break;
@@ -290,6 +309,46 @@ export default function ChatPage() {
           // handle chat history
           if (history_status === "acknowledged") {
             setChatHistory(chat_history);
+          } else if (history_status === "error") {
+            alert("Error loading chat history: " + data.error);
+          }
+          break;
+
+        case "delete_session":
+          const delete_status = data.status;
+          if (delete_status === "success") {
+            // Refresh chat history
+            const user = sessionStorage.getItem('user');
+            let user_id = null;
+            if (user) {
+              try {
+                const userData = JSON.parse(user);
+                user_id = userData.id;
+              } catch (e) {
+                console.error("Error parsing user data:", e);
+              }
+            }
+            if (user_id) {
+              wsRef.current?.send(
+                JSON.stringify({
+                  type: "chat_history",
+                  user_id: user_id,
+                })
+              );
+            }
+            alert("Chat session deleted successfully");
+          } else {
+            alert("Error deleting chat session: " + data.error);
+          }
+          break;
+
+        case "delete_all_sessions":
+          const delete_all_status = data.status;
+          if (delete_all_status === "success") {
+            setChatHistory([]);
+            alert("All chat sessions deleted successfully");
+          } else {
+            alert("Error deleting all chat sessions: " + data.error);
           }
           break;
 
@@ -520,7 +579,7 @@ export default function ChatPage() {
       return;
     }
 
-    const userMessage: ChatMessage = {
+    const userMessage: ChatMessages = {
       message_id: messageID,
       role: "user",
       content: input,
@@ -529,7 +588,7 @@ export default function ChatPage() {
         {
           role: "assistant",
           message_id: "",
-          reply_to_message_id: "",
+          reply_to_message_id: null,
           content: "",
           feedback: null,
         },
@@ -561,17 +620,16 @@ export default function ChatPage() {
 
     currentMessageIDRef.current = messageID;
     try {
-      wsRef.current?.send(
-        JSON.stringify({
-          type: "user_message",
-          message_id: messageID,
-          role: "user",
-          system_instructions: guidelines || "",
-          content: input,
-          resend_flag: resend_flag,
-          resend_message_id: resend_message_id || "",
-        })
-      );
+      const userMessage: UserMessageOutgoing = {
+        type: "user_message",
+        message_id: messageID,
+        role: "user",
+        system_instructions: guidelines || "",
+        content: input,
+        resend_flag: resend_flag,
+        resend_message_id: resend_message_id || "",
+      };
+      wsRef.current?.send(JSON.stringify(userMessage));
       if (inputRef.current) {
         inputRef.current.innerText = "";
         setShowPlaceholder(true);
@@ -719,7 +777,15 @@ export default function ChatPage() {
                 onClose={() => setShowAudioDialog(false)}
                 parsedRequest={audioRequest.parsed_request}
                 originalMessage={audioRequest.original_message}
-                availableReciters={audioRequest.available_reciters}
+                availableReciters={
+                  audioRequest.available_reciters
+                    ? audioRequest.available_reciters.map((reciter: any) =>
+                        typeof reciter === "string"
+                          ? { id: reciter, name: reciter }
+                          : reciter
+                      )
+                    : []
+                }
                 wsRef={wsRef}
               />
             )}

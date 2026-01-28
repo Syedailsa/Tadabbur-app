@@ -2,13 +2,21 @@ fastapi
 pydantic
 openai-agents
 python-dotenv
-langchain-community         0.4.1
-langchain-core              1.1.1
-langchain-experimental      0.3.4
-langchain-fireworks         1.1.0
-langchain-groq              0.3.8
-langgraph                   1.0.4
-langgraph-checkpoint        2.1.1
-langgraph-checkpoint-sqlite 2.0.11
-langgraph-prebuilt          1.0.5
-langgraph-sdk               0.2.6
+langchain-community
+langchain-core
+langchain-experimental
+langchain-fireworks
+langchain-groq
+langgraph
+langgraph-checkpoint
+langgraph-checkpoint-sqlite
+langgraph-prebuilt
+langgraph-sdk
+uvicorn
+supabase
+asyncpg
+pypdf
+python-multipart
+python-docx
+python-docx
+ 

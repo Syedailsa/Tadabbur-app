@@ -2,7 +2,7 @@ from rapidfuzz import process, fuzz
 import unicodedata
 import re
 
-from realtime import Optional
+from typing import Optional
 
 def normalize_surah(name:str, array:list) -> str | None:
     """
