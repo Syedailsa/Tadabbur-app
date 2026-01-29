@@ -902,7 +902,7 @@ async def websocket_chat(websocket: WebSocket):
 
                     # Get uploaded files for this session
                     files_response = supabase_client.table('session_files')\
-                        .select('file_id, file_name, file_type, created_at')\
+                        .select('file_id, file_name, file_type, created_at, message_id')\
                         .eq('session_id', session_id)\
                         .order('created_at')\
                         .execute()
@@ -1196,6 +1196,21 @@ async def websocket_chat(websocket: WebSocket):
                     except Exception as e:
                         print("Some error occured while inserting user messages", e)
                         raise
+
+                # 🆕 Re-enabled File Linking
+                attached_files = data.get("attached_files", [])
+                if attached_files and user_message_id:
+                    file_ids = [f.get('file_id') for f in attached_files if f.get('file_id')]
+                    if file_ids:
+                        try:
+                            supabase_client.table('session_files')\
+                                .update({'message_id': user_message_id})\
+                                .in_('file_id', file_ids)\
+                                .eq('session_id', session_id)\
+                                .execute()
+                            print(f"✅ Linked {len(file_ids)} files to message {user_message_id}")
+                        except Exception as e:
+                            print(f"❌ Error linking files to message: {e}")
 
                 logger.info(f"[{current_agent_name}] Session: {session_id} | Message: {message_string} ...")
                 # File Feature - Check current session first, then fallback to default_session

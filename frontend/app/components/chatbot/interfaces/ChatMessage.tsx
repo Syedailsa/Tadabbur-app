@@ -5,6 +5,7 @@ interface ChatMessage {
   responses: AssistantMessage[];
   number_of_responses: number | null;
   active_message_index: number | null;
+  attached_files?: any[];
 }
 
 interface AssistantMessage {

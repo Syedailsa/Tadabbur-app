@@ -305,6 +305,7 @@ async def create_tables():
                 file_url TEXT,
                 file_content TEXT,
                 file_size INTEGER,
+                message_id TEXT,
                 created_at TIMESTAMP DEFAULT NOW()
             )
         """)
@@ -343,6 +344,15 @@ async def create_tables():
             print("✅ RLS disabled for session_files table")
         except Exception as e:
             logger.warning(f"RLS disable failed: {e}")
+
+        # Add message_id column if it doesn't exist
+        await conn.execute("ALTER TABLE session_files ADD COLUMN IF NOT EXISTS message_id TEXT;")
+        
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_session_files_message_id 
+            ON session_files(message_id)
+        """)
+        print("✅ message_id column added/verified for session_files")
 
         print("✅ All PostgreSQL tables created/verified")
 

@@ -209,6 +209,7 @@ export interface UserMessageOutgoing extends BaseOutgoingMessage {
   content: string;
   resend_flag?: boolean;
   resend_message_id?: string;
+  attached_files?: any[];
 }
 
 // Request chat history

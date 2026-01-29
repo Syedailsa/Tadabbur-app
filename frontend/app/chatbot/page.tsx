@@ -11,8 +11,8 @@ import DisclaimerIcon from "../../icons/disclaimer.svg";
 import UndoArrow from "../../icons/refresh.svg";
 import DownArrow from "../../icons/arrow-down-head.svg";
 import { AssistantMessage } from "@/app/components/chatbot/interfaces/ChatMessage";
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { dracula } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { dracula } from "react-syntax-highlighter/dist/esm/styles/prism";
 import {
   motion,
   easeInOut,
@@ -20,6 +20,7 @@ import {
   AnimatePresence,
   useAnimationControls,
 } from "framer-motion";
+import { X } from "lucide-react";
 import ProtectedRoute from "@/app/utils/ProtectedRoutes";
 import RegistrationForm, {
   RegistrationData,
@@ -57,7 +58,74 @@ import {
   PromptSuggestion,
   ModelInfo,
   STTResultEvent,
-} from "../utils/types"
+} from "../utils/types";
+
+const UploadedFilesDisplay = ({
+  files,
+  onDelete,
+}: {
+  files: Array<{
+    file_id: string;
+    file_name: string;
+    file_type: string;
+    created_at: string;
+  }>;
+  onDelete: (fileId: string) => void;
+}) => {
+  if (!files || files.length === 0) return null;
+
+  const getFileIcon = (fileType: string) => {
+    if (fileType.includes("pdf")) return "📄";
+    if (fileType.includes("word") || fileType.includes("document")) return "📝";
+    if (fileType.includes("image")) return "🖼️";
+    if (fileType.includes("text")) return "📃";
+    return "📎";
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="w-full mb-3 px-4"
+    >
+      <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
+        <div className="flex items-center justify-between mb-2">
+          <p className="switzer-600 text-sm text-gray-700">
+            📎 Attached Files ({files.length})
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {files.map((file) => (
+            <div
+              key={file.file_id}
+              className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-md px-3 py-2 group hover:bg-gray-100 transition-colors"
+            >
+              <span className="text-xl">{getFileIcon(file.file_type)}</span>
+
+              <div className="flex flex-col">
+                <span className="switzer-500 text-sm text-gray-800 max-w-[200px] truncate">
+                  {file.file_name}
+                </span>
+                <span className="switzer-400 text-xs text-gray-500">
+                  {new Date(file.created_at).toLocaleDateString()}
+                </span>
+              </div>
+
+              <button
+                onClick={() => onDelete(file.file_id)}
+                className="ml-2 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Delete file"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </motion.div>
+  );
+};
 export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessages[]>([]);
   const inputRef = useRef<HTMLDivElement | null>(null);
@@ -65,13 +133,13 @@ export default function ChatPage() {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [greeting, setGreeting] = useState<string | null>(
-    "Assalam O Alaykum, I am Tadabbur, how may I help you today?"
+    "Assalam O Alaykum, I am Tadabbur, how may I help you today?",
   );
   const wsRef = useRef<WebSocket | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
   const [placeholder, setPlaceholder] = useState<string | null>(
-    "Let's learn about the Quran"
+    "Let's learn about the Quran",
   );
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -98,26 +166,68 @@ export default function ChatPage() {
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
 
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadResponse, setUploadResponse] = useState<UploadResponse | null>(null);
+  const [uploadResponse, setUploadResponse] = useState<UploadResponse | null>(
+    null,
+  );
 
   const currentMessageIDRef = useRef<string | null>(null);
   const [reportedMessageIDs, setReportedMessageIDs] = useState<string[] | null>(
-    []
+    [],
   );
+
+  const [uploadedFiles, setUploadedFiles] = useState<
+    Array<{
+      file_id: string;
+      file_name: string;
+      file_type: string;
+      created_at: string;
+    }>
+  >([]);
+
+  // New state for session-level files (history)
+  const [sessionFiles, setSessionFiles] = useState<Array<{
+    file_id: string;
+    file_name: string;
+    file_type: string;
+    created_at: string;
+  }>>([]);
+
   const [userData, setUserData] = useState<RegistrationDataType | null>(null);
 
   const oldMessagesRef = useRef<AssistantMessages[]>([]);
   const controls = useAnimationControls();
 
+  const handleDeleteFile = async (fileId: string) => {
+    if (!confirm("Are you sure you want to delete this file?")) return;
+
+    try {
+      const response = await fetch(
+        `http://localhost:8000/api/session/${sessionID}/files/${fileId}`,
+        { method: "DELETE" },
+      );
+
+      if (response.ok) {
+        // Remove from state
+        setUploadedFiles((prev) => prev.filter((f) => f.file_id !== fileId));
+        console.log("✅ File deleted:", fileId);
+      } else {
+        alert("Failed to delete file");
+      }
+    } catch (error) {
+      console.error("Delete error:", error);
+      alert("Error deleting file");
+    }
+  };
+
   function preprocessContent(content: string) {
     if (!content) return "";
     let processed = content;
 
-    processed = processed.replace(/\\n/g, '\n');
-    processed = processed.replace(/([^\n])\s*(#{1,6}\s)/g, '$1\n\n$2');
-    processed = processed.replace(/(\|[ -]*\|)\s*(?=\|)/g, '$1\n');
-    processed = processed.replace(/([^\n])\s*(-\s)/g, '$1\n$2');
-    processed = processed.replace(/([^\n])\s*(\d+\.\s)/g, '$1\n$2');
+    processed = processed.replace(/\\n/g, "\n");
+    processed = processed.replace(/([^\n])\s*(#{1,6}\s)/g, "$1\n\n$2");
+    processed = processed.replace(/(\|[ -]*\|)\s*(?=\|)/g, "$1\n");
+    processed = processed.replace(/([^\n])\s*(-\s)/g, "$1\n$2");
+    processed = processed.replace(/([^\n])\s*(\d+\.\s)/g, "$1\n$2");
 
     return processed;
   }
@@ -134,9 +244,9 @@ export default function ChatPage() {
 
   useEffect(() => {
     const handleMicStart = () => {
-        setIsRecording(true);
-        setIsTranscribing(false);
-        tempSpeechRef.current = ""; 
+      setIsRecording(true);
+      setIsTranscribing(false);
+      tempSpeechRef.current = "";
     };
 
     const handleMicStop = () => {
@@ -144,24 +254,17 @@ export default function ChatPage() {
     };
 
     const handleTranscriptionStart = () => {
-        setIsTranscribing(true);
+      setIsTranscribing(true);
     };
 
     const handleTranscriptionEnd = () => {
-        setIsTranscribing(false);
+      setIsTranscribing(false);
     };
 
     const handleSTTResult = (e: Event) => {
-        setIsTranscribing(false);
-        const customEvent = e as CustomEvent;
-        const text = customEvent.detail;
-        
-        if (inputRef.current && text) {
-            const currentText = inputRef.current.innerText.trim();
-            const newText = currentText ? `${currentText} ${text}` : text;
-            
-            inputRef.current.innerText = newText;
-            committedTextRef.current = newText;
+      setIsTranscribing(false);
+      const customEvent = e as CustomEvent;
+      const text = customEvent.detail;
 
       if (inputRef.current && text) {
         const currentText = inputRef.current.innerText.trim();
@@ -170,32 +273,52 @@ export default function ChatPage() {
         inputRef.current.innerText = newText;
         committedTextRef.current = newText;
 
-        const range = document.createRange();
-        const sel = window.getSelection();
-        if (inputRef.current.lastChild) {
-          range.selectNodeContents(inputRef.current);
-          range.collapse(false);
-          sel?.removeAllRanges();
-          sel?.addRange(range);
+        if (inputRef.current && text) {
+          const currentText = inputRef.current.innerText.trim();
+          const newText = currentText ? `${currentText} ${text}` : text;
+
+          inputRef.current.innerText = newText;
+          committedTextRef.current = newText;
+
+          const range = document.createRange();
+          const sel = window.getSelection();
+          if (inputRef.current.lastChild) {
+            range.selectNodeContents(inputRef.current);
+            range.collapse(false);
+            sel?.removeAllRanges();
+            sel?.addRange(range);
+          }
+          setShowPlaceholder(false);
         }
-        setShowPlaceholder(false);
       }
-      }}
+    };
 
     window.addEventListener("tadabbur-mic-start", handleMicStart);
     window.addEventListener("tadabbur-mic-stop", handleMicStop);
-    window.addEventListener("tadabbur-transcription-start", handleTranscriptionStart);
-    window.addEventListener("tadabbur-transcription-error", handleTranscriptionEnd); 
+    window.addEventListener(
+      "tadabbur-transcription-start",
+      handleTranscriptionStart,
+    );
+    window.addEventListener(
+      "tadabbur-transcription-error",
+      handleTranscriptionEnd,
+    );
     window.addEventListener("tadabbur-stt-result", handleSTTResult);
 
     return () => {
-        window.removeEventListener("tadabbur-mic-start", handleMicStart);
-        window.removeEventListener("tadabbur-mic-stop", handleMicStop);
-        window.removeEventListener("tadabbur-transcription-start", handleTranscriptionStart);
-        window.removeEventListener("tadabbur-transcription-error", handleTranscriptionEnd);
-        window.removeEventListener("tadabbur-stt-result", handleSTTResult);
+      window.removeEventListener("tadabbur-mic-start", handleMicStart);
+      window.removeEventListener("tadabbur-mic-stop", handleMicStop);
+      window.removeEventListener(
+        "tadabbur-transcription-start",
+        handleTranscriptionStart,
+      );
+      window.removeEventListener(
+        "tadabbur-transcription-error",
+        handleTranscriptionEnd,
+      );
+      window.removeEventListener("tadabbur-stt-result", handleSTTResult);
     };
-}, []);
+  }, []);
   // In your element
   useEffect(() => {
     const websocket = new WebSocket("ws://localhost:8000/ws/chat");
@@ -204,7 +327,7 @@ export default function ChatPage() {
     wsRef.current.onopen = () => {
       console.log("Connected to websocket successfully!");
       // For new connection, don't specify session_id to create new session
-      const user = sessionStorage.getItem('user');
+      const user = sessionStorage.getItem("user");
       let user_id = null;
       if (user) {
         try {
@@ -216,7 +339,7 @@ export default function ChatPage() {
       }
       const sessionInit: SessionInitMessage = {
         type: "session-init",
-        session_id: "",  // Empty for new session
+        session_id: "", // Empty for new session
         user_id: user_id,
         model: "kimi-k2-instruct-0905",
       };
@@ -235,6 +358,8 @@ export default function ChatPage() {
     wsRef.current.onmessage = (event) => {
       const data: WebSocketMessage = JSON.parse(event.data);
       console.log("Data from websocket", event.data);
+
+
 
       const type = data.type;
       switch (type) {
@@ -285,13 +410,22 @@ export default function ChatPage() {
           const isNew = session_id != sessionID;
           const session_status = data.status;
           const message_ids = data.message_ids;
+          const uploaded_files = data.uploaded_files;
           if (session_status === "acknowledged") {
             setSessionID(session_id);
             if (isNew) {
               // For new sessions, always clear messages
               setMessages([]);
+              setUploadedFiles([]);
+              setSessionFiles([]);
             }
             setMessageIDs(message_ids);
+
+            if (uploaded_files && uploaded_files.length > 0) {
+              setSessionFiles(uploaded_files);
+              setUploadedFiles([]);
+              console.log("📎 Restored files to session history:", uploaded_files);
+            }
           }
           break;
 
@@ -318,7 +452,7 @@ export default function ChatPage() {
           const delete_status = data.status;
           if (delete_status === "success") {
             // Refresh chat history
-            const user = sessionStorage.getItem('user');
+            const user = sessionStorage.getItem("user");
             let user_id = null;
             if (user) {
               try {
@@ -333,7 +467,7 @@ export default function ChatPage() {
                 JSON.stringify({
                   type: "chat_history",
                   user_id: user_id,
-                })
+                }),
               );
             }
             alert("Chat session deleted successfully");
@@ -357,8 +491,42 @@ export default function ChatPage() {
           if (status === "acknowledged") {
             const messageIDs = data.unique_message_ids;
             const chat_history = groupChatMessages(data.chat_history);
-            setMessages(chat_history || []);
+            const uploaded_files = data.uploaded_files;
+
+            // 🆕 File Mapping Logic
+            const filesByMessage: Record<string, any[]> = {};
+            const unattachedFiles: any[] = [];
+
+            if (uploaded_files && uploaded_files.length > 0) {
+              uploaded_files.forEach((file: any) => {
+                if (file.message_id) {
+                  if (!filesByMessage[file.message_id]) {
+                    filesByMessage[file.message_id] = [];
+                  }
+                  filesByMessage[file.message_id].push(file);
+                } else {
+                  unattachedFiles.push(file);
+                }
+              });
+            }
+
+            // Enrich chat history with attached files
+            const enrichedHistory = (chat_history || []).map((msg: any) => ({
+              ...msg,
+              attached_files: filesByMessage[msg.message_id] || [],
+            }));
+
+            setMessages(enrichedHistory);
             setMessageIDs(messageIDs);
+
+            if (unattachedFiles.length > 0) {
+              setSessionFiles(unattachedFiles);
+              console.log("📎 Restored unattached files:", unattachedFiles);
+            } else {
+              setSessionFiles([]);
+            }
+            // Clear input area files just in case
+            setUploadedFiles([]);
           }
           break;
 
@@ -429,25 +597,26 @@ export default function ChatPage() {
 
           setLoading(false);
           setLoadingMessage(null);
-          const tokens = reply.split(/(\s+)/); 
+          const tokens = reply.split(/(\s+)/);
 
           (async () => {
             for (let i = 0; i < tokens.length; i += 4) {
               const chunk = tokens.slice(i, i + 4).join("");
-              
+
               await new Promise((resolve) => setTimeout(resolve, 2));
 
               setMessages((prev) => {
                 if (!prev || prev.length === 0) return prev;
                 const updated = [...prev];
                 const streamIndex = streamingMessageIndex ?? updated.length - 1;
-                
+
                 if (streamIndex >= 0 && streamIndex < updated.length) {
                   const lastMsg = updated[streamIndex];
                   const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
-                  
-                  updated[streamIndex].responses[lastResIdx].content = 
-                    (updated[streamIndex].responses[lastResIdx].content || "") + chunk;
+
+                  updated[streamIndex].responses[lastResIdx].content =
+                    (updated[streamIndex].responses[lastResIdx].content || "") +
+                    chunk;
                 }
                 return updated;
               });
@@ -463,15 +632,19 @@ export default function ChatPage() {
             case "story-telling":
               setPlaceholder("Generate an Islamic story");
               setMessages([]);
+              setUploadedFiles([]);
+              setSessionFiles([]);
               setGreeting(
-                "Generate any Islamic story with the finest AI Models."
+                "Generate any Islamic story with the finest AI Models.",
               );
               break;
             case "tafseer":
               setPlaceholder("Let's lean about the Quran");
               setMessages([]);
+              setUploadedFiles([]);
+              setSessionFiles([]);
               setGreeting(
-                "Assalam O Alaykum, I am Tadabbur, how may I help you today?"
+                "Assalam O Alaykum, I am Tadabbur, how may I help you today?",
               );
               break;
           }
@@ -526,7 +699,16 @@ export default function ChatPage() {
 
       const data = await response.json();
       // Store the data to be used when user hits Enter
-      setUploadResponse(data); 
+      setUploadResponse(data);
+
+      const newFile = {
+        file_id: data.file_id,
+        file_name: data.file_name,
+        file_type: file.type,
+        created_at: new Date().toISOString(),
+      };
+      setUploadedFiles((prev) => [...prev, newFile]);
+      console.log("✅ File uploaded and added to state:", newFile);
     } catch (error) {
       console.error("Upload error:", error);
       setAttachedFile(null);
@@ -546,7 +728,7 @@ export default function ChatPage() {
     guidelines: string | null = null,
     resend_flag: boolean = false,
     resend_message_id: string | null = null,
-    old_assistant_responses = []
+    old_assistant_responses = [],
   ) => {
     if (streamingMessageIndex !== null || !input.trim()) return;
 
@@ -583,7 +765,7 @@ export default function ChatPage() {
       message_id: messageID,
       role: "user",
       content: input,
-      // add a dummy response message for loading state
+      attached_files: uploadedFiles,
       responses: [
         {
           role: "assistant",
@@ -596,6 +778,10 @@ export default function ChatPage() {
       number_of_responses: resend_flag ? old_assistant_responses.length : 0,
       active_message_index: 0,
     };
+
+    // Clear uploaded files after attaching to message
+    setUploadedFiles([]);
+
     oldMessagesRef.current = resend_flag ? old_assistant_responses : [];
 
     // lastUserMessage.responses.push({
@@ -628,6 +814,7 @@ export default function ChatPage() {
         content: input,
         resend_flag: resend_flag,
         resend_message_id: resend_message_id || "",
+        attached_files: uploadedFiles,
       };
       wsRef.current?.send(JSON.stringify(userMessage));
       if (inputRef.current) {
@@ -661,7 +848,7 @@ export default function ChatPage() {
               feedback: null,
             },
           ]);
-          
+
           // Reset file states
           setAttachedFile(null);
           setUploadResponse(null);
@@ -704,41 +891,41 @@ export default function ChatPage() {
     parent_index,
     assistant_index,
   }) => {
-    const [hidePromptExtraOptionsModelBox, setHidePromptExtraOptionsModelBox] =
-      useState<boolean | null>(true);
+      const [hidePromptExtraOptionsModelBox, setHidePromptExtraOptionsModelBox] =
+        useState<boolean | null>(true);
 
-    const [hideResendPromptDialogue, setHideResendPromptDialogue] = useState<
-      boolean | null
-    >(true);
-    const [activeMessageIndex, setActiveMessageIndex] = useState<number | null>(
-      0
-    );
-    return (
-      <PromptExtraOptionsContext.Provider
-        value={{
-          parent_index,
-          assistant_index,
-          messages,
-          setMessages,
-          message_id,
-          reply_to_message_id,
-          hidePromptExtraOptionsModelBox,
-          setHidePromptExtraOptionsModelBox,
-          hideReportContentDialogueBox,
-          setHideReportContentDialogueBox,
-          sessionID,
-          wsRef,
-          ask,
-          hideResendPromptDialogue,
-          setHideResendPromptDialogue,
-          activeMessageIndex,
-          setActiveMessageIndex,
-        }}
-      >
-        {children}
-      </PromptExtraOptionsContext.Provider>
-    );
-  };
+      const [hideResendPromptDialogue, setHideResendPromptDialogue] = useState<
+        boolean | null
+      >(true);
+      const [activeMessageIndex, setActiveMessageIndex] = useState<number | null>(
+        0,
+      );
+      return (
+        <PromptExtraOptionsContext.Provider
+          value={{
+            parent_index,
+            assistant_index,
+            messages,
+            setMessages,
+            message_id,
+            reply_to_message_id,
+            hidePromptExtraOptionsModelBox,
+            setHidePromptExtraOptionsModelBox,
+            hideReportContentDialogueBox,
+            setHideReportContentDialogueBox,
+            sessionID,
+            wsRef,
+            ask,
+            hideResendPromptDialogue,
+            setHideResendPromptDialogue,
+            activeMessageIndex,
+            setActiveMessageIndex,
+          }}
+        >
+          {children}
+        </PromptExtraOptionsContext.Provider>
+      );
+    };
 
   return (
     <ProtectedRoute>
@@ -748,12 +935,12 @@ export default function ChatPage() {
             setUserData(data);
             if (data.age <= 12) {
               setGreeting(
-                `Assalamu Alaykum ${data.username}! 🌟 I am Tadabbur, your friend!`
+                `Assalamu Alaykum ${data.username}! 🌟 I am Tadabbur, your friend!`,
               );
               setPlaceholder("Tell me a about prophets...");
             } else {
               setGreeting(
-                `Assalamu Alaykum ${data.username}, I am Tadabbur. How may I assist you with your Quranic studies?`
+                `Assalamu Alaykum ${data.username}, I am Tadabbur. How may I assist you with your Quranic studies?`,
               );
             }
           }}
@@ -780,10 +967,10 @@ export default function ChatPage() {
                 availableReciters={
                   audioRequest.available_reciters
                     ? audioRequest.available_reciters.map((reciter: any) =>
-                        typeof reciter === "string"
-                          ? { id: reciter, name: reciter }
-                          : reciter
-                      )
+                      typeof reciter === "string"
+                        ? { id: reciter, name: reciter }
+                        : reciter,
+                    )
                     : []
                 }
                 wsRef={wsRef}
@@ -804,14 +991,19 @@ export default function ChatPage() {
                 <Controls wsRef={wsRef} />
               </div>
               <div
-                className={`w-full ${
-                  messages && messages?.length > 0 ? "h-max" : "h-full"
-                }
-             px-4 mt-12 lg:w-2/3 chat-box flex flex-col gap-y-4 ${
-               !messages ? "justify-center items-center" : ""
-             }`}
+                className={`w-full ${messages && messages?.length > 0 ? "h-max" : "h-full"
+                  }
+             px-4 mt-12 lg:w-2/3 chat-box flex flex-col gap-y-4 ${!messages ? "justify-center items-center" : ""
+                  }`}
               >
                 <AnimatePresence>
+                  {/* Session Files (Restored from history) - Always visible at top */}
+                  {sessionFiles.length > 0 && (
+                    <div className="w-full max-w-lg mx-auto mb-6 px-4">
+                      <UploadedFilesDisplay files={sessionFiles} onDelete={() => { }} />
+                    </div>
+                  )}
+
                   {messages?.length === 0 && (
                     <motion.div
                       // initial={{ opacity: 0, y: -20 }}
@@ -819,6 +1011,7 @@ export default function ChatPage() {
                       // exit={{ opacity: 0, y: -20 }}
                       className="flex flex-col gap-y-4 items-center self-center"
                     >
+
                       <motion.div
                         key="greeting"
                         transition={{ duration: 0.4, ease: easeInOut }}
@@ -858,7 +1051,7 @@ export default function ChatPage() {
                                       }}
                                       onClick={() => {
                                         ask(
-                                          `${prompt.title} ${prompt.description}`
+                                          `${prompt.title} ${prompt.description}`,
                                         );
                                       }}
                                       className="bg-white rounded-md shadow-sm backdrop-blur-md cursor-pointer"
@@ -899,11 +1092,62 @@ export default function ChatPage() {
                   {messages?.map((record, record_index) => {
                     return (
                       <div key={record_index}>
-                        <div>
-                          <p className="ml-auto w-max min-w-40 max-w-[20rem] bg-neutral-900 text-white switzer-500 py-2 px-3 rounded-md shadow-md border border-black/5">
+                        {/* User Message Container */}
+                        <div className="flex flex-col items-end gap-y-2 mb-2">
+                          {/* User Text Message */}
+                          <div className="ml-auto w-max min-w-40 max-w-[20rem] bg-neutral-900 text-white switzer-500 py-2 px-3 rounded-md shadow-md border border-black/5">
                             {record.content}
-                          </p>
+                          </div>
+
+                          {/* ✅ Attached Files - OUTSIDE message bubble, ChatGPT style */}
+                          {record.attached_files && record.attached_files.length > 0 && (
+                            <div className="ml-auto w-max max-w-[20rem]">
+                              {record.attached_files.map((file) => (
+                                <motion.div
+                                  key={file.file_id}
+                                  initial={{ opacity: 0, scale: 0.95 }}
+                                  animate={{ opacity: 1, scale: 1 }}
+                                  className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden mb-2"
+                                >
+                                  <div className="flex items-center gap-3 p-3 hover:bg-gray-50 cursor-pointer transition-colors">
+                                    {/* File Icon */}
+                                    <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                                      <span className="text-xl">
+                                        {file.file_type.includes('pdf') ? '📄' :
+                                          file.file_type.includes('word') ? '📝' :
+                                            file.file_type.includes('image') ? '🖼️' : '📎'}
+                                      </span>
+                                    </div>
+
+                                    {/* File Info */}
+                                    <div className="flex-1 min-w-0">
+                                      <p className="switzer-600 text-sm text-gray-900 truncate">
+                                        {file.file_name}
+                                      </p>
+                                      <p className="switzer-400 text-xs text-gray-500">
+                                        Document
+                                      </p>
+                                    </div>
+
+                                    {/* Delete Button (Optional - can be disabled for old messages) */}
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteFile(file.file_id);
+                                      }}
+                                      className="flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors"
+                                      title="Delete file"
+                                    >
+                                      <X size={16} />
+                                    </button>
+                                  </div>
+                                </motion.div>
+                              ))}
+                            </div>
+                          )}
                         </div>
+
+                        {/* PromptExtraOptions */}
                         <div>
                           <PromptExtraOptionsProvider
                             message_id={record.message_id}
@@ -1034,27 +1278,53 @@ export default function ChatPage() {
                                     ),
                                     table: ({ node, ...props }) => (
                                       <div className="overflow-x-auto my-4 border rounded-lg shadow-sm">
-                                        <table className="min-w-full divide-y divide-gray-200" {...props} />
+                                        <table
+                                          className="min-w-full divide-y divide-gray-200"
+                                          {...props}
+                                        />
                                       </div>
                                     ),
                                     thead: ({ node, ...props }) => (
-                                      <thead className="bg-gray-50" {...props} />
+                                      <thead
+                                        className="bg-gray-50"
+                                        {...props}
+                                      />
                                     ),
                                     tbody: ({ node, ...props }) => (
-                                      <tbody className="bg-white divide-y divide-gray-200" {...props} />
+                                      <tbody
+                                        className="bg-white divide-y divide-gray-200"
+                                        {...props}
+                                      />
                                     ),
                                     tr: ({ node, ...props }) => (
-                                      <tr className="hover:bg-gray-50" {...props} />
+                                      <tr
+                                        className="hover:bg-gray-50"
+                                        {...props}
+                                      />
                                     ),
                                     th: ({ node, ...props }) => (
-                                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b" {...props} />
+                                      <th
+                                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b"
+                                        {...props}
+                                      />
                                     ),
                                     td: ({ node, ...props }) => (
-                                      <td className="px-4 py-3 text-sm text-gray-700 border-b whitespace-pre-wrap" {...props} />
+                                      <td
+                                        className="px-4 py-3 text-sm text-gray-700 border-b whitespace-pre-wrap"
+                                        {...props}
+                                      />
                                     ),
 
-                                    code({ node, inline, className, children, ...props }: any) {
-                                      const match = /language-(\w+)/.exec(className || '');
+                                    code({
+                                      node,
+                                      inline,
+                                      className,
+                                      children,
+                                      ...props
+                                    }: any) {
+                                      const match = /language-(\w+)/.exec(
+                                        className || "",
+                                      );
                                       if (!inline && match) {
                                         return (
                                           <SyntaxHighlighter
@@ -1064,12 +1334,18 @@ export default function ChatPage() {
                                             className="rounded-md shadow-sm my-4"
                                             {...props}
                                           >
-                                            {String(children).replace(/\n$/, '')}
+                                            {String(children).replace(
+                                              /\n$/,
+                                              "",
+                                            )}
                                           </SyntaxHighlighter>
                                         );
                                       } else {
                                         return (
-                                          <code className="bg-gray-100 text-red-500 px-1.5 py-0.5 rounded text-sm font-mono" {...props}>
+                                          <code
+                                            className="bg-gray-100 text-red-500 px-1.5 py-0.5 rounded text-sm font-mono"
+                                            {...props}
+                                          >
                                             {children}
                                           </code>
                                         );
@@ -1084,7 +1360,7 @@ export default function ChatPage() {
                               {streamingMessageIndex != record_index &&
                                 reportedMessageIDs &&
                                 !reportedMessageIDs.includes(
-                                  ai_msg?.message_id
+                                  ai_msg?.message_id,
                                 ) && (
                                   <div>
                                     <PromptExtraOptionsProvider
@@ -1141,7 +1417,7 @@ export default function ChatPage() {
                                       JSON.stringify({
                                         type: "undo-report",
                                         message_id: ai_msg.message_id,
-                                      })
+                                      }),
                                     );
                                   }}
                                   id="undo-report-box"
@@ -1174,17 +1450,19 @@ export default function ChatPage() {
                 {/* NEW: Transcribing Loading State in place of Waveform */}
                 {!isRecording && isTranscribing && (
                   <motion.div
-                      key="transcribing"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 10 }}
-                      className="absolute bottom-20 left-0 w-full px-4 z-20 flex justify-center"
+                    key="transcribing"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 10 }}
+                    className="absolute bottom-20 left-0 w-full px-4 z-20 flex justify-center"
                   >
-                      <div className="bg-white/90 backdrop-blur-sm border border-black/5 shadow-lg rounded-full px-5 py-2.5 flex items-center gap-x-3">
-                        {/* Spinner */}
-                        <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin"></div>
-                        <p className="switzer-500 text-sm text-black/80">Transcribing audio...</p>
-                      </div>
+                    <div className="bg-white/90 backdrop-blur-sm border border-black/5 shadow-lg rounded-full px-5 py-2.5 flex items-center gap-x-3">
+                      {/* Spinner */}
+                      <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin"></div>
+                      <p className="switzer-500 text-sm text-black/80">
+                        Transcribing audio...
+                      </p>
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>
