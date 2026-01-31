@@ -56,6 +56,7 @@ const PromptExtraOptionsModelBox = () => {
                 messages?.[parent_index]?.responses?.[assistant_index]
                   ?.content || "",
               message_id: message_id,
+               reply_to_message_id: messages?.[parent_index]?.responses?.[assistant_index]?.reply_to_message_id || null,  
               session_id: sessionID,
             })
           );

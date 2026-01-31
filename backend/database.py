@@ -92,6 +92,11 @@ async def create_tables():
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
 
+                -- 🆕 Personalization fields
+                username TEXT,
+                age INTEGER,
+                is_personalized BOOLEAN DEFAULT FALSE,
+
                 last_name TEXT,
                 date_of_birth DATE,
                 address TEXT,
@@ -114,6 +119,10 @@ async def create_tables():
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT;")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT;")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS age INTEGER;")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_personalized BOOLEAN DEFAULT FALSE;")
+
         
         # USER IMAGES TABLE (for storing image bytes)
         await conn.execute("""
@@ -139,6 +148,11 @@ async def create_tables():
                 google_id TEXT UNIQUE NOT NULL,
                 email TEXT UNIQUE NOT NULL,
                 firstname TEXT,
+                -- 🆕 Personalization fields
+                username TEXT,
+                age INTEGER,
+                is_personalized BOOLEAN DEFAULT FALSE,
+                           
                 profile_picture TEXT,
                 image_url TEXT,
                 created_at TIMESTAMP DEFAULT NOW()
@@ -147,6 +161,10 @@ async def create_tables():
         
         await conn.execute("ALTER TABLE google_users ADD COLUMN IF NOT EXISTS firstname TEXT;")
         await conn.execute("ALTER TABLE google_users ADD COLUMN IF NOT EXISTS image_url TEXT;")
+        await conn.execute("ALTER TABLE google_users ADD COLUMN IF NOT EXISTS username TEXT;")
+        await conn.execute("ALTER TABLE google_users ADD COLUMN IF NOT EXISTS age INTEGER;")
+        await conn.execute("ALTER TABLE google_users ADD COLUMN IF NOT EXISTS is_personalized BOOLEAN DEFAULT FALSE;")
+            
         
         # AUTH TOKENS TABLE
         await conn.execute("""
@@ -195,7 +213,8 @@ async def create_tables():
                 UNIQUE(user_id, surah_no, ayah_no)
             )
         """)
-        
+
+                
         await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_bookmarks_user 
             ON bookmarks(user_id, created_at DESC)

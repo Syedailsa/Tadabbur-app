@@ -174,6 +174,98 @@ async def google_signin(req: GoogleSignInRequest):
             firstname=user['firstname']
         )
 
+# ==================== PERSONALIZATION ROUTER ====================
+
+personalization_router = APIRouter(prefix="/personalization", tags=["Personalization"])
+
+@personalization_router.post("/save", response_model=PersonalizationResponse)
+async def save_personalization(
+    req: PersonalizationRequest, 
+    user: dict = Depends(get_current_user)
+):
+    """
+    Save user personalization (username & age)
+    Only needs to be done once per user
+    """
+    try:
+        async with get_db_connection() as conn:
+            # Check if user is Google user
+            is_google = await conn.fetchval(
+                "SELECT 1 FROM google_users WHERE user_id = $1", 
+                user['user_id']
+            )
+            
+            if is_google:
+                # Update Google user
+                await conn.execute("""
+                    UPDATE google_users 
+                    SET username = $1, age = $2, is_personalized = TRUE
+                    WHERE user_id = $3
+                """, req.username, req.age, user['user_id'])
+            else:
+                # Update regular user
+                await conn.execute("""
+                    UPDATE users 
+                    SET username = $1, age = $2, is_personalized = TRUE, updated_at = NOW()
+                    WHERE user_id = $3
+                """, req.username, req.age, user['user_id'])
+            
+            logger.info(f"✅ Personalization saved for user {user['user_id']}: {req.username}, age {req.age}")
+            
+            return PersonalizationResponse(
+                message="Personalization saved successfully",
+                username=req.username,
+                age=req.age,
+                is_personalized=True,
+                timestamp=datetime.utcnow()
+            )
+            
+    except Exception as e:
+        logger.error(f"❌ Personalization save error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to save personalization: {str(e)}")
+
+
+@personalization_router.get("/status", response_model=PersonalizationResponse)
+async def get_personalization_status(user: dict = Depends(get_current_user)):
+    """
+    Check if user has completed personalization
+    Returns username, age, and is_personalized flag
+    """
+    try:
+        async with get_db_connection() as conn:
+            # Try Google users first
+            result = await conn.fetchrow("""
+                SELECT username, age, COALESCE(is_personalized, FALSE) as is_personalized
+                FROM google_users
+                WHERE user_id = $1
+            """, user['user_id'])
+            
+            if not result:
+                # Try regular users
+                result = await conn.fetchrow("""
+                    SELECT username, age, COALESCE(is_personalized, FALSE) as is_personalized
+                    FROM users
+                    WHERE user_id = $1
+                """, user['user_id'])
+            
+            if not result:
+                raise HTTPException(status_code=404, detail="User not found")
+            
+            return PersonalizationResponse(
+                message="Personalization status retrieved",
+                username=result['username'],
+                age=result['age'],
+                is_personalized=result['is_personalized'],
+                timestamp=datetime.utcnow()
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Get personalization error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get personalization: {str(e)}")
+
+        
 # ==================== NOTIFICATIONS ROUTER ====================
 
 notif_router = APIRouter(prefix="/notifications", tags=["Notifications"])

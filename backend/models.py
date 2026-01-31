@@ -97,6 +97,19 @@ class UserProfileResponse(BaseModel):
     gender: Optional[str] = None
     createdAt: datetime
 
+#  ==================== PERSONALIZATION MODELS ====================
+
+class PersonalizationRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=20, description="User's preferred name")
+    age: int = Field(..., ge=1, le=120, description="User's age")
+
+class PersonalizationResponse(BaseModel):
+    message: str
+    username: Optional[str] = None
+    age: Optional[int] = None
+    is_personalized: bool
+    timestamp: datetime
+
 class EditProfileRequest(BaseModel):
     """Simple edit request - no image field needed"""
     firstname: Optional[str] = Field(None, min_length=3, max_length=50)

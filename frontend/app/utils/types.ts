@@ -16,13 +16,23 @@ export interface AssistantMessages {
   content: string;
   reply_to_message_id: string | null;
   feedback: "like" | "dislike" | null;
+  audio_url?: string | null;
 }
+
+export interface AttachedFile {
+  file_id: string;
+  file_name: string;
+  file_type: string;
+  created_at: string;
+}
+
 
 export interface ChatMessages {
   message_id: string;
   role: "user";
   content: string;
   responses: AssistantMessages[];
+  attached_files?: AttachedFile[];
   number_of_responses?: number;
   active_message_index?: number;
 }
@@ -58,6 +68,7 @@ export interface SessionIdMessage extends BaseWebSocketMessage {
   type: "session_id";
   session_id: string;
   status: "acknowledged" | "error";
+  uploaded_files?: AttachedFile[];
   message_ids: string[];
 }
 
@@ -121,6 +132,7 @@ export interface GetChatMessage extends BaseWebSocketMessage {
   type: "get_chat";
   status: "acknowledged" | "error";
   unique_message_ids: string[];
+  uploaded_files?: AttachedFile[];
   chat_history: ChatMessages[];
 }
 
@@ -600,4 +612,19 @@ export function isChatHistory(
   msg: WebSocketMessage
 ): msg is ChatHistoryMessage {
   return msg.type === "chat_history";
+}
+
+
+// Personalization types
+export interface PersonalizationRequest {
+  username: string;
+  age: number;
+}
+
+export interface PersonalizationResponse {
+  message: string;
+  username: string | null;
+  age: number | null;
+  is_personalized: boolean;
+  timestamp: string;
 }

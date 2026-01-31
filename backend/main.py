@@ -63,6 +63,7 @@ from api import (
     bookmark_router,
     profile_router,
     feedback_router,
+    personalization_router
     
 )
 from reset_password_api import password_reset_router
@@ -144,6 +145,7 @@ app.include_router(quran_router)
 app.include_router(parah_router)
 app.include_router(story_router)
 app.include_router(reflection_router)
+app.include_router(personalization_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -173,7 +175,7 @@ def get_chat_messages(session_id: str, supabase_client) -> List[str]:
         print("Session id or supabase client none, so returning...")
         return []
         
-    chat_messages = supabase_client.table('chat_messages').select('message_id', 'role', 'content', 'reply_to_message_id', 'feedback').in_("role", ["user", "assistant"]).eq('session_id', session_id).order('created_at').execute().data
+    chat_messages = supabase_client.table('chat_messages').select('message_id', 'role', 'content', 'reply_to_message_id', 'feedback', 'audio_url').in_("role", ["user", "assistant"]).eq('session_id', session_id).order('created_at').execute().data
 
     
     # print("chat messages", chat_messages)
@@ -502,56 +504,56 @@ async def websocket_chat(websocket: WebSocket):
                     continue
 
 
-                if data.get("type") == "tts_request":
-                    print("Got tts request, data", data)
-                    raw_text = data.get("text")
-                    message_id_ref = data.get("message_id")
-                    
-                    if raw_text:
-                        logger.info(f"≡ƒº╣ Cleaning text with Groq Agent...")
-                        
-                        clean_text = await clean_text_with_groq(raw_text)
-                        
-                        logger.info(f"≡ƒÄñ Stream audio for: {clean_text[:50]}...")
-                        client = Murf(
-                            api_key=os.getenv("MURF_AI_API_KEY") # Not required if you have set the MURF_API_KEY environment variable
-                        )
-                        try:
-                            res = client.text_to_speech.generate(
-                                text=clean_text,
-                                voice_id ="Finley",
-                                style ="Promo",
-                                rate = 0,
-                                pitch = 0,
-                                variation = 1
-                            )
-                            # await websocket.send_json({
-                            # "type": "tts_audio_chunk",
-                            # "message_id": message_id_ref,
-                            # "audio": audio_chunk
-                            # })
-                            if res.audio_file:
-                                print("Audio url", res.audio_file)
-                                await websocket.send_json({
-                                    "type": "tts_audio_chunk",
-                                    "message_id": message_id_ref,
-                                    "audio_url": res.audio_file
-                                })
-                                
-                        except Exception as e:
-                            print("Some error occured while generating audio for text", e)
-                            continue
-
-                        # try:
-                        #     # fire-and-forget
-                        #     asyncio.create_task(
-                        #         stream_tts_audio(tts_engine, clean_text, websocket, message_id_ref)
-                        #     )
-                        # except Exception as e:
-                        #     print("TTS Error", e)
-                        #     logger.error(f"TTS Error: {e}")
-                        #     continue
+            if data.get("type") == "tts_request":
+                print("Got tts request, data", data)
+                raw_text = data.get("text")
+                message_id_ref = data.get("message_id")
+                user_message_id = data.get("reply_to_message_id")
+                
+                if not message_id_ref or not user_message_id or not raw_text:
+                    print("Can't read aloud, important information is missing....")
                     continue
+                if raw_text:
+                    logger.info(f"≡ƒº╣ Cleaning text with Groq Agent...")
+                    
+                    clean_text = await clean_text_with_groq(raw_text)
+                    
+                    logger.info(f"≡ƒÄñ Stream audio for: {clean_text[:50]}...")
+                    client = Murf(
+                        api_key=os.getenv("MURF_AI_API_KEY") # Not required if you have set the MURF_API_KEY environment variable
+                    )
+                    try:
+                        res = client.text_to_speech.generate(
+                            text=clean_text,
+                            voice_id ="Finley",
+                            style ="Promo",
+                            rate = 0,
+                            pitch = 0,
+                            variation = 1
+                        )
+                        if res.audio_file:
+                            print("Audio url", res.audio_file)
+
+                            supabase_client.table('chat_messages').update({
+                                'audio_url': res.audio_file
+                            }).eq('message_id', message_id_ref).execute()
+                            
+                            print(f"✅ Audio URL saved to database for message {message_id_ref}")
+
+                            
+                            await websocket.send_json({
+                                "type": "tts_audio_url",
+                                "message_id": message_id_ref,
+                                "user_id": user_message_id,
+                                "audio_url": res.audio_file
+                            })
+                            
+                    except Exception as e:
+                        print("Some error occured while generating audio for text", e)
+                        continue
+
+                continue
+
 
 
             if data.get("type") == "audio_request":
