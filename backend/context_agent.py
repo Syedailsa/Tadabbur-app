@@ -3,7 +3,8 @@ from agents import (
     Agent,
     AsyncOpenAI,
     OpenAIChatCompletionsModel,
-    RunConfig,    
+    RunConfig,
+    Runner,    
 )
 
 
@@ -50,7 +51,7 @@ config = RunConfig(
 
 # Define agent
 contextAgent = Agent(
-    name="Tadabbur Context Agent",
+    name="QuranContextAgent",
     instructions=(
         "You are a Quranic Context Agent. Read this CSV content and suggest the necessary columns "
         "for structuring the Asbabul Nuzul data for AI embedding and retrieval. "
@@ -58,6 +59,15 @@ contextAgent = Agent(
         f"CSV content:\n{csv_content}"
     ),             
 )
+
+# async def main():
+#     result = await Runner.run(contextAgent, "tell me the history of arabs" , run_config=config)
+#     print(result.final_output)
+#     print(result)
+
+# if __name__ == "__main__":
+#     asyncio.run(main())
+
 
     # try:
     #     result = await Runner.run(

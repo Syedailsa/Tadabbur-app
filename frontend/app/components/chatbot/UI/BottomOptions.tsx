@@ -1,5 +1,5 @@
 import { useState, useContext } from "react";
-import { OptionsContext } from "@/app/context/chatbot/OptionsContext";
+import { ChatContext } from "@/app/context/chatbot/ChatContext";
 import { motion } from "framer-motion";
 import DownArrow from "../../../../icons/arrow-down-head.svg";
 import AttachIcon from "../../../../icons/attach_icon.svg";
@@ -9,13 +9,14 @@ import MicIcon from "../../../../icons/mic_icon.svg";
 
 const BottomOptions = () => {
   const {
+    wsRef,
     hideExtraOptions,
     setHideExtraOptions,
     selectedModel,
-    setSelectedModel,
-    hideModelBox,
     setHideModelBox,
-  } = useContext(OptionsContext);
+    active,
+    setActive,
+  } = useContext(ChatContext);
 
   return (
     <div
@@ -25,17 +26,25 @@ const BottomOptions = () => {
       <motion.div
         whileTap={{ backgroundColor: "#0000003D" }}
         whileHover={{ backgroundColor: "#0000000D" }}
+        animate={{ backgroundColor: active[0] ? "#0000000D" : "" }}
         id="choose-model-box"
         onClick={(e) => {
           e.stopPropagation();
           setHideModelBox((prev: boolean | null) => !prev);
+          setActive((prev: boolean[]) => {
+            const current = [...prev];
+            current[0] = !current[0];
+            return current;
+          });
         }}
-        className="relative flex flex-row-reverse gap-x-1 py-1 pr-3 pl-4 rounded-full cursor-pointer items-center"
+        className="relative flex-row-reverse gap-x-1 py-1 pr-3 pl-4 rounded-full cursor-pointer items-center hidden sm:flex"
       >
         <motion.div className="mt-0.2">
           <DownArrow className="w-5 h-5" />
         </motion.div>
-        <p className="switzer-500 text-[0.96rem]">{selectedModel}</p>
+        <p className="switzer-500 text-[0.91rem]  sm:text-[0.96rem]">
+          {selectedModel}
+        </p>
       </motion.div>
       <motion.div className={`ml-auto flex gap-x-1`}>
         <motion.div
@@ -55,6 +64,24 @@ const BottomOptions = () => {
         </motion.div>
         <motion.div
           id="story-telling-box"
+          onClick={() => {
+            setActive((prev: boolean[]) => {
+              const current = [...prev];
+              if (current[1]) {
+                wsRef.current?.send(
+                  JSON.stringify({ type: "agent", agent: "normal" })
+                );
+              } else {
+                wsRef.current?.send(
+                  JSON.stringify({ type: "agent", agent: "story-telling" })
+                );
+              }
+              current[1] = !current[1];
+
+              return current;
+            });
+          }}
+          animate={{ backgroundColor: active[1] ? "#0000000D" : "" }}
           whileTap={{ backgroundColor: "#0000003D" }}
           whileHover={{ backgroundColor: "#0000000D" }}
           className="flex gap-x-1 px-3 py-1 rounded-full cursor-pointer items-center"
@@ -69,6 +96,14 @@ const BottomOptions = () => {
           id="mic-icon-box"
           whileTap={{ backgroundColor: "#0000003D" }}
           whileHover={{ backgroundColor: "#0000000D" }}
+          onClick={() => {
+            setActive((prev: boolean[]) => {
+              const current = [...prev];
+              current[2] = !current[2];
+              return current;
+            });
+          }}
+          animate={{ backgroundColor: active[2] ? "#0000000D" : "" }}
           className="w-9 h-9 rounded-full flex items-center justify-center cursor-pointer"
         >
           <MicIcon className="w-5 h-5 fill-current text-black" />

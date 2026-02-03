@@ -79,4 +79,96 @@ const chatMessages: { role: "user" | "assistant"; content: string }[] = [
   },
 ];
 
-export { ModelList, chatMessages };
+const dummyChatHistory = [
+  {
+    session_id: "a162542",
+    title: "Surah Baqarah Tafseer",
+    description:
+      "Overview of major themes and lessons. Focus on guidance and faith.",
+    date: "Sep, 2002",
+  },
+  {
+    session_id: "k282383",
+    title: "Asbāb al-Nuzūl of Key Verses",
+    description:
+      "Context behind selected revelations. Explains historical background.",
+    date: "Oct, 2002",
+  },
+  {
+    session_id: "u918233",
+    title: "Surah Yaseen Summary",
+    description:
+      "Central message of Surah Yaseen. Covers warnings and glad tidings.",
+    date: "Nov, 2002",
+  },
+  {
+    session_id: "x552781",
+    title: "Stories of the Prophets in the Quran",
+    description:
+      "Short summaries of prophetic stories. Focus on moral lessons.",
+    date: "Dec, 2002",
+  },
+  {
+    session_id: "p712034",
+    title: "Surah Mulk Explanation",
+    description:
+      "Meaning of verses and key reflections. Emphasis on accountability.",
+    date: "Jan, 2003",
+  },
+  {
+    session_id: "m553910",
+    title: "Names & Attributes of Allah",
+    description:
+      "Explanation of selected names from the Quran. Focus on meaning and impact.",
+    date: "Feb, 2003",
+  },
+  {
+    session_id: "z831002",
+    title: "Surah Rahman Tafseer",
+    description:
+      "Theme of divine mercy. Structure and repeated verse significance.",
+    date: "Mar, 2003",
+  },
+  {
+    session_id: "q482299",
+    title: "Makki vs Madani Surahs",
+    description:
+      "Differences in style and themes. How revelation evolved over time.",
+    date: "Apr, 2003",
+  },
+];
+
+const defaultPrompts = [
+  {
+    title: "Surah Summary",
+    description:
+      "Provide a concise, neutral summary of the selected Surah based only on well-known, non-sectarian scholarly understandings. Do not offer personal opinions, rulings, or new interpretations.",
+  },
+  {
+    title: "Ayah Explanation",
+    description:
+      "Explain the meaning of the selected ayah using widely accepted tafsir principles. Stay neutral across schools of thought, avoid issuing religious rulings, and cite sources when possible.",
+  },
+  {
+    title: "Context of Revelation",
+    description:
+      "Describe the historical context (Asbāb al-Nuzūl) of the selected verse using reliable, established sources. Only share information documented in classical works and avoid speculation.",
+  },
+  {
+    title: "Key Themes",
+    description:
+      "Identify the major themes present in the selected Surah or ayah based on recognized scholarly commentary. Present themes clearly and objectively without independent interpretation.",
+  },
+  {
+    title: "Arabic Vocabulary Help",
+    description:
+      "Explain the meaning of specific Qur’anic Arabic words using standard lexical definitions. Provide root meanings where relevant and avoid theological interpretations or rulings.",
+  },
+  {
+    title: "Reflection Prompt",
+    description:
+      "Offer a gentle, non-prescriptive reflection based on the verse. Keep the reflection general, avoid giving personal religious advice or rulings, and encourage the user to explore established tafsir.",
+  },
+];
+
+export { ModelList, chatMessages, dummyChatHistory, defaultPrompts };

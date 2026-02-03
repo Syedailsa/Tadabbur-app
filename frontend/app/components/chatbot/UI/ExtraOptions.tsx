@@ -1,14 +1,15 @@
 import { useRef, useEffect, useState, useContext } from "react";
-import { OptionsContext } from "@/app/context/chatbot/OptionsContext";
+import { ChatContext } from "@/app/context/chatbot/ChatContext";
 import { motion, useAnimation, easeInOut } from "framer-motion";
 import { FC } from "react";
 import Image from "next/image";
 import FullSizeIcon from "../../../../icons/full_size_icon.svg";
 import DownArrow from "../../../../icons/arrow-down-head.svg";
 import Image1 from "../../../../images/Smiling Boy Portrait.png";
+import { OptionProps } from "../interfaces/OptionsProps";
 
 const ExtraOptions = (): React.ReactElement | null => {
-  const { hideExtraOptions, setHideExtraOptions } = useContext(OptionsContext);
+  const { hideExtraOptions, setHideExtraOptions } = useContext(ChatContext);
   const scrollInterval = useRef<NodeJS.Timeout | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const [hasScrolled, setHasScrolled] = useState<boolean>(false);
@@ -51,12 +52,7 @@ const ExtraOptions = (): React.ReactElement | null => {
       scrollInterval.current = null;
     }
   };
-  interface OptionProps {
-    title: string;
-    isNew: boolean | null;
-    description: string;
-    isImage: boolean | null;
-  }
+
   const Option: FC<OptionProps> = ({ title, description, isNew, isImage }) => (
     <motion.div
       onClick={() => {
