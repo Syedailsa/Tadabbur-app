@@ -1,12 +1,13 @@
 import { useState, ReactNode, Ref } from "react";
 import { ChatContext, ChatRecord } from "@/app/context/chatbot/ChatContext";
 import { Dispatch, SetStateAction } from "react";
+import { ChatRecordType } from "@/app/utils/types";
 
 interface ChatProviderProps {
   children: ReactNode;
   wsRef: React.Ref<WebSocket>;
-  chatHistory: ChatRecord[] | null;
-  setChatHistory: React.Dispatch<React.SetStateAction<ChatRecord[] | null>>;
+  chatHistory: ChatRecordType[] | null;
+  setChatHistory: React.Dispatch<React.SetStateAction<ChatRecordType[] | null>>;
   sessionID: string | null;
   messages: any;
   setMessages: any;
@@ -41,6 +42,20 @@ const ChatProvider: React.FC<ChatProviderProps> = ({
   const [reportedMessageID, setReportedMessageID] = useState<{
     messageID: string;
   } | null>(null);
+  const [userId, setUserId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const user = sessionStorage.getItem('user');
+      if (user) {
+        try {
+          const userData = JSON.parse(user);
+          return userData.id;
+        } catch {
+          return null;
+        }
+      }
+    }
+    return null;
+  });
 
   return (
     <ChatContext.Provider
@@ -67,6 +82,8 @@ const ChatProvider: React.FC<ChatProviderProps> = ({
         sessionID,
         messages,
         setMessages,
+        userId,
+        setUserId,
       }}
     >
       {children}

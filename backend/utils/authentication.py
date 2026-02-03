@@ -41,6 +41,7 @@ def create_access_token(user_id: uuid.UUID, firstname: str) -> str:
     expire = datetime.utcnow() + timedelta(hours=TOKEN_EXPIRE_HOURS)
     payload = {
         "user_id": str(user_id),
+        "user_id": str(user_id),
         "firstname": firstname,
         "exp": expire,
         "iat": datetime.utcnow()

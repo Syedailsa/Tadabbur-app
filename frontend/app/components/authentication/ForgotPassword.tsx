@@ -2,12 +2,16 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-
-type Step = "EMAIL" | "OTP" | "PASSWORD" | "SUCCESS";
-
-interface ForgotPasswordProps {
-  onBackToLogin: () => void;
-}
+import {
+  Step,
+  ForgotPasswordProps,
+  ForgotPasswordRequest,
+  ForgotPasswordResponse,
+  VerifyOtpRequest,
+  VerifyOtpResponse,
+  ChangePasswordRequest,
+  ChangePasswordResponse,
+} from "../../utils/types";
 
 export default function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
   const [step, setStep] = useState<Step>("EMAIL");
@@ -20,61 +24,67 @@ export default function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
 
   const API_URL = "http://localhost:8000/auth"; 
 
-  const handleSendEmail = async (e: React.FormEvent) => {
+  const handleSendEmail = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     setLoading(true);
     setError("");
     try {
+      const request: ForgotPasswordRequest = { email };
       const res = await fetch(`${API_URL}/forgot-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify(request),
       });
-      const data = await res.json();
+      const data: ForgotPasswordResponse = await res.json();
       if (!res.ok) throw new Error(data.detail || "Failed to send OTP");
       setStep("OTP");
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      const error = err as Error;
+      setError(error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleVerifyOtp = async (e: React.FormEvent) => {
+  const handleVerifyOtp = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     setLoading(true);
     setError("");
     try {
+      const request: VerifyOtpRequest = { email, otp };
       const res = await fetch(`${API_URL}/verify-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, otp }),
+        body: JSON.stringify(request),
       });
-      const data = await res.json();
+      const data: VerifyOtpResponse = await res.json();
       if (!res.ok) throw new Error(data.detail || "Invalid OTP");
       setStep("PASSWORD");
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      const error = err as Error;
+      setError(error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleChangePassword = async (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     setLoading(true);
     setError("");
     try {
+      const request: ChangePasswordRequest = { email, new_password: newPassword };
       const res = await fetch(`${API_URL}/change-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, new_password: newPassword }),
+        body: JSON.stringify(request),
       });
-      const data = await res.json();
+      const data: ChangePasswordResponse = await res.json();
       if (!res.ok) throw new Error(data.detail || "Failed to change password");
       setStep("SUCCESS");
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      const error = err as Error;
+      setError(error.message);
     } finally {
       setLoading(false);
     }

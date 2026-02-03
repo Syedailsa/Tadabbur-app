@@ -6,6 +6,7 @@ import re
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, UploadFile, File, Form, Query, status
 from jose import jwt, JWTError
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -65,13 +66,14 @@ from api import (
     bookmark_router,
     profile_router,
     feedback_router,
+    personalization_router
     
 )
 from reset_password_api import password_reset_router
 from quran_api import quran_router , parah_router, story_router
 from reset_password_api import password_reset_router
 from reflection_api import reflection_router
-from database import init_db_pool, close_db_pool, create_tables
+from database import init_db_pool, close_db_pool, create_tables, delete_all_user_sessions, delete_user_session
 from fastapi.security import HTTPBearer
 from fastapi.openapi.utils import get_openapi
 import secrets
@@ -86,10 +88,17 @@ import sys
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-load_dotenv()
+
 from data.data import comprehensive_surah_metadata
 
-logging.basicConfig(level=logging.INFO)
+# Production logging setup
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
 
 # ------------------- APP CONFIG -------------------
@@ -141,6 +150,7 @@ app.include_router(quran_router)
 app.include_router(parah_router)
 app.include_router(story_router)
 app.include_router(reflection_router)
+app.include_router(personalization_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -199,7 +209,7 @@ def get_chat_messages(session_id: str, user_id: str, supabase_client) -> List[st
         print("Session id or supabase client none, so returning...")
         return []
          
-    chat_messages = supabase_client.table('chat_messages').select('message_id', 'user_id', 'role', 'content', 'reply_to_message_id', 'feedback').in_("role", ["user", "assistant"]).eq('session_id', session_id).eq('user_id', user_id).order('created_at').execute().data
+    chat_messages = supabase_client.table('chat_messages').select('message_id', 'user_id', 'role', 'content', 'reply_to_message_id', 'feedback', 'audio_url').in_("role", ["user", "assistant"]).eq('session_id', session_id).eq('user_id', user_id).order('created_at').execute().data
 
     
     # print("chat messages", chat_messages)
@@ -269,6 +279,72 @@ async def upload_file(
         return {"status": "success", "message": "File processed successfully.", "extracted_text": clean_text(extracted_text)}
     except Exception as e:
         logger.error(f"Upload failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/session/{session_id}/files")
+async def get_session_files(session_id: str):
+    """Get all uploaded files for a session"""
+    try:
+        supabase_client = get_supabase_client()
+
+        files = supabase_client.table('session_files')\
+            .select('file_id, file_name, file_type, file_size, created_at')\
+            .eq('session_id', session_id)\
+            .order('created_at', desc=True)\
+            .execute()
+
+        return {
+            "status": "success",
+            "session_id": session_id,
+            "files": files.data or []
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching files: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/session/{session_id}/files/{file_id}")
+async def delete_session_file(session_id: str, file_id: str):
+    """Delete a specific file from session"""
+    try:
+        supabase_client = get_supabase_client()
+
+        # Delete from session_files
+        supabase_client.table('session_files')\
+            .delete()\
+            .eq('file_id', file_id)\
+            .eq('session_id', session_id)\
+            .execute()
+
+        # Rebuild file_context from remaining files
+        remaining_files = supabase_client.table('session_files')\
+            .select('file_content')\
+            .eq('session_id', session_id)\
+            .order('created_at')\
+            .execute()
+
+        # Filter out None values
+        valid_contents = [
+            f['file_content'] for f in remaining_files.data
+            if f['file_content'] is not None and f['file_content'].strip()
+        ]
+        new_context = "\n\n--- FILE SEPARATOR ---\n\n".join(valid_contents) if valid_contents else ""
+
+        # Update chat_sessions
+        supabase_client.table('chat_sessions').update({
+            'file_context': new_context or None
+        }).eq('session_id', session_id).execute()
+
+        # Update cache
+        if new_context:
+            session_file_context[session_id] = new_context
+        else:
+            session_file_context.pop(session_id, None)
+
+        return {"status": "success", "message": "File deleted"}
+
+    except Exception as e:
+        logger.error(f"Error deleting file: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/chat")
@@ -383,56 +459,56 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     continue
 
 
-                if data.get("type") == "tts_request":
-                    print("Got tts request, data", data)
-                    raw_text = data.get("text")
-                    message_id_ref = data.get("message_id")
-                    
-                    if raw_text:
-                        logger.info(f"≡ƒº╣ Cleaning text with Groq Agent...")
-                        
-                        clean_text = await clean_text_with_groq(raw_text)
-                        
-                        logger.info(f"≡ƒÄñ Stream audio for: {clean_text[:50]}...")
-                        client = Murf(
-                            api_key=os.getenv("MURF_AI_API_KEY") # Not required if you have set the MURF_API_KEY environment variable
-                        )
-                        try:
-                            res = client.text_to_speech.generate(
-                                text=clean_text,
-                                voice_id ="Finley",
-                                style ="Promo",
-                                rate = 0,
-                                pitch = 0,
-                                variation = 1
-                            )
-                            # await websocket.send_json({
-                            # "type": "tts_audio_chunk",
-                            # "message_id": message_id_ref,
-                            # "audio": audio_chunk
-                            # })
-                            if res.audio_file:
-                                print("Audio url", res.audio_file)
-                                await websocket.send_json({
-                                    "type": "tts_audio_chunk",
-                                    "message_id": message_id_ref,
-                                    "audio_url": res.audio_file
-                                })
-                                
-                        except Exception as e:
-                            print("Some error occured while generating audio for text", e)
-                            continue
-
-                        # try:
-                        #     # fire-and-forget
-                        #     asyncio.create_task(
-                        #         stream_tts_audio(tts_engine, clean_text, websocket, message_id_ref)
-                        #     )
-                        # except Exception as e:
-                        #     print("TTS Error", e)
-                        #     logger.error(f"TTS Error: {e}")
-                        #     continue
+            if data.get("type") == "tts_request":
+                print("Got tts request, data", data)
+                raw_text = data.get("text")
+                message_id_ref = data.get("message_id")
+                user_message_id = data.get("reply_to_message_id")
+                
+                if not message_id_ref or not user_message_id or not raw_text:
+                    print("Can't read aloud, important information is missing....")
                     continue
+                if raw_text:
+                    logger.info(f"≡ƒº╣ Cleaning text with Groq Agent...")
+                    
+                    clean_text = await clean_text_with_groq(raw_text)
+                    
+                    logger.info(f"≡ƒÄñ Stream audio for: {clean_text[:50]}...")
+                    client = Murf(
+                        api_key=os.getenv("MURF_AI_API_KEY") # Not required if you have set the MURF_API_KEY environment variable
+                    )
+                    try:
+                        res = client.text_to_speech.generate(
+                            text=clean_text,
+                            voice_id ="Finley",
+                            style ="Promo",
+                            rate = 0,
+                            pitch = 0,
+                            variation = 1
+                        )
+                        if res.audio_file:
+                            print("Audio url", res.audio_file)
+
+                            supabase_client.table('chat_messages').update({
+                                'audio_url': res.audio_file
+                            }).eq('message_id', message_id_ref).execute()
+                            
+                            print(f"✅ Audio URL saved to database for message {message_id_ref}")
+
+                            
+                            await websocket.send_json({
+                                "type": "tts_audio_url",
+                                "message_id": message_id_ref,
+                                "user_id": user_message_id,
+                                "audio_url": res.audio_file
+                            })
+                            
+                    except Exception as e:
+                        print("Some error occured while generating audio for text", e)
+                        continue
+
+                continue
+
 
 
             if data.get("type") == "audio_request":
@@ -624,8 +700,15 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         "status":"acknowledged",
                         "chat_history": chat_sessions
                     })
+                    logger.info(f"Sent {len(chat_sessions)} sessions to frontend for user {user_id}")
                 except Exception as e:
                     logger.error(f"Error fetching chat history: {e}")
+                    await websocket.send_json({
+                        "type": "chat_history",
+                        "status": "error",
+                        "error": str(e)
+                    })
+                continue
 
             if data.get("type") == "get_chat":
                 requested_session_id = data.get("session_id", "")
@@ -643,10 +726,71 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         "session_id": session_id,
                         "user_id": user_id,
                         "chat_history": chat_history,
-                        "unique_message_ids": unique_message_ids 
+                        "unique_message_ids": unique_message_ids,
+                        # "uploaded_files": uploaded_files  
                     })
                 except Exception as e:
                     logger.error(f"Error loading chat: {e}")
+                continue
+
+            # Handle DELETE SESSION request
+            if data.get("type") == "delete_session":
+                session_id_to_delete = data.get("session_id", "")
+
+                if not session_id_to_delete:
+                    await websocket.send_json({
+                        "type": "delete_session",
+                        "status": "error",
+                        "error": "session_id is required"
+                    })
+                    continue
+
+                try:
+                    success = await delete_user_session(user_id, session_id_to_delete)
+                    if success:
+                        await websocket.send_json({
+                            "type": "delete_session",
+                            "status": "success",
+                            "session_id": session_id_to_delete
+                        })
+                        logger.info(f"Deleted session {session_id_to_delete} for user {user_id}")
+                    else:
+                        await websocket.send_json({
+                            "type": "delete_session",
+                            "status": "error",
+                            "error": "Session not found or access denied"
+                        })
+                except Exception as e:
+                    logger.error(f"Error deleting session: {e}")
+                    await websocket.send_json({
+                        "type": "delete_session",
+                        "status": "error",
+                        "error": str(e)
+                    })
+                continue
+
+            # Handle DELETE ALL SESSIONS request
+            if data.get("type") == "delete_all_sessions":
+                try:
+                    success = await delete_all_user_sessions(user_id)
+                    if success:
+                        await websocket.send_json({
+                            "type": "delete_all_sessions",
+                            "status": "success"
+                        })
+                    else:
+                        await websocket.send_json({
+                            "type": "delete_all_sessions",
+                            "status": "error",
+                            "error": "Failed to delete sessions"
+                        })
+                except Exception as e:
+                    logger.error(f"Error deleting all sessions: {e}")
+                    await websocket.send_json({
+                        "type": "delete_all_sessions",
+                        "status": "error",
+                        "error": str(e)
+                    })
                 continue
 
             # === AGENT SWITCH ===
@@ -847,10 +991,28 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         print("Some error occured while inserting user messages", e)
                         raise 
 
+                # 🆕 Re-enabled File Linking
+                attached_files = data.get("attached_files", [])
+                if attached_files and user_message_id:
+                    file_ids = [f.get('file_id') for f in attached_files if f.get('file_id')]
+                    if file_ids:
+                        try:
+                            supabase_client.table('session_files')\
+                                .update({'message_id': user_message_id})\
+                                .in_('file_id', file_ids)\
+                                .eq('session_id', session_id)\
+                                .execute()
+                            print(f"✅ Linked {len(file_ids)} files to message {user_message_id}")
+                        except Exception as e:
+                            print(f"❌ Error linking files to message: {e}")
+
                 logger.info(f"[{current_agent_name}] Session: {session_id} | Message: {message_string} ...")
-                # File Feature
+                # File Feature - Check current session first, then fallback to default_session
                 file_context = session_file_context.get(session_id, "")
-                
+                if not file_context:
+                    # Fallback: check default_session for uploaded files
+                    file_context = session_file_context.get("default_session", "")
+
                 if file_context:
                     logger.info(f"📚 Found context for session {session_id}: {len(file_context)} chars")
                     safe_context = (file_context[:8000] + '... [TRUNCATED]') if len(file_context) > 8000 else file_context
@@ -861,7 +1023,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         f"========================================\n\n"
                         f"USER QUESTION: {message_string}"
                     )
-                    
+
                     logger.info(f"✅ Injected file context into prompt for {session_id}")
                 # print("Dynamic system instructions", dynamic_system_instruction["text"])
                 try:

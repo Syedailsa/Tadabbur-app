@@ -24,6 +24,8 @@ export interface ChatContextType {
   setMessages: Dispatch<SetStateAction<any>>;
   attachedFile: File | null;
   setAttachedFile: Dispatch<SetStateAction<File | null>>;
+  userId: string | null;
+  setUserId: React.Dispatch<React.SetStateAction<string | null>>;
 }
 const ChatContext = createContext<ChatContextType | any>(null);
 
