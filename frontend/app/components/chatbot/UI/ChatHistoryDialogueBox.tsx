@@ -3,6 +3,7 @@ import { ChatContext, ChatRecord } from "@/app/context/chatbot/ChatContext";
 import { useContext, useEffect, useRef, useState } from "react";
 import ChatHistory from "../../../../icons/history_icon.svg";
 import { X } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 const formatDateToDMY = (dateString: string | null): string => {
   const date = new Date(dateString || new Date());
@@ -25,6 +26,7 @@ const ChatHisoryDialoguseBox = () => {
   } = useContext(ChatContext);
   const [translatePic, setTranslatePic] = useState<boolean | null>(null);
   const dialogueRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   useEffect(() => {
     if (!openChatHistoryDialogueBox) return;
@@ -165,13 +167,14 @@ const ChatHisoryDialoguseBox = () => {
                         onClick={() => {
                           setSelectedSessionID(chat.session_id);
                           setOpenChatHistoryDialogueBox(false);
-                          wsRef.current?.send(
-                            JSON.stringify({
-                              type: "get_chat",
-                              session_id: chat.session_id,
-                              user_id: userId,
-                            })
-                          );
+                          // wsRef.current?.send(
+                          //   JSON.stringify({
+                          //     type: "get_chat",
+                          //     session_id: chat.session_id,
+                          //     user_id: userId,
+                          //   })
+                          // );
+                          router.push(`/pages/chatbot?session_id=${chat.session_id}`);
                         }}
                       >
                         <p className="switzer-500 text-sm text-white tracking-tight">
@@ -186,13 +189,14 @@ const ChatHisoryDialoguseBox = () => {
                         onClick={() => {
                           setSelectedSessionID(chat.session_id);
                           setOpenChatHistoryDialogueBox(false);
-                          wsRef.current?.send(
-                            JSON.stringify({
-                              type: "get_chat",
-                              session_id: chat.session_id,
-                              user_id: userId,
-                            })
-                          );
+                          // wsRef.current?.send(
+                          //   JSON.stringify({
+                          //     type: "get_chat",
+                          //     session_id: chat.session_id,
+                          //     user_id: userId,
+                          //   })
+                          // );
+                          router.push(`/pages/chatbot?session_id=${chat.session_id}`);
                         }}
                       >
                         {chat.description}

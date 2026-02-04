@@ -45,7 +45,7 @@ import QuranAudioDialog from "../../components/chatbot/UI/AudioDialogBox";
 import QuranVerseDialog from "../../components/chatbot/UI/QuranVerseDialog";
 import groupChatMessages from "@/utils/groupChatMessages";
 import WaveForm from "../../components/chatbot/UI/WaveForm";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   AssistantMessages,
   ChatMessages,
@@ -203,6 +203,7 @@ export default function ChatPage() {
   const oldMessagesRef = useRef<AssistantMessages[]>([]);
   const controls = useAnimationControls();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   function preprocessContent(content: string) {
     if (!content) return "";
@@ -296,94 +297,92 @@ export default function ChatPage() {
 }, []);
 
  useEffect(() => {
-  const checkPersonalization = async () => {
-    try {
-      const token = localStorage.getItem("token"); 
-      
-      if (!token) {
-        console.log("❌ No token found, showing personalization form");
-        setIsCheckingPersonalization(false);
-        setShowPersonalizationForm(true);
-        return;
-      }
+    const checkPersonalization = async () => {
+      try {
+        const token = localStorage.getItem("token"); 
+        
+        if (!token) {
+          console.log("❌ No token found, showing personalization form");
+          setIsCheckingPersonalization(false);
+          setShowPersonalizationForm(true);
+          return;
+        }
 
-      console.log("🔍 Checking personalization status with token...");
-      
-      // Backend se personalization status check karo
-      const response = await fetch(
-        'http://localhost:8000/personalization/status',
-        {
-          headers: {
-            'Authorization': `Bearer ${token}` 
+        console.log("🔍 Checking personalization status with token...");
+        
+        // Backend se personalization status check karo
+        const response = await fetch(
+          'http://localhost:8000/personalization/status',
+          {
+            headers: {
+              'Authorization': `Bearer ${token}` 
+            }
           }
-        }
-      );
+        );
 
-      if (!response.ok) {
-        console.error("❌ Failed to fetch personalization status:", response.status);
-        setShowPersonalizationForm(true);
-        setIsCheckingPersonalization(false);
-        return;
-      }
-      
-      const data = await response.json();
-      console.log("📊 Personalization data received:", data);
-      
-      if (data.is_personalized && data.username && data.age) {
-       
-        console.log("✅ User already personalized");
-        setUserData({
-          username: data.username,
-          age: data.age
-        });
-        setShowPersonalizationForm(false);
+        if (!response.ok) {
+          console.error("❌ Failed to fetch personalization status:", response.status);
+          setShowPersonalizationForm(true);
+          setIsCheckingPersonalization(false);
+          return;
+        }
         
+        const data = await response.json();
+        console.log("📊 Personalization data received:", data);
         
-        if (data.age <= 12) {
-          setGreeting(
-            `Assalamu Alaykum ${data.username}! 🌟 I am Tadabbur, your friend!`
-          );
-          setPlaceholder("Tell me about prophets...");
+        if (data.is_personalized && data.username && data.age) {
+        
+          console.log("✅ User already personalized");
+          setUserData({
+            username: data.username,
+            age: data.age
+          });
+          setShowPersonalizationForm(false);
+          
+          
+          if (data.age <= 12) {
+            setGreeting(
+              `Assalamu Alaykum ${data.username}! 🌟 I am Tadabbur, your friend!`
+            );
+            setPlaceholder("Tell me about prophets...");
+          } else {
+            setGreeting(
+              `Assalamu Alaykum ${data.username}, I am Tadabbur. How may I assist you with your Quranic studies?`
+            );
+            setPlaceholder("Let's learn about the Quran");
+          }
         } else {
-          setGreeting(
-            `Assalamu Alaykum ${data.username}, I am Tadabbur. How may I assist you with your Quranic studies?`
-          );
-          setPlaceholder("Let's learn about the Quran");
+          
+          console.log("❌ User not personalized, showing form");
+          setShowPersonalizationForm(true);
         }
-      } else {
-        
-        console.log("❌ User not personalized, showing form");
+      } catch (error) {
+        console.error("❌ Error checking personalization:", error);
         setShowPersonalizationForm(true);
+      } finally {
+        setIsCheckingPersonalization(false);
       }
-    } catch (error) {
-      console.error("❌ Error checking personalization:", error);
-      setShowPersonalizationForm(true);
-    } finally {
-      setIsCheckingPersonalization(false);
-    }
-  };
+    };
 
-  checkPersonalization();
-}, []); 
+    checkPersonalization();
+  }, []); 
 
-
-
-
-  // In your element
   useEffect(() => {
-    const token = localStorage.getItem("token"); 
+    const token = localStorage.getItem("token");
 
     if (!token) {
-        console.error("No authentication token found. Cannot connect to chat.");
-        return;
+      console.error("No authentication token found. Cannot connect to chat.");
+      return;
     }
 
-    const websocket = new WebSocket(`ws://localhost:8000/ws/chat?token=${token}`); 
+    const urlSessionId = searchParams.get("session_id");
+
+    const websocket = new WebSocket(`ws://localhost:8000/ws/chat?token=${token}`);
     wsRef.current = websocket;
 
-    wsRef.current.onopen = () => {
+    websocket.onopen = () => {
       console.log("Connected to websocket successfully!");
-      // For new connection, don't specify session_id to create new session
+
       const user = localStorage.getItem("user");
       let user_id = null;
       if (user) {
@@ -394,13 +393,27 @@ export default function ChatPage() {
           console.error("Error parsing user data:", e);
         }
       }
+
       const sessionInit: SessionInitMessage = {
         type: "session-init",
-        session_id: "", // Empty for new session
+        session_id: urlSessionId || "", 
         user_id: user_id,
         model: "kimi-k2-instruct-0905",
       };
-      wsRef.current?.send(JSON.stringify(sessionInit));
+      
+      if (websocket.readyState === WebSocket.OPEN) {
+        websocket.send(JSON.stringify(sessionInit));
+
+        if (urlSessionId) {
+          console.log("Fetching history for session:", urlSessionId);
+          websocket.send(JSON.stringify({
+            type: "get_chat",
+            session_id: urlSessionId,
+            user_id: user_id,
+          }));
+        }
+      }
+      
       setReportedMessageIDs([]);
     };
 
@@ -468,6 +481,10 @@ export default function ChatPage() {
           const uploaded_files = data.uploaded_files;
           if (session_status === "acknowledged") {
             setSessionID(session_id);
+            const currentUrlId = searchParams.get("session_id");
+            if (!currentUrlId || currentUrlId === "") {
+                 router.push(`/pages/chatbot?session_id=${session_id}`, { scroll: false });
+            }
             if (isNew) {
               setMessages([]);
               setUploadedFiles([]);
@@ -735,7 +752,7 @@ export default function ChatPage() {
           break;
       }
     };
-  }, []);
+  }, [searchParams]);
 
   useEffect(() => {
     let isCancelled = false; 

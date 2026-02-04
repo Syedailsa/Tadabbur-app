@@ -662,14 +662,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                 await websocket.send_json({"type": "session_id", "status": "error", "error": "Unauthorized"})
                                 continue
                         else:
-                            # --- Session Missing: Create New ---
-                            logger.info(f"🆕 Creating NEW session: {session_id}")
-                            supabase_client.table("chat_sessions").insert({
-                                'session_id': session_id, 
-                                'user_id': user_id,   
-                                "title": "New Chat", 
-                                "description": "New conversation started" 
-                            }).execute()
+                            logger.info(f"🆕 Generated ID for potential new session: {session_id}")
                             
                             conversation_history = []
                             unique_message_ids = []
@@ -685,7 +678,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         await websocket.send_json({"type": "session_id", "status": "error", "error": str(e)})
                     
                     continue
-
+            
             # Handle CHAT HISTORY request
             if data.get("type") == "chat_history":
                 try:
@@ -976,6 +969,21 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     unique_message_ids.append(user_message_id)
 
                 message_string = message + (f"\n\n {additional_instructions}" if additional_instructions else "")
+
+                if not resend_flag:
+                    try:
+                        # Check if session exists in DB before inserting message
+                        sess_check = supabase_client.table('chat_sessions').select('session_id').eq('session_id', session_id).execute()
+                        if not sess_check.data:
+                            logger.info(f"📝 First message detected. Persisting session {session_id} to DB.")
+                            supabase_client.table("chat_sessions").insert({
+                                'session_id': session_id, 
+                                'user_id': user_id,   
+                                "title": message[:50] if message else "New Chat",
+                                "description": "Conversation started" 
+                            }).execute()
+                    except Exception as sess_e:
+                        logger.error(f"Failed to lazy-create session: {sess_e}")
                 
                 if not resend_flag:
                     try:
@@ -1171,6 +1179,12 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
     except WebSocketDisconnect:
         logger.info(f"WebSocket closed for user {user_id}")
+
+    except RuntimeError as e:
+        if "websocket.close" in str(e) or "response already completed" in str(e):
+            logger.info(f"WebSocket disconnected during send operation for user {user_id}")
+        else:
+            logger.exception("RuntimeError in WebSocket")
 
     except Exception as e:
         logger.exception("WebSocket error")
