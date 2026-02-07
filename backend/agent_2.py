@@ -11,8 +11,6 @@ from pydantic import BaseModel, Field
 from langchain_core.tools import StructuredTool
 from langchain.agents import create_agent
 from tools.audio_playback import get_Quran_Audio
-# from tools.verse_reader import fetch_quran_verse
-from tools.verse_reader import fetch_quran_verse
 from tools.story_agent_tool import story_agent_tool
 from models import Surah
 

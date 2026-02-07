@@ -1,20 +1,18 @@
-import Verse from "./Verse";
+import { VerseForAudios, VerseForImages } from "./Verse";
 
 
-interface Surah {
-    number: number;
+interface SurahForAudios {
     name: string;
     englishName: string;
-    englishNameTranslation: string;
     revelationType: string;
-    ayahs: Verse[]
+    ayahs: VerseForImages[]
 }
 
 
 interface SurahForVerseImages {
     name: string;
     englishName: string;
-    ayahs: Verse[]
+    ayahs: VerseForAudios[]
 }
 
-export default Surah
+export type { SurahForAudios, SurahForVerseImages }

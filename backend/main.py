@@ -33,16 +33,7 @@ from text_to_speech import TextToSpeechEngine
 from murf import Murf
 from database import init_db_pool, close_db_pool
 from file_service import process_uploaded_file
-from tools.verse_reader import extract_verse_data
-from tools.verse_reader import (
-    get_quran_verse,
-    InvalidSurahError,
-    InvalidAyahError,
-    QuranVerseAPIError
-)
-
 from tools.audio_playback import get_Quran_Audio
-
 from quran_api import quran_router , parah_router, story_router
 from reset_password_api import password_reset_router
 from reflection_api import reflection_router
@@ -67,7 +58,6 @@ from text_to_speech import TextToSpeechEngine
 from config.db import get_supabase_client
 from agents import ItemHelpers  # used to extract message text from items (STREAMING)
 from data.data import comprehensive_surah_metadata
-from tools.verse_reader import SURAH_METADATA
 import sys
 
 if sys.platform.startswith("win"):
@@ -414,60 +404,6 @@ async def websocket_chat(websocket: WebSocket):
             #         })
             #         logger.warning(f"ΓÜá∩╕Å Validation error: {e}")
                 
-
-            if data.get("type") == "verse_request":
-                surah = data.get("surah")
-                ayah = data.get("ayah")
-                include_audio = data.get("include_audio", False)
-                
-                logger.info(f"≡ƒôû Verse request: Surah {surah}, Ayah {ayah}, Audio: {include_audio}")
-                
-                try:
-                    verse_result = get_quran_verse(
-                    surah=surah,
-                    ayah=ayah,
-                    include_audio=include_audio
-                    )
-
-                    if verse_result.get("success"):
-                        await websocket.send_json({
-                        "type": "verse_response",
-                        "status": "success",
-                        "data": verse_result
-                        })
-                        logger.info(f"Γ£à Verse data sent: {surah}:{ayah}")
-                    else:
-                        await websocket.send_json({
-                        "type": "verse_response",
-                        "status": "error",
-                        "message": verse_result.get("error", "Failed to fetch verse")
-                        })
-                
-                except (InvalidSurahError, InvalidAyahError) as e:
-                    await websocket.send_json({
-                        "type": "verse_response",
-                        "status": "error",
-                        "message": str(e)
-                    })
-                    logger.warning(f"ΓÜá∩╕Å Validation error: {e}")
-                
-                except QuranVerseAPIError as e:
-                    await websocket.send_json({
-                        "type": "verse_response",
-                        "status": "error",
-                        "message": f"API error: {str(e)}"
-                    })
-                    logger.error(f"Γ¥î API error: {e}")
-                
-                except Exception as e:
-                    logger.exception("Unexpected verse error")
-                    await websocket.send_json({
-                        "type": "verse_response",
-                        "status": "error",
-                        "message": "An unexpected error occurred"
-                    })
-                
-                continue
 
             # ========== SESsION CODE START ==========
             # SESSION INIT

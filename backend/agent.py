@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 from langchain_core.tools import StructuredTool
 from langchain.agents import create_agent
 from tools.audio_playback import get_Quran_Audio
-# from tools.verse_reader import fetch_quran_verse
 from tools.verse_reader import get_verse_image
 from tools.story_agent_tool import story_agent_tool
 from models import Surah, VerseImageData
@@ -499,8 +498,8 @@ child_system_instructions = """
         ]
         }}
         
-        ## IMPORTANT DISTINCTION BETWEEN Search_Quran_By_filters and fetch_quran_verse
-        Both tools can retrieve Quran verse, fetch_quran_verse tool is to be called when user wants to recite and read a Verse, Surah or part of the Quran. Meanwhile Search_Quran_By_filters tool is to be called when user wants any verse, surah or part of the Quran (through user provided filter metadata) and does not intend to read or recite the Quran. 
+        ## IMPORTANT DISTINCTION BETWEEN Search_Quran_By_filters and get_verse_image
+        Both tools can retrieve Quran verses. get_verse_image tool is to be called when user wants to recite and read a Verse, Surah or part of the Quran. Meanwhile Search_Quran_By_filters tool is to be called when user wants any verse, surah or part of the Quran (through user provided filter metadata) and does not intend to read or recite the Quran. 
 
         ## OUTPUT FORMATTING RULES:\n
         1. **For Complex Queries** (stories, tafsir, comparisons, specific knowledge):
@@ -947,8 +946,8 @@ standard_system_instructions = """
         ]
         }}
         
-        ## IMPORTANT DISTINCTION BETWEEN Search_Quran_By_filters and fetch_quran_verse
-        Both tools can retrieve Quran verse, fetch_quran_verse tool is to be called when user wants to recite and read a Verse, Surah or part of the Quran. Meanwhile Search_Quran_By_filters tool is to be called when user wants any verse, surah or part of the Quran (through user provided filter metadata) and does not intend to read or recite the Quran. 
+        ## IMPORTANT DISTINCTION BETWEEN `Search_Quran_By_filters` and `get_verse_image`
+        Both tools can retrieve Quran verse, `get_verse_image` tool is to be called when user wants to recite and read a Verse, Surah or part of the Quran. Meanwhile Search_Quran_By_filters tool is to be called when user wants any verse, surah or part of the Quran (through user provided filter metadata) and does not intend to read or recite the Quran. 
 
             
         ## OUTPUT FORMATTING RULES:\n

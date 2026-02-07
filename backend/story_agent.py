@@ -9,7 +9,7 @@ from tools.searchAsbabNuzul import searchAsbabNuzul
 from langchain_groq import ChatGroq
 from langchain.agents import create_agent
 from tools.audio_playback import get_Quran_Audio
-from tools.verse_reader import fetch_quran_verse
+from tools.verse_reader import get_verse_image
 from data.data import QuranMetaData,surah_name_english_array, surah_name_english_translation_array
 from pydantic import BaseModel, Field
 from langchain.agents.structured_output import ToolStrategy
@@ -62,7 +62,7 @@ system_instructions = """You are Tadabbur, a storytelling assistant inspired by 
         
         ## Tools
 
-        ### • fetch_quran_verse
+        ### • get_verse_image
         - This tool opens a dialogue box, that allows user to read and recite Quranic verses easily
         - Use this tool to get specific Quranic verses when the user wants to read and recite any verse. Don't call it when the user don't explicitly want to want to recite the verses on a dialogue box. 
         - Examples: 
@@ -262,8 +262,8 @@ system_instructions = """You are Tadabbur, a storytelling assistant inspired by 
         }}
 
 
-        ## IMPORTANT DISTINCTION BETWEEN Search_Quran_By_filters and fetch_quran_verse
-        Both tools can retrieve Quran verse, fetch_quran_verse tool is to be called when user wants to recite and read a Verse, Surah or part of the Quran. Meanwhile Search_Quran_By_filters tool is to be called when user wants any verse, surah or part of the Quran (through user provided filter metadata) and does not intend to read or recite the Quran. 
+        ## IMPORTANT DISTINCTION BETWEEN Search_Quran_By_filters and get_verse_image
+        Both tools can retrieve Quran verse, get_verse_image tool is to be called when user wants to recite and read a Verse, Surah or part of the Quran. Meanwhile Search_Quran_By_filters tool is to be called when user wants any verse, surah or part of the Quran (through user provided filter metadata) and does not intend to read or recite the Quran. 
 
         ### • Quran_Story_Teller
         Use ONLY when the user explicitly requests a *story*  
@@ -307,6 +307,6 @@ story_agent = create_agent(
         name="QuranStoryAgent",
         model=model,
         system_prompt=formatted_system_prompt,
-        tools=[Search_Quran_By_filters, searchAsbabNuzul, get_Quran_Audio, fetch_quran_verse],
+        tools=[Search_Quran_By_filters, searchAsbabNuzul, get_Quran_Audio,get_verse_image ],
         response_format = ToolStrategy(OutputSchema)
 )
