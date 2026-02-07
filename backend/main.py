@@ -9,8 +9,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import asyncio 
-from langchain.messages import HumanMessage, AIMessage, SystemMessage
-from agents import Runner
 from agents import InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered
 from tadabbur_agents.report_rule_generator import report_rule_generator
 from collections import defaultdict
@@ -26,10 +24,6 @@ from Clean_text import clean_text_with_groq
 import story_agent as story_module
 import logging
 import secrets
-import random
-import string
-import uuid
-from agents import ItemHelpers  
 from fastapi import UploadFile, File, Form
 from file_service import process_uploaded_file
 import shutil
@@ -39,14 +33,6 @@ from text_to_speech import TextToSpeechEngine
 from murf import Murf
 from database import init_db_pool, close_db_pool
 from file_service import process_uploaded_file
-from tools.audio_playback import (
-    extract_audio_data,
-    get_quran_audio,
-    get_available_reciters,
-    InvalidSurahError,
-    InvalidAyahError,
-    QuranAPIError
-)
 from tools.verse_reader import extract_verse_data
 from tools.verse_reader import (
     get_quran_verse,
@@ -54,6 +40,8 @@ from tools.verse_reader import (
     InvalidAyahError,
     QuranVerseAPIError
 )
+
+from tools.audio_playback import get_Quran_Audio
 
 from quran_api import quran_router , parah_router, story_router
 from reset_password_api import password_reset_router
@@ -106,7 +94,7 @@ def custom_openapi():
     openapi_schema["components"]["securitySchemes"] = {
         "bearerAuth": {
             "type": "http",
-            "scheme": "bearer",
+            "scheme": "bearer",\
             "bearerFormat": "JWT"
         }
     }
@@ -121,7 +109,7 @@ dynamic_system_instruction = {"text":""}
 async def startup_event():
     """Initialize database pool on startup"""
     await init_db_pool()
-    asyncio.create_task(asyncio.to_thread(refresh_system_instructions,dynamic_system_instruction))
+    asyncio.create_task(refresh_system_instructions(dynamic_system_instruction))
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -257,16 +245,6 @@ async def chat(req: ChatRequest, authorization: str | None = Header(None)):
     conversation = "\n".join([f"{m.role}: {m.content}" for m in req.messages])
     try:
         logger.info("hey")
-        result = await Runner.run(
-            agent_module.agent,
-            conversation,
-            run_config=getattr(agent_module, "config", None)
-        )
-
-
-        reply_text = getattr(result, "final_output", None) or getattr(result, "output_text", None) or str(result)
-        return {"reply": reply_text}
-
 
     except InputGuardrailTripwireTriggered as e:
         msg = getattr(e.guardrail_result, "output_info", "Sorry, your question seems unrelated to the Quranic context.")
@@ -316,7 +294,7 @@ def _normalize_name(name: Optional[str]) -> Optional[str]:
 async def stream_tts_audio(tts_engine, clean_text, websocket, message_id_ref):
     async for audio_chunk in tts_engine.stream_audio(clean_text):
         await websocket.send_json({
-            "type": "tts_audio_chunk",
+            "type": "tts_audio_url",
             "message_id": message_id_ref,
             "audio": audio_chunk
         })
@@ -328,7 +306,6 @@ async def websocket_chat(websocket: WebSocket):
     logger.info("WebSocket connected successfully")
 
     try:
-
         supabase_client = get_supabase_client()
     except Exception as e:
         print("Some error occured initiating supabase connection", e)
@@ -345,7 +322,6 @@ async def websocket_chat(websocket: WebSocket):
     session_model_key: str = "gpt-oss-20b"
     active_agent = agent_module.main_agent
     current_agent_name = active_agent.name
-
     try:
         while True:
             message = await websocket.receive()
@@ -360,7 +336,11 @@ async def websocket_chat(websocket: WebSocket):
                     print("Got tts request, data", data)
                     raw_text = data.get("text")
                     message_id_ref = data.get("message_id")
+                    user_message_id = data.get("reply_to_message_id")
                     
+                    if not message_id_ref or not user_message_id or not raw_text:
+                        print("Can't read aloud, important information is missing....")
+                        continue
                     if raw_text:
                         logger.info(f"≡ƒº╣ Cleaning text with Groq Agent...")
                         
@@ -379,16 +359,12 @@ async def websocket_chat(websocket: WebSocket):
                                 pitch = 0,
                                 variation = 1
                             )
-                            # await websocket.send_json({
-                            # "type": "tts_audio_chunk",
-                            # "message_id": message_id_ref,
-                            # "audio": audio_chunk
-                            # })
                             if res.audio_file:
                                 print("Audio url", res.audio_file)
                                 await websocket.send_json({
-                                    "type": "tts_audio_chunk",
+                                    "type": "tts_audio_url",
                                     "message_id": message_id_ref,
+                                    "user_id": user_message_id,
                                     "audio_url": res.audio_file
                                 })
                                 
@@ -396,75 +372,48 @@ async def websocket_chat(websocket: WebSocket):
                             print("Some error occured while generating audio for text", e)
                             continue
 
-                        # try:
-                        #     # fire-and-forget
-                        #     asyncio.create_task(
-                        #         stream_tts_audio(tts_engine, clean_text, websocket, message_id_ref)
-                        #     )
-                        # except Exception as e:
-                        #     print("TTS Error", e)
-                        #     logger.error(f"TTS Error: {e}")
-                        #     continue
                     continue
 
 
-            if data.get("type") == "audio_request":
-                surah = data.get("surah")
-                ayah = data.get("ayah")
-                reciter = data.get("reciter", "alafasy")
+            # if data.get("type") == "audio_request":
+            #     surah = data.get("surah")
+            #     ayah = data.get("ayah")
+            #     reciter = data.get("reciter", "alafasy")
                 
-                logger.info(f"≡ƒÄ╡ Audio request: Surah {surah}, Ayah {ayah}, Reciter: {reciter}")
+            #     logger.info(f"≡ƒÄ╡ Audio request: Surah {surah}, Ayah {ayah}, Reciter: {reciter}")
                 
-                try:
-                    audio_result = get_quran_audio(
-                        surah=surah,
-                        ayah=ayah,
-                        reciter=reciter
-                    )
-                    # ========================================================
+            #     try:
+            #         audio_result = get_quran_audio(
+            #             surah=surah,
+            #             ayah=ayah,
+            #             reciter=reciter
+            #         )
+            #         # ========================================================
                     
-                    if audio_result.get("success"):
-                        await websocket.send_json({
-                            "type": "audio_response",
-                            "status": "success",
-                            "data": audio_result
-                        })
-                        logger.info("Γ£à Audio data sent successfully")
-                    else:
-                        error_msg = audio_result.get("error", "Failed to fetch audio")
-                        await websocket.send_json({
-                            "type": "audio_response",
-                            "status": "error",
-                            "message": error_msg
-                        })
-                        logger.error(f"Γ¥î Audio fetch failed: {error_msg}")
+            #         if audio_result.get("success"):
+            #             await websocket.send_json({
+            #                 "type": "audio_response",
+            #                 "status": "success",
+            #                 "data": audio_result
+            #             })
+            #             logger.info("Γ£à Audio data sent successfully")
+            #         else:
+            #             error_msg = audio_result.get("error", "Failed to fetch audio")
+            #             await websocket.send_json({
+            #                 "type": "audio_response",
+            #                 "status": "error",
+            #                 "message": error_msg
+            #             })
+            #             logger.error(f"Γ¥î Audio fetch failed: {error_msg}")
                 
-                except (InvalidSurahError, InvalidAyahError) as e:
-                    await websocket.send_json({
-                        "type": "audio_response",
-                        "status": "error",
-                        "message": str(e)
-                    })
-                    logger.warning(f"ΓÜá∩╕Å Validation error: {e}")
+            #     except (InvalidSurahError, InvalidAyahError) as e:
+            #         await websocket.send_json({
+            #             "type": "audio_response",
+            #             "status": "error",
+            #             "message": str(e)
+            #         })
+            #         logger.warning(f"ΓÜá∩╕Å Validation error: {e}")
                 
-                except QuranAPIError as e:
-                    await websocket.send_json({
-                        "type": "audio_response",
-                        "status": "error",
-                        "message": f"API error: {str(e)}"
-                    })
-                    logger.error(f"Γ¥î API error: {e}")
-                
-                except Exception as e:
-                    logger.exception("Unexpected audio error")
-                    await websocket.send_json({
-                        "type": "audio_response",
-                        "status": "error",
-                        "message": "An unexpected error occurred"
-                    })
-                
-                continue
-
 
             if data.get("type") == "verse_request":
                 surah = data.get("surah")
@@ -851,7 +800,7 @@ async def websocket_chat(websocket: WebSocket):
                     )
                     
                     logger.info(f"✅ Injected file context into prompt for {session_id}")
-                # print("Dynamic system instructions", dynamic_system_instruction["text"])
+                print("Dynamic system instructions", dynamic_system_instruction["text"])
                 try:
                     # Prepare messages
                     base_messages = (
@@ -866,11 +815,11 @@ async def websocket_chat(websocket: WebSocket):
                     else:
                         messages = base_messages + conversation_history + [{"role": "user", "content": message_string}]
                         
-                    response = active_agent.invoke(
+                    agent_response = active_agent.invoke(
                         {"messages": messages},
                     )
 
-                    response = response['messages'][-1].content
+                    structured_output = agent_response['structured_response']
                     
                     # generate a message id for response message
                     response_message_id = generate_uuid()
@@ -880,14 +829,14 @@ async def websocket_chat(websocket: WebSocket):
 
                     user_message_id = user_message_id if not resend_flag else resend_message_id
                     # append assistant message to conversation history
-                    conversation_history.append({"role": "assistant", "content": response or "", "id": response_message_id, "reply_to_message_id": user_message_id})
+                    conversation_history.append({"role": "assistant", "content": structured_output.response or "", "id": response_message_id, "reply_to_message_id": user_message_id})
 
                     try:
                         supabase_client.table('chat_messages').insert({
                             "message_id": response_message_id,
                             "session_id": session_id,
                             "role": "assistant",
-                            "content": response or "",
+                            "content": structured_output.response or "",
                             "reply_to_message_id": user_message_id
                         }).execute()
                         print("✅ Assistant message saved successfully!")
@@ -905,11 +854,11 @@ async def websocket_chat(websocket: WebSocket):
                         )
                     )
 
-                    if response:
+                    if structured_output:
                         await websocket.send_json({
                             "type": "assistance_response",
                             "message_id": response_message_id,
-                            "content": response or "",
+                            "content": structured_output.model_dump() or "",
                             "resend_flag": resend_flag,
                             "reply_to_message_id": user_message_id,
                             "final": True

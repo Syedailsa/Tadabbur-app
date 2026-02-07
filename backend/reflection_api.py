@@ -137,7 +137,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional
 import secrets
-
+import uuid
 from database import get_db_connection
 from utils.authentication import get_current_user
 
@@ -152,7 +152,7 @@ class RecentReflectionSave(BaseModel):
 
 class RecentReflectionResponse(BaseModel):
     id: str
-    user_id: str
+    user_id: uuid.UUID
     surah_name_eng: str
     surah_name_arabic: str
     surah_no: int

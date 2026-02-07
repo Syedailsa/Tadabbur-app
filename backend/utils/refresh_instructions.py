@@ -66,11 +66,12 @@ async def refresh_system_instructions(state: dict):
                 if soft_rules:
                     dynamic_system_instruction_string += f"\n ## GUIDELINES \n"
                     for record in soft_rules:
-                            dynamic_system_instruction_string += f"\n {record['category']}_Rules \n"
+                            dynamic_system_instruction_string += f"\n {record['category']} Rules \n"
                             for i,rule in enumerate(record['rules'], 1):
                                 dynamic_system_instruction_string += f'{i}. {rule} \n'
                     
-            state["text"] = dynamic_system_instruction_string        
+            state["text"] = dynamic_system_instruction_string       
+            print("Dynamic string in function", dynamic_system_instruction_string) 
         except Exception as e:
             print("Some error occured while building system instructions", e)
         

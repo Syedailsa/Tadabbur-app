@@ -8,6 +8,7 @@ function groupChatMessages(chatMessages: any) {
         message_id: msg.message_id || null,
         role: "user",
         content: msg.content,
+        attachments: [],
         responses: [],
         number_of_responses: 0,
         active_message_index: 0,

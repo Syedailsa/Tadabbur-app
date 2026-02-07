@@ -1,6 +1,5 @@
-import { useContext, useEffect, useState } from "react";
-import { PromptExtraOptionsContext } from "@/app/context/chatbot/PromptExtraOptionsContext";
-import { motion, number } from "framer-motion";
+import { useContext, useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import PromptExtraOptionsModelBox from "./PromptExtraOptionsModelBox";
 import ThumbsUp from "../../../../icons/thumbs-up.svg";
 import ThumbsDown from "../../../../icons/thumbs-down.svg";
@@ -10,89 +9,142 @@ import MoreOptions from "../../../../icons/more_options.svg";
 import ResendPromptDialogueBox from "./ResendPromptDialogueBox";
 import { ChatMessage } from "../interfaces/ChatMessage";
 import ArrowLeft from "../../../../icons/arrow-left-bold.svg";
+import hidePromptExtraOptionsModelBoxArray from "../interfaces/hidePromptExtraOptionsModelBoxArray";
+import { ChatContext } from "@/app/context/chatbot/ChatContext";
+
+type PromptExtraOptionsProps = {
+  message_id: string;
+  reply_to_message_id: string | null;
+  parent_index: number;
+  assistant_index: number | null;
+  messageType: "user" | "assistant";
+};
 
 const PromptExtraOptions = ({
+  parent_index,
+  message_id,
+  reply_to_message_id,
+  assistant_index,
   messageType,
-}: {
-  messageType: "user" | "assistant";
-}) => {
-  const {
-    parent_index,
-    assistant_index,
-    messages,
-    setMessages,
-    message_id,
-    wsRef,
-    hidePromptExtraOptionsModelBox,
-    setHidePromptExtraOptionsModelBox,
-    sessionID,
-    hideResendPromptDialogue,
-    setHideResendPromptDialogue,
-  } = useContext(PromptExtraOptionsContext);
+}: PromptExtraOptionsProps) => {
+
+  const { sessionID, wsRef, messages, setMessages, hidePromptExtraOptionsModelBoxArray,
+    setHidePromptExtraOptionsModelBoxArray,
+
+  } = useContext(ChatContext)
   const [overlayTranslateAmount, setOverlayTranslateAmount] = useState<
     number | null
   >(0);
-  const [isCopied, setIsCopied] = useState<boolean | null>(null);
   const [overlayText, setOverlayText] = useState<string | null>(null);
   const [active, setActive] = useState<boolean | null>(false);
+  const [hideResendPromptDialogue, setHideResendPromptDialogue] = useState<
+    boolean | null
+  >(true);
 
   const feedback =
-    messages?.[parent_index]?.responses?.[assistant_index]?.feedback || null;
+    assistant_index == null
+      ? null
+      : messages?.[parent_index]?.responses?.[assistant_index]?.feedback ?? null;
+
   const hasMultipleResponses =
     messages?.[parent_index]?.number_of_responses > 1;
+
+
+  useEffect(() => {
+    setHidePromptExtraOptionsModelBoxArray((prev: hidePromptExtraOptionsModelBoxArray[]) => prev.map(m => m.assistant_message_id == message_id ? { ...m, hidePromptExtraOptionsModelBox: true } : m))
+  }, [])
+  const hidePromptExtraOptionsModelBox = hidePromptExtraOptionsModelBoxArray.find((m: hidePromptExtraOptionsModelBoxArray) => m.assistant_message_id == message_id)?.hidePromptExtraOptionsModelBox
+
   type OptionType = "copy" | "resend" | "like" | "dislike";
   const handleOptionClick = ({ type }: { type: OptionType }) => {
+    if (parent_index === null) return
     switch (type) {
       case "copy":
-        let content: string = "";
+        let content: string | null = null;
         if (messageType === "assistant") {
-          content = messages[parent_index].responses[assistant_index].content;
+          if (assistant_index === null) { break }
+          content = messages[parent_index].responses[assistant_index].content ?? null;
+
         } else if (messageType === "user") {
-          content = messages[parent_index].content;
+          content = messages[parent_index].content
         }
         navigator.clipboard
-          .writeText(content)
+          .writeText(content ? content : "")
           .then(() => {
             console.log("Copied to clipboard!");
-            setIsCopied(true);
+
           })
           .catch((err) => console.error("Failed to copy", err));
         break;
       case "like":
-        wsRef?.current.send(
-          JSON.stringify({
-            type: "like",
-            message:
-              messages?.[parent_index]?.responses?.[assistant_index]?.content,
-            message_id: message_id,
-            session_id: sessionID,
-          })
-        );
+        if (feedback === "like") {
+          break
+        }
+        if (assistant_index != null) {
+          wsRef?.current.send(
+            JSON.stringify({
+              type: "like",
+              message:
+                messages?.[parent_index]?.responses?.[assistant_index].content,
+              message_id: message_id,
+              session_id: sessionID,
+            })
+          );
+        }
 
+        setHidePromptExtraOptionsModelBoxArray((prev: hidePromptExtraOptionsModelBoxArray[]) => prev.map(m => m.assistant_message_id === message_id ? { ...m, hidePromptExtraOptionsModelBox: true } : m))
         if (messages && setMessages) {
-          const updatedMessages = [...messages];
-          updatedMessages[parent_index].responses[assistant_index].feedback =
-            "like";
-          setMessages(updatedMessages);
+          setMessages((prev: ChatMessage[]) =>
+            prev.map((m, i) =>
+              i === parent_index
+                ? {
+                  ...m,
+                  responses: m.responses.map((r, j) =>
+                    j === assistant_index
+                      ? { ...r, feedback: "like" }
+                      : r
+                  )
+                }
+                : m
+            )
+          );
+
         }
 
         break;
       case "dislike":
-        wsRef?.current.send(
-          JSON.stringify({
-            type: "dislike",
-            message:
-              messages?.[parent_index]?.responses?.[assistant_index]?.content,
-            message_id: message_id,
-            session_id: sessionID,
-          })
-        );
+        if (feedback === "dislike") {
+          break
+        }
+        if (assistant_index != null) {
+          wsRef?.current.send(
+            JSON.stringify({
+              type: "dislike",
+              message:
+                messages?.[parent_index]?.responses?.[assistant_index]?.content,
+              message_id: message_id,
+              session_id: sessionID,
+            })
+          );
+        }
 
+        setHidePromptExtraOptionsModelBoxArray((prev: hidePromptExtraOptionsModelBoxArray[]) => prev.map(m => m.assistant_message_id === message_id ? { ...m, hidePromptExtraOptionsModelBox: true } : m))
         if (messages && setMessages) {
-          const updatedMessages = [...messages];
-          updatedMessages[parent_index].responses[assistant_index].feedback =
-            "dislike";
-          setMessages(updatedMessages);
+          setMessages((prev: ChatMessage[]) =>
+            prev.map((m, i) =>
+              i === parent_index
+                ? {
+                  ...m,
+                  responses: m.responses.map((r, j) =>
+                    j === assistant_index
+                      ? { ...r, feedback: "dislike" }
+                      : r
+                  )
+                }
+                : m
+            )
+          );
+
         }
         break;
       case "resend":
@@ -112,13 +164,13 @@ const PromptExtraOptions = ({
                 onClick={() => {
                   const activeIndex =
                     messages?.[parent_index]?.active_message_index;
-                  const number_of_responses =
-                    messages?.[parent_index]?.number_of_responses;
 
                   // check if activeIndex is below zero
                   if (activeIndex <= 0) {
                     return;
                   }
+
+
                   setMessages((prev: ChatMessage[]) => {
                     const messageArray = [...prev];
                     const msg = messageArray[parent_index];
@@ -177,7 +229,6 @@ const PromptExtraOptions = ({
             }}
             onMouseLeave={() => {
               setActive(false);
-              setIsCopied(false);
             }}
             onClick={() => {
               handleOptionClick({ type: "copy" });
@@ -203,9 +254,8 @@ const PromptExtraOptions = ({
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
           >
             <ThumbsUp
-              className={`w-4 h-4 ${
-                feedback === "like" ? "fill-blue-400" : ""
-              }`}
+              className={`w-4 h-4 ${feedback === "like" ? "fill-blue-400" : ""
+                }`}
             />
           </div>
 
@@ -224,9 +274,8 @@ const PromptExtraOptions = ({
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
           >
             <ThumbsDown
-              className={`w-4 h-4 ${
-                feedback === "dislike" ? "fill-red-400" : ""
-              }`}
+              className={`w-4 h-4 ${feedback === "dislike" ? "fill-red-400" : ""
+                }`}
             />
           </div>
           <div
@@ -250,10 +299,9 @@ const PromptExtraOptions = ({
               setOverlayTranslateAmount(hasMultipleResponses ? 132 : 102);
             }}
             onClick={() => {
-              setHidePromptExtraOptionsModelBox(
-                (prev: boolean | null) => !prev
-              );
+              setHidePromptExtraOptionsModelBoxArray((prev: hidePromptExtraOptionsModelBoxArray[]) => prev.map(m => m.assistant_message_id === message_id ? { ...m, hidePromptExtraOptionsModelBox: !m.hidePromptExtraOptionsModelBox } : m))
             }}
+
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
           >
             <MoreOptions className="w-4 h-4" />
@@ -267,8 +315,9 @@ const PromptExtraOptions = ({
               <p className="switzer-500 text-white text-xs">{overlayText}</p>
             </motion.div>
           )}
-          {!hidePromptExtraOptionsModelBox && <PromptExtraOptionsModelBox />}
-          {!hideResendPromptDialogue && <ResendPromptDialogueBox />}
+          {!hidePromptExtraOptionsModelBox && (<PromptExtraOptionsModelBox message_id={message_id} reply_to_message_id={reply_to_message_id} parent_index={parent_index} assistant_index={assistant_index} />)}
+
+          {!hideResendPromptDialogue && <ResendPromptDialogueBox message_id={message_id} reply_to_message_id={reply_to_message_id} parent_index={parent_index} hideResendPromptDialogue={hideResendPromptDialogue} setHideResendPromptDialogue={setHideResendPromptDialogue} />}
         </div>
       ) : messageType === "user" ? (
         <div className="flex gap-x-1.5 pr-1 pl-2 pb-2 pt-1 relative">
@@ -279,7 +328,6 @@ const PromptExtraOptions = ({
             }}
             onMouseLeave={() => {
               setActive(false);
-              setIsCopied(false);
             }}
             onClick={() => {
               handleOptionClick({ type: "copy" });

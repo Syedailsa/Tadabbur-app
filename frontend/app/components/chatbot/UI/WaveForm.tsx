@@ -22,7 +22,7 @@ export default function WaveForm() {
         audioContextRef.current = audioCtx;
 
         const analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 256; 
+        analyser.fftSize = 256;
         analyserRef.current = analyser;
 
         const bufferLength = analyser.frequencyBinCount;
@@ -52,7 +52,7 @@ export default function WaveForm() {
       const width = canvas.width;
       const height = canvas.height;
 
-      analyser.getByteFrequencyData(dataArray as any); 
+      analyser.getByteFrequencyData(dataArray as any);
 
       ctx.clearRect(0, 0, width, height);
 
@@ -61,22 +61,27 @@ export default function WaveForm() {
       let x = 0;
 
       for (let i = 0; i < dataArray.length; i++) {
-        barHeight = dataArray[i] / 2; 
+        barHeight = dataArray[i] / 3;
 
         const gradient = ctx.createLinearGradient(0, 0, 0, height);
-        gradient.addColorStop(0, "#a855f7"); // Purple
-        gradient.addColorStop(1, "#3b82f6"); // Blue
+        // all black waveforms
+        gradient.addColorStop(0, "#000000");
+        gradient.addColorStop(1, "#ffffff");
 
         ctx.fillStyle = gradient;
 
         const y = (height - barHeight) / 2;
-        
-        ctx.fillRect(x, y, barWidth, barHeight);
 
-        x += barWidth + 2; // Spacing
+        const radius = barWidth; // adjust if you want less rounding
+
+        ctx.beginPath();
+        ctx.roundRect(x, y, barWidth, barHeight, radius);
+        ctx.fill();
+
+        x += barWidth + 3; // Spacing
       }
-
       animationFrameRef.current = requestAnimationFrame(draw);
+
     };
 
     initAudio();
@@ -93,17 +98,16 @@ export default function WaveForm() {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 10 }}
-      className="w-full h-32 flex items-center justify-center bg-gray-50/90 backdrop-blur-sm rounded-lg border border-gray-200 shadow-inner p-4"
+      className="w-full flex items-center"
     >
-        <div className="absolute top-2 left-4 text-xs font-semibold text-gray-500 animate-pulse">
-            Listening...
-        </div>
+      <div className="ml-auto mt-auto w-50 bg-white shadow-md rounded-full px-4 py-3">
         <canvas
-            ref={canvasRef}
-            width={600}
-            height={100}
-            className="w-full h-full object-contain"
+          ref={canvasRef}
+          width={300}
+          height={27}
+          className="w-full h-full object-contain"
         />
+      </div>
     </motion.div>
   );
 }

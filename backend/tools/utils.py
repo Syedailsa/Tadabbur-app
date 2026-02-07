@@ -26,6 +26,28 @@ def normalize_surah(name:str, array:list) -> str | None:
     
     return best
 
+def normalize_reciter_name(name:str, array:list) -> str | None:
+    """
+    Converts user-provided name → canonical name using fuzzy match.
+    Returns None if input is empty or extremely unclear.
+    """
+
+    if not name:
+        return None
+
+    name = name.strip().lower()
+    best, score,_ = process.extractOne(
+        name,
+        array,
+        scorer = fuzz.WRatio
+    )
+
+    if score < 65:
+        
+        return None
+    
+    return best
+
 def clean_surah_name(name: str) -> str:
     """
     Aggressively cleans Surah names:

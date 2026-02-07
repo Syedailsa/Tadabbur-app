@@ -664,8 +664,9 @@ async def upload_profile_image(
         raise HTTPException(status_code=500, detail=f"Image upload failed: {str(e)}")
 
 
+import uuid
 @profile_router.get("/image/{user_id}")
-async def get_profile_image_redirect(user_id: str):
+async def get_profile_image_redirect(user_id: uuid.UUID):
     """
     Get user's profile image URL (redirects to Supabase CDN)
     

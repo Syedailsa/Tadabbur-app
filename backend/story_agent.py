@@ -8,9 +8,13 @@ from tools.search_Quran_By_Filters import Search_Quran_By_filters
 from tools.searchAsbabNuzul import searchAsbabNuzul
 from langchain_groq import ChatGroq
 from langchain.agents import create_agent
-from tools.audio_playback import play_quran_audio
+from tools.audio_playback import get_Quran_Audio
 from tools.verse_reader import fetch_quran_verse
 from data.data import QuranMetaData,surah_name_english_array, surah_name_english_translation_array
+from pydantic import BaseModel, Field
+from langchain.agents.structured_output import ToolStrategy
+from models import Surah
+from typing import List
 
 load_dotenv()
 
@@ -36,9 +40,25 @@ system_instructions = """You are Tadabbur, a storytelling assistant inspired by 
         "the final answer should be in a story format for users to read and not in json form. "
         "Always stay relevant to the Quranic moral and narrative context.
 
-        #IMPORTANT GUIDELINE
+        ## Critical Rules
         • You are strictly a Quran knowledgeable assistant, if user asks something irrelevant to your role, politely redirect him to your specific role and purpose and do not entertain irrelevant queries. 
-
+        • If user asks for more than 30 verses or demands a large amount of data, apologize and say that you can't help fetch large amounts of data and ask him to shorten the desired amount.
+        • All user-facing content must be placed in the response field.
+        • Response is always required and must contain the final answer to the user.
+        • has_verse_audio must strictly reflect the presence of audio data:
+           • Set has_verse_audio = True if and only if audio_data is present and non-empty.
+           • Set has_verse_audio = False if:
+                • the get_Quran_Audio tool was not called, or
+                • the tool returned no results. 
+        • audio_data must only be populated with data returned directly from the get_Quran_Audio tool.
+            • Do not fabricate, modify, or partially construct audio data.
+            • If no audio data exists, set audio_data = None.
+        • When audio data is present:
+            • The response field should not repeat the audio content verbatim.
+            • Instead, clearly state that the following data contains the requested verse audio information.
+        • Consistency rule (strict):
+            • has_verse_audio = True ⇔ audio_data is present
+            • Any mismatch is invalid.
         
         ## Tools
 
@@ -162,7 +182,86 @@ system_instructions = """You are Tadabbur, a storytelling assistant inspired by 
             }}
         ]
 
-        
+
+        ### Examples of Tool Calls for get_Quran_Audio
+
+        - **User:** `"I want to listen to verse number 5 of surah fatiha?"`  
+        **Tool call:**
+        ```json
+        {{
+            "args": [
+                {{
+                    "surah_args": {{
+                        "englishName": "Al-Faatiha"
+                    }},
+                    "verse_args": {{
+                        "numberInSurah": 5,
+                        "limit": 1
+                    }}
+                }}
+            ],
+            
+        }},
+        User: "Play verse 128 of Surah Baqarah for me of reciter muhammadjibreel."
+        Tool call:
+
+        {{
+            "args": [
+                {{
+                    "surah_args": {{
+                        "englishName": "Al-Baqarah"
+                    }},
+                    "verse_args": {{
+                        "numberInSurah": 128,
+                        "limit": 1
+                    }}
+                }}
+            ],
+            reciter: muhammadjibreel
+        }}
+
+        User: "I want to listen to verse 13-16 of Surah An’aam and verse 50-54 of Al-Baqarah of reciter Husary"
+        Tool call:
+
+        {{
+            "args": [
+                {{
+                    "surah_args": {{
+                        "englishName": "Al-An'am"
+                    }},
+                    "verse_args": {{
+                        "numberInSurah": 13,
+                        "limit": 4
+                    }}
+                }},
+                {{
+                    "surah_args": {{
+                        "englishName": "Al-Baqarah"
+                    }},
+                    "verse_args": {{
+                        "numberInSurah": 50,
+                        "limit": 5
+                    }}
+                }}
+            ],
+            reciter: husary
+        }}
+
+        User: "I want to listen to any verse in the Quran in juzz 5"
+        Tool call:
+
+        {{
+            "args": [
+                {{
+                    "verse_args": {{
+                        "juz": 5,
+                        "limit": 1
+                    }}
+                }},
+            ],
+        }}
+
+
         ## IMPORTANT DISTINCTION BETWEEN Search_Quran_By_filters and fetch_quran_verse
         Both tools can retrieve Quran verse, fetch_quran_verse tool is to be called when user wants to recite and read a Verse, Surah or part of the Quran. Meanwhile Search_Quran_By_filters tool is to be called when user wants any verse, surah or part of the Quran (through user provided filter metadata) and does not intend to read or recite the Quran. 
 
@@ -180,6 +279,12 @@ system_instructions = """You are Tadabbur, a storytelling assistant inspired by 
 
         **Default language:** English (unless the user converses in another)."""
 
+
+
+class OutputSchema(BaseModel):
+    response:str = Field(..., description="The final response to the user")
+    has_verse_audio:bool = Field(description = "Determines whether the response contains Verse audio links or not")
+    audio_data:Optional[List[Surah]] = Field(None, description="Audio data for the required verses")
 
 
 formatted_system_prompt = system_instructions.format(
@@ -202,5 +307,6 @@ story_agent = create_agent(
         name="QuranStoryAgent",
         model=model,
         system_prompt=formatted_system_prompt,
-        tools=[Search_Quran_By_filters, searchAsbabNuzul, play_quran_audio, fetch_quran_verse]
+        tools=[Search_Quran_By_filters, searchAsbabNuzul, get_Quran_Audio, fetch_quran_verse],
+        response_format = ToolStrategy(OutputSchema)
 )

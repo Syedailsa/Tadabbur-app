@@ -17,9 +17,6 @@ const BottomOptions = () => {
     active,
     setActive,
     setAttachedFile,
-    setInput,
-    sessionID,
-    setMessages,
   } = useContext(ChatContext);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -39,9 +36,9 @@ const BottomOptions = () => {
       micActive.current = false;
     }
     return () => {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-            mediaRecorderRef.current.stop();
-        }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
     };
   }, [active[2]]);
 
@@ -51,7 +48,7 @@ const BottomOptions = () => {
 
       // Signal UI to show WaveForm
       window.dispatchEvent(new Event("tadabbur-mic-start"));
-      
+
       audioChunksRef.current = [];
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -61,7 +58,7 @@ const BottomOptions = () => {
       // Collect Data
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
-            audioChunksRef.current.push(event.data);
+          audioChunksRef.current.push(event.data);
         }
       };
 
@@ -69,15 +66,15 @@ const BottomOptions = () => {
         stream.getTracks().forEach((track) => track.stop());
 
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        
+
         if (audioBlob.size > 0) {
-            await uploadAudioForTranscription(audioBlob);
+          await uploadAudioForTranscription(audioBlob);
         }
       };
 
       mediaRecorder.start();
       console.log("🎙️ Recording Started locally.");
-      
+
     } catch (micErr) {
       console.error("❌ Mic denied:", micErr);
       setActive((prev: boolean[]) => {
@@ -93,9 +90,9 @@ const BottomOptions = () => {
       mediaRecorderRef.current &&
       mediaRecorderRef.current.state !== "inactive"
     ) {
-      mediaRecorderRef.current.stop(); 
+      mediaRecorderRef.current.stop();
     }
-    
+
     // Signal UI to stop WaveForm
     window.dispatchEvent(new Event("tadabbur-mic-stop"));
   };
@@ -105,33 +102,33 @@ const BottomOptions = () => {
     formData.append("file", audioBlob, "voice_note.webm");
 
     try {
-        console.log("📤 Uploading audio for transcription...");
-        
-        // 1. Dispatch event to tell ChatPage to show loading state
-        window.dispatchEvent(new Event("tadabbur-transcription-start"));
+      console.log("📤 Uploading audio for transcription...");
 
-        const response = await fetch("http://localhost:8000/api/transcribe", {
-            method: "POST",
-            body: formData,
-        });
+      // 1. Dispatch event to tell ChatPage to show loading state
+      window.dispatchEvent(new Event("tadabbur-transcription-start"));
 
-        if (!response.ok) throw new Error("Transcription failed");
+      const response = await fetch("http://localhost:8000/api/transcribe", {
+        method: "POST",
+        body: formData,
+      });
 
-        const data = await response.json();
-        const text = data.text;
+      if (!response.ok) throw new Error("Transcription failed");
 
-        if (text) {
-            console.log("✅ Transcription Received:", text);
-            const event = new CustomEvent("tadabbur-stt-result", { detail: text });
-            window.dispatchEvent(event);
-            // Note: ChatPage will turn off loading when it receives "tadabbur-stt-result"
-        }
+      const data = await response.json();
+      const text = data.text;
+
+      if (text) {
+        console.log("✅ Transcription Received:", text);
+        const event = new CustomEvent("tadabbur-stt-result", { detail: text });
+        window.dispatchEvent(event);
+        // Note: ChatPage will turn off loading when it receives "tadabbur-stt-result"
+      }
 
     } catch (error) {
-        console.error("Transcription Error:", error);
-        // 2. Dispatch error event so ChatPage stops loading
-        window.dispatchEvent(new Event("tadabbur-transcription-error"));
-        alert("Failed to transcribe audio.");
+      console.error("Transcription Error:", error);
+      // 2. Dispatch error event so ChatPage stops loading
+      window.dispatchEvent(new Event("tadabbur-transcription-error"));
+      alert("Failed to transcribe audio.");
     }
   };
 
@@ -245,9 +242,8 @@ const BottomOptions = () => {
           className="w-9 h-9 rounded-full flex items-center justify-center cursor-pointer"
         >
           <MicIcon
-            className={`w-5 h-5 fill-current ${
-              active[2] ? "text-red-600" : "text-black"
-            }`}
+            className={`w-5 h-5 fill-current ${active[2] ? "text-red-600" : "text-black"
+              }`}
           />
         </motion.div>
 

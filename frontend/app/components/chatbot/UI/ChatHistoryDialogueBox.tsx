@@ -12,10 +12,9 @@ const formatDateToDMY = (dateString: string | null): string => {
   return `${day}-${month}-${year}`;
 };
 
-const ChatHisoryDialoguseBox = () => {
+const ChatHisoryDialogueBox = () => {
   const {
     chatHistory,
-    setChatHistory,
     setSelectedSessionID,
     openChatHistoryDialogueBox,
     setOpenChatHistoryDialogueBox,
@@ -150,4 +149,4 @@ const ChatHisoryDialoguseBox = () => {
   );
 };
 
-export { ChatHisoryDialoguseBox };
+export { ChatHisoryDialogueBox };

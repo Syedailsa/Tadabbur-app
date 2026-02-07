@@ -1,259 +1,344 @@
-"""
-Quran Audio Playback Tool
-Provides audio URLs for Quran recitation
-"""
+# """
+# Quran Audio Playback Tool
+# Provides audio URLs for Quran recitation
+# """
 
-import httpx
-from typing import Optional, Dict, Any
-import re
-import logging
-from langchain_core.tools import tool
-from tools.utils import (
-    normalize_surah,
-    clean_surah_name,
-    get_surah_id_from_name
-)
-from data.data import surah_name_english_array, comprehensive_surah_metadata
-logger = logging.getLogger(__name__)
+import requests
+import operator
+from data.data import reciters_name_array, surah_name_english_array, surah_name_english_translation_array
+from tools.utils import normalize_reciter_name
+from pydantic import BaseModel, Field
+from typing import Optional
+from tools.utils import normalize_surah
+from langchain.tools import tool
+from typing import List, Literal
+from langchain.tools import tool
 
-QURAN_API_BASE = "https://api.alquran.cloud/v1"
+class SurahFilter(BaseModel):
+    """Input for surah queries"""
+    number: Optional[int] = None
+    number_min: Optional[int] = None
+    number_max: Optional[int] = None
+    name: Optional[str] = None
+    englishName: Optional[str] = None
+    englishNameTranslation: Optional[str] = None
+    revelationType: Optional[Literal["Meccan", "Medinan"]] = None
 
-RECITERS = {
-    "alafasy": {"name": "Mishary Rashid Alafasy", "identifier": "ar.alafasy"},
-    "abdulbasit": {"name": "Abdul Basit", "identifier": "ar.abdulbasitmurattal"},
-    "sudais": {"name": "Abdur-Rahman As-Sudais", "identifier": "ar.abdurrahmaansudais"},
-    "husary": {"name": "Mahmoud Khalil Al-Husary", "identifier": "ar.husary"},
-    "minshawi": {"name": "Mohamed Siddiq Al-Minshawi", "identifier": "ar.minshawi"},
-    "saad": {"name": "Saad Al-Ghamdi", "identifier": "ar.saadalghamadi"},
-    "shaatri": {"name": "Abu Bakr al-Shatri", "identifier": "ar.shaatree"},
-}
 
-class InvalidSurahError(Exception):
-    pass
+class VerseFilter(BaseModel):
+    """Input for verse queries"""
+    number: Optional[int] = None
+    number_min: Optional[int] = None
+    number_max: Optional[int] = None
 
-class InvalidAyahError(Exception):
-    pass
+    numberInSurah: Optional[int] = None
+    numberInSurah_min: Optional[int] = None
+    numberInSurah_max: Optional[int] = None
 
-class QuranAPIError(Exception):
-    pass
+    ruku: Optional[int] = None
+    ruku_min: Optional[int] = None
+    ruku_max: Optional[int] = None
 
-def get_available_reciters():
-    return [{"id": key, "name": value["name"]} for key, value in RECITERS.items()]
+    juz: Optional[int] = None
+    juz_min: Optional[int] = None
+    juz_max: Optional[int] = None
 
-def get_quran_audio(
-    surah: Optional[int] = None,
-    ayah: Optional[int] = None,
-    reciter: str = "alafasy"
-) -> Dict[str, Any]:
-    """Main function to get Quran audio URLs (Synchronous)"""
+    manzil: Optional[int] = None
+    manzil_min: Optional[int] = None
+    manzil_max: Optional[int] = None
+
+    hizbQuarter: Optional[int] = None
+    hizbQuarter_min: Optional[int] = None
+    hizbQuarter_max: Optional[int] = None
+
+    sajdah: Optional[bool] = None
+    limit: Optional[int] = 1
+
+class Filters(BaseModel):
+    surah_args: SurahFilter = None
+    verse_args: VerseFilter = None
+
+
+QURAN_API_BASE = "http://api.alquran.cloud/v1/quran"
+
+
+class FiltersList(BaseModel):  # New top-level schema
+    """List of Quran filters"""
+    args: List[Filters] = Field(default_factory=list, description="List of filter queries")
+
+@tool(args_schema = FiltersList)
+def get_Quran_Audio(args: List[Filters] = None, reciter:str = "ar.alafasy") -> List[str]:
+
+    """Get Quran Audio using metadata filters
+    This tool does an exact filter search on the Quran verses stored in the cloud and retreives audio for a particular verse or verses .Only fields that are provided (not None) are used as filter conditions.
     
-    if not surah or surah < 1 or surah > 114:
-        raise InvalidSurahError(f"Invalid Surah number: {surah}. Must be between 1-114")
-    
-    reciter_info = RECITERS.get(reciter.lower())
-    if not reciter_info:
-        reciter_info = RECITERS["alafasy"]
-    
-    try:
-        with httpx.Client() as client:
-            if ayah:
-                url = f"{QURAN_API_BASE}/ayah/{surah}:{ayah}/{reciter_info['identifier']}"
+    **ARGS:**
 
-                print("URL to fetch Quran Data", url)
-                response = client.get(url, timeout=30.0)
-                if response.status_code != 200:
-                    raise QuranAPIError(f"API returned status {response.status_code}")
-                data = response.json()["data"]
-                return {
-                    "success": True, 
-                    "type": "single_ayah",
-                    "surah": {"number": data["surah"]["number"], "englishName": data["surah"]["englishName"]},
-                    "ayah": {"number": data["numberInSurah"], "text": data.get("text", ""), "audio_url": data.get("audio", "")},
-                    "reciter": {"name": reciter_info["name"], "identifier": reciter}
-                }
+    --- args (List[Filters], optional) ---
+    Each Filters object contains:
+    
+    - surah_args (SurahFilter):    
+        1. **number (int)**  
+        Exact surah number (1–114).
+
+        2. **number_min (int)**  
+        Minimum surah number for range filtering.
+
+        3. **number_max (int)**  
+        Maximum surah number for range filtering.
+
+        4. **name (str)**  
+        Surah name in Arabic.
+
+        5. **englishName (str)**  
+        Surah name in English (e.g., "The Cow").
+
+        6. **englishNameTranslation (str)**  
+        Surah name translation in English.
+
+        7. **revelationType (str)**  
+        Either `"Meccan"` or `"Medinan"`.
+
+
+    - verse_args (VerseFilter, optional) ---
+        1. **number (int)**  
+        Exact ayah number in the entire Quran.
+
+        2. **number_min (int)**  
+        Minimum ayah number in the entire Quran.
+
+        3. **number_max (int)**  
+            Maximum ayah number in the entire Quran.
+
+        4. **numberInSurah (int)**  
+            Exact ayah number of the surah.
+
+        5. **numberInSurah_min (int)**  
+            Minimum ayah number of the surah.
+
+        6. **numberInSurah_max (int)**  
+            Maximum ayah number of the surah.
+
+        7. **ruku (int)**  
+            Exact Ruku number.
+
+        8. **ruku_min (int)**  
+            Minimum Ruku number.
+
+        9. **ruku_max (int)**  
+            Maximum Ruku number.
+
+        10. **juz (int)**  
+            Exact Juz number (1–30).
+
+        11. **juz_min (int)**  
+            Minimum Juz number.
+
+        12. **juz_max (int)**  
+            Maximum Juz number.
+
+        13. **manzil (int)**  
+            Exact Manzil number (1–7).
+
+        14. **manzil_min (int)**  
+            Minimum Manzil number.
+
+        15. **manzil_max (int)**  
+            Maximum Manzil number.
+
+        16. **hizbQuarter (int)**  
+            Exact Hizb quarter number (1–240).
+
+        17. **hizbQuarter_min (int)**  
+            Minimum Hizb quarter number.
+
+        18. **hizbQuarter_max (int)**  
+            Maximum Hizb quarter number.
+
+        19. **sajdah (bool)**  
+            Indicates whether the ayah contains a sajdah (True/False).
+
+        20. **limit (int)**
+            Number of results to return
+
+    **Notes:** Each Filters object represents a single surah–verse query. Multiple queries can be provided as a list of Filters.
+
+    **PURPOSE:**
+    1. Used for queries that can retreive data through specific fields filtering.
+    2. Uses filter queries for fetching data. 
+
+    **EXAMPLE QUERIES:**
+    1. I want to listen to verse number 5 of surah fatiha.
+    2. Play the verse number 5 of Al Quran.
+    3. Play a sajda verse for me.
+    5. Play the audio of verse 13 of Surah An'aam and verse 50 of Al-Baqarah.
+    6. I want to listen to the recitation of verse 5 of Surah Baqarah, verse 9 of surah An'aam and verse 10 of Surah Nisa.
+    7. I want to listen to verses 1-10 of surah Baqarah, Quraysh and Bani Israeel.
+    """
+
+    print("Get Quran Audio tool called!")
+    if not args:
+        return "No filters provided"
+    # initialize a results array to concatenate results
+    surah_array = []    
+    # fetch the data
+    reciter_identifier = normalize_reciter_name(reciter, reciters_name_array)
+    
+    request_url = f'{QURAN_API_BASE}/{reciter_identifier}'
+    response = requests.get(request_url)
+
+    if not response.ok:
+        print("Couldn't get data from the Quran Cloud")
+        return "Couldn't get data from the Quran Cloud"
+    
+    Quran_data = response.json()['data']['surahs']
+
+    for filter_args in args:
+        # start with the complete copy of the Quran
+        filtered_array = list(Quran_data)
+        surah_args = filter_args.surah_args or SurahFilter()
+        surah_arguments = {
+            "number": surah_args.number,
+            "number_min": surah_args.number_min,
+            "number_max": surah_args.number_max,
+            "name" : surah_args.name,
+            "englishName" : normalize_surah(surah_args.englishName, surah_name_english_array),
+            "englishNameTranslation": normalize_surah(surah_args.englishNameTranslation, surah_name_english_translation_array),
+            "revelationType": surah_args.revelationType
+        }
+
+        verse_args = filter_args.verse_args or VerseFilter()
+        verse_arguments = {
+            # --- Ayah number in entire Quran ---
+            "number": verse_args.number,
+            "number_min": verse_args.number_min,
+            "number_max": verse_args.number_max,
+
+            # --- Ayah number within surah ---
+            "numberInSurah": verse_args.numberInSurah,
+            "numberInSurah_min": verse_args.numberInSurah_min,
+            "numberInSurah_max": verse_args.numberInSurah_max,
+
+            # --- Ruku ---
+            "ruku": verse_args.ruku,
+            "ruku_min": verse_args.ruku_min,
+            "ruku_max": verse_args.ruku_max,
+
+            # --- Juz ---
+            "juz": verse_args.juz,
+            "juz_min": verse_args.juz_min,
+            "juz_max": verse_args.juz_max,
+
+            # --- Manzil ---
+            "manzil": verse_args.manzil,
+            "manzil_min": verse_args.manzil_min,
+            "manzil_max": verse_args.manzil_max,
+
+            # --- Hizb quarter ---
+            "hizbQuarter": verse_args.hizbQuarter,
+            "hizbQuarter_min": verse_args.hizbQuarter_min,
+            "hizbQuarter_max": verse_args.hizbQuarter_max,
+
+            # --- Sajdah ---
+            "sajdah": verse_args.sajdah,
+            "limit": verse_args.limit
+        }
+
+        #filter out the non null parameters
+        clean_args_surah = {k:v for k,v in surah_arguments.items() if v is not None}
+        clean_args_verse = {k:v for k,v in verse_arguments.items() if v is not None}
+
+        print("Clean Surah arguments", clean_args_surah)
+        print("Clean Verse arguments", clean_args_verse)
+        # Initialize filter conditions array for surah filtering    
+        surah_filter_conditions = []    
+        # build the filter
+        for k,v in clean_args_surah.items():        
+            min_or_max = "min" if "_min" in k else ("max" if "_max" in k else None)
+
+            if min_or_max in ("min", "max"):
+                field = k.replace(f"_{min_or_max}", "")
+                if min_or_max == "min":
+                    op = operator.ge
+                elif min_or_max == "max":
+                    op = operator.le
+                surah_filter_conditions.append(lambda surah, f = field, vv = v, o = op: o(surah[field], vv))
             else:
-                
-                url = f"{QURAN_API_BASE}/surah/{surah}/{reciter_info['identifier']}"
-                response = client.get(url, timeout=30.0)
-                if response.status_code != 200:
-                    raise QuranAPIError(f"API returned status {response.status_code}")
-                data = response.json()["data"]
-                ayahs = [{"number": a["numberInSurah"], "audio_url": a.get("audio", "")} for a in data["ayahs"]]
-                return {
-                    "success": True,
-                    "type": "complete_surah",
-                    "surah": {"number": data["number"], "englishName": data["englishName"], "numberOfAyahs": data["numberOfAyahs"]},
-                    "ayahs": ayahs,
-                    "reciter": {"name": reciter_info["name"], "identifier": reciter}
-                }
-    except Exception as e:
-        raise QuranAPIError(str(e))
-
-def parse_quran_audio_request(user_input: str) -> Optional[Dict[str, Any]]:
-    """
-    Parse natural language audio requests using Fuzzy Matching (RapidFuzz).
-    """
-    if not user_input: return None
-    user_input = user_input.lower()
-    
-    if "ayatul kursi" in user_input or "ayat ul kursi" in user_input:
-        return {"surah": 2, "ayah": 255}
-    
-    number_match = re.search(r'(?:surah|surat)\s+(\d+)', user_input)
-    if number_match:
-        surah_num = int(number_match.group(1))
-        ayah_match = re.search(r'(?:ayah|ayat|verse)\s*(\d+)', user_input)
-        if ayah_match:
-            return {"surah": surah_num, "ayah": int(ayah_match.group(1))}
-        return {"surah": surah_num}
-
-    name_match = re.search(r'(?:surah|surat)\s+([a-z\-\s\']+)', user_input)
-    
-    if name_match:
-        raw_name = name_match.group(1).strip()
+                surah_filter_conditions.append(lambda surah, f = k , vv= v: surah[f] == vv)
         
-        best_match_name = normalize_surah(raw_name, surah_name_english_array)
+        all_surah_filter_conditions = lambda surah: all (cond(surah) for cond in surah_filter_conditions)
+
+        # apply the surah filter
+        filtered_array = list(filter(all_surah_filter_conditions, filtered_array))
         
-        if best_match_name:
-            surah_number = None
-            for meta in comprehensive_surah_metadata:
-              
-                meta_name = meta.get("englishName")
-                if meta_name == best_match_name:
-                    surah_number = int(meta.get("surah_number"))
-                    break
+        # Initialize filter conditions array for verse filtering
+        verse_filter_conditions = []
+        for k,v in clean_args_verse.items():
+            if k == "limit":
+                continue
+            min_or_max = "min" if "_min" in k else ("max" if "_max" in k else None) 
+            # check for minimum and maximum values in the key
             
-            if surah_number:
-                
-                ayah_match = re.search(r'(?:ayah|ayat|verse)\s*(\d+)', user_input)
-                if ayah_match:
-                    return {"surah": surah_number, "ayah": int(ayah_match.group(1))}
-                return {"surah": surah_number}
+            if min_or_max in ("min", "max"):
+                field = k.replace(f"_{min_or_max}", "")
+                if min_or_max == "min":
+                    op = operator.ge
+                elif min_or_max == "max":
+                    op = operator.le
+                verse_filter_conditions.append(lambda ayah, f = field, vv=v, o=op: o(ayah[field], vv))
+            else:
+                verse_filter_conditions.append(lambda ayah, f=k, vv=v: ayah[f] == vv)
 
-    return None
+        all_verse_filter_conditions = lambda ayah: all (cond(ayah) for cond in verse_filter_conditions)
 
-@tool
-def play_quran_audio(query: str) -> str:
-    """
-    Play Quran audio recitation for requested surah or ayah.
-    """
-    print(f"\n=== calling play_quran_audio (SYNC) ===\n📥 user: {query}\n")
-    logging.info(f"[AUDIO_TOOL] Tool called with query: {query}")
+        # apply the verse filter
+        new_filtered_array = []
 
-    try:
-        parsed = parse_quran_audio_request(query)
-        logging.info(f"[AUDIO_TOOL] Parsed result: {parsed}")
+        # interface SurahForAudios {
+        #     name: string;
+        #     englishName: string;
+        #     revelationType: string;
+        #     ayahs: VerseForImages[]
+        # }
 
-        if not parsed:
-            return "I couldn't understand which surah you want to listen to."
+        # interface VerseForAudios {
+        #     audio: string;
+        #     numberInSurah: number;
+        #     juz: number;
+        #     manzil: number;
+        #     ruku: number;
+        #     sajda: boolean | SajdaVerse
+        # }
 
-        result = get_quran_audio(
-            surah=parsed["surah"],
-            ayah=parsed.get("ayah"),
-            reciter="alafasy"
-        )
+        for surah in filtered_array:
+            filtered_verses = list(filter(all_verse_filter_conditions, surah['ayahs']))
+            if filtered_verses:
+                new_surah = surah.copy()
+                new_surah['ayahs'] = filtered_verses[:clean_args_verse['limit']]
+                new_filtered_array.append(new_surah)
 
-        if not result.get("success"):
-            return f"Sorry, couldn't fetch audio: {result.get('error', 'Unknown error')}"
-
-        if result["type"] == "single_ayah":
-            return f"Audio URL for **Surah {result['surah']['englishName']}**, Ayah {result['ayah']['number']}: {result['ayah']['audio_url']}"
-        else:
-            return f"Audio URL for **Surah {result['surah']['englishName']}**: {result['ayahs'][0]['audio_url']} (Full surah available)"
-
-    except Exception as e:
-        logging.exception(f"[AUDIO_TOOL] Exception: {str(e)}")
-        return f"Error fetching audio: {str(e)}"
-
-def extract_audio_data(response_text: str) -> Optional[dict]:
-    logging.info(f"[EXTRACT_AUDIO] Text start: {response_text[:100]}...")
-    
-    if not response_text:
-        return None
-
-    if "🎧" in response_text or "http" in response_text:
-        import re
-
-        surah_regex = r'(?:Surah|surah)\s+([^\(\)\d,:]+?)(?=\s*(?:\(|\d|,|Ayah|ayah|:))'
-        ayah_match = re.search(r'(?:Ayah|ayah|Verse|verse)[sS]?\s*(\d+)', response_text)
+        filtered_array = new_filtered_array
         
-        url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
-        urls = re.findall(url_pattern, response_text)
-        
-        surah_match = re.search(surah_regex, response_text)
+        for surah in filtered_array:
+            new_verses = []
+            for verse in surah["ayahs"]:
+                new_verses.append({
+                    "audio": verse.get("audio") or (verse.get("audioSecondary") or [""])[0],
+                    "numberInSurah": verse.get("numberInSurah"),
+                    "juz": verse.get("juz", ""),
+                    "manzil": verse.get("manzil", ""),
+                    "ruku": verse.get("ruku", ""),
+                    "sajda": verse.get("sajda")
+                })
 
-        if urls:
-            surah_name_raw = "Unknown"
-            best_match_name = None
-            surah_number = None
-
-            if surah_match:
-                
-                raw_capture = surah_match.group(1)
-                surah_name_raw = clean_surah_name(raw_capture)
-                
-             
-                surah_number = get_surah_id_from_name(surah_name_raw)
-                if surah_number:
-                    logging.info(f"[EXTRACT_AUDIO] Manual Override Match: '{surah_name_raw}' -> {surah_number}")
-
-                if not surah_number:
-                    best_match_name = normalize_surah(surah_name_raw, surah_name_english_array)
-                    if best_match_name:
-                        for meta in comprehensive_surah_metadata:
-                            if meta.get("englishName") == best_match_name:
-                                surah_number = int(meta.get("surah_number")) 
-                                break
-            
-            if not surah_number:
-                chapter_match = re.findall(r'(?:Chapter|Surah|\()\s*(\d+)', response_text)
-                for num_str in chapter_match:
-                    num = int(num_str)
-                    if 1 <= num <= 114:
-                        surah_number = num
-                        logging.info(f"[EXTRACT_AUDIO] Fallback: Found Chapter number {surah_number} in text")
-                        break
-
-            if not surah_number:
-                logging.warning(f"[EXTRACT_AUDIO] Could not identify Surah. Defaulting to 1.")
-                surah_number = 1 
-
-            extracted_ayah = int(ayah_match.group(1)) if ayah_match else None
-            logging.info(f"[EXTRACT_AUDIO] Final Result - Surah: {surah_number}, Ayah: {extracted_ayah}")
-
-            return {
-                "has_audio": True,
-                "audio_url": urls[0],
-                "all_urls": urls,
-                "surah_name": best_match_name or surah_name_raw, 
-                "surah_number": surah_number, 
-                "ayah_number": extracted_ayah,
-                "full_response": response_text
-            }
-
-    return None
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+            surah_array.append({
+                "name": surah.get("name", ""),
+                "englishName": surah.get("englishName", ""),
+                "englishNameTranslation": surah.get("revelationType", ""),
+                "ayahs": new_verses,
+            })
+        print("Surah array", surah_array)
+    if surah_array:
+        return surah_array
+    else:
+        return "No results found for the user query"

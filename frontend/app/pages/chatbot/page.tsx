@@ -6,12 +6,12 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { ReactNode, useEffect, useRef, useState } from "react";
 import ChatProvider from "@/app/providers/chatbot/ChatProvider";
-import AttachIcon from "../../../icons/attach_icon.svg";
 import DisclaimerIcon from "../../../icons/disclaimer.svg";
 import UndoArrow from "../../../icons/refresh.svg";
-import DownArrow from ".../icons/arrow-down-head.svg";
-import SimpleAudioDialog from "../../components/chatbot/UI/AudioDialogBox";
-import { AssistantMessage } from "@/app/components/chatbot/interfaces/ChatMessage";
+import CrossIcon from "../../../icons/cross_icon.svg"
+import { AssistantMessage, Attachment } from "@/app/components/chatbot/interfaces/ChatMessage";
+import TextFileIcon from "../../../icons/text-file-icon.svg"
+import PdfFileIcon from "../../../icons/pdf-file-icon.svg"
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { dracula } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import {
@@ -21,11 +21,11 @@ import {
   AnimatePresence,
   useAnimationControls,
 } from "framer-motion";
+// import AttachIcon from "../../../icons/attach_icon.svg"
 import ProtectedRoute from "@/app/utils/ProtectedRoutes";
 import RegistrationForm, {
   RegistrationData,
 } from "@/app/components/chatbot/UI/ReactForm";
-import { audioScheduler } from "../../utils/AudioScheduler";
 import { ModelList } from "@/static/data";
 import BottomOptions from "../../components/chatbot/UI/BottomOptions";
 import ExtraOptions from "../../components/chatbot/UI/ExtraOptions";
@@ -36,15 +36,16 @@ import Controls from "../../components/chatbot/UI/Controls";
 import PromptExtraOptions from "../../components/chatbot/UI/PrompExtraOptions";
 import generateUUID from "@/utils/generateShortId";
 import { generateNewSessionId } from "@/app/session/session";
-import { ChatHisoryDialoguseBox } from "../../components/chatbot/UI/ChatHistoryDialogueBox";
+import { ChatHisoryDialogueBox } from "../../components/chatbot/UI/ChatHistoryDialogueBox";
 import { ChatRecord } from "@/app/context/chatbot/ChatContext";
-import { PromptExtraOptionsContext } from "@/app/context/chatbot/PromptExtraOptionsContext";
+import { SurahForAudios, SurahForVerseImages } from "@/app/components/chatbot/interfaces/Surah";
 import ReportContentDialogueBox from "../../components/chatbot/UI/ReportContentDialogueBox";
 import { ChatMessage } from "../../components/chatbot/interfaces/ChatMessage";
-import QuranAudioDialog from "../../components/chatbot/UI/AudioDialogBox";
-import QuranVerseDialog from "../../components/chatbot/UI/QuranVerseDialog";
+import QuranDialogBox from "@/app/components/chatbot/UI/QuranDialogBox";
 import groupChatMessages from "@/utils/groupChatMessages";
 import WaveForm from "../../components/chatbot/UI/WaveForm";
+import hidePromptExtraOptionsModelBoxArray from "@/app/components/chatbot/interfaces/hidePromptExtraOptionsModelBoxArray";
+
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -67,35 +68,33 @@ export default function ChatPage() {
   const [streamingMessageIndex, setStreamingMessageIndex] = useState<
     number | null
   >(null);
+
+  const currentPlayableAudio = useRef<{ user_message_id: string, response_message_id: string, state: "loading" | "playing" | "paused" | "ended" | null } | null>(null);
+
   const [messageIDs, setMessageIDs] = useState<(string | null)[] | null>(null);
-
-  const [showAudioDialog, setShowAudioDialog] = useState(false);
-  const [audioRequest, setAudioRequest] = useState<any>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [showQuranVerseDialog, setShowQuranVerseDialog] = useState(false);
-  const [verseRequest, setVerseRequest] = useState<any>(null);
-
-  const [showQuranPlayer, setShowQuranPlayer] = useState(false);
   const [chatHistory, setChatHistory] = useState<ChatRecord[] | null>(null);
   const messageScrollFlag = useRef<boolean | null>(false);
   const committedTextRef = useRef<string>("");
   const tempSpeechRef = useRef<string>("");
 
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [hideReportContentDialogueBox, setHideReportContentDialogueBox] =
     useState<boolean | null>(true);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [attachFileType, setAttachFileType] = useState<string | null>(null)
 
   const [isUploading, setIsUploading] = useState(false);
   const [uploadResponse, setUploadResponse] = useState<any>(null);
-
   const currentMessageIDRef = useRef<string | null>(null);
   const [reportedMessageIDs, setReportedMessageIDs] = useState<string[] | null>(
     []
   );
   const [userData, setUserData] = useState<RegistrationData | null>(null);
-
   const oldMessagesRef = useRef<AssistantMessage[]>([]);
   const controls = useAnimationControls();
+  const [hidePromptExtraOptionsModelBoxArray, setHidePromptExtraOptionsModelBoxArray] =
+    useState<hidePromptExtraOptionsModelBoxArray[]>([]);
+
 
   function preprocessContent(content: string) {
     if (!content) return "";
@@ -110,21 +109,129 @@ export default function ChatPage() {
     return processed;
   }
 
-  function chunkText(text: string, size = 4) {
-    const words = text.split(/\s+/);
-    const chunks = [];
+  useEffect(() => {
+    if (!attachedFile) return
+    const ext = attachedFile.name.split('.').pop();
+    if (ext) {
+      switch (ext.toLowerCase()) {
+        case "txt":
+          setAttachFileType("Text")
+          break
+        case "pdf":
+          setAttachFileType("PDF")
+          break
+        default:
+          break
+      }
 
-    for (let i = 0; i < words.length; i += size) {
-      chunks.push(words.slice(i, i + size).join(" "));
     }
-    return chunks;
-  }
+  }, [attachedFile])
+
+  useEffect(() => {
+    const audioEl = audioRef.current;
+    if (!audioEl) return;
+
+    const handlePlay = () => {
+      // update ref for centralized audio management
+      if (currentPlayableAudio.current) {
+        currentPlayableAudio.current.state = "playing"
+      }
+      console.log("Play fired")
+      console.log("Current Playable Audio", currentPlayableAudio)
+      setMessages(prev =>
+        prev.map(m =>
+          m.message_id === currentPlayableAudio.current?.user_message_id
+            ? {
+              ...m,
+              responses: m.responses.map(n =>
+                n.message_id === currentPlayableAudio.current?.response_message_id
+                  ? { ...n, audio_state: "playing" }
+                  // nullify the rest
+                  : { ...n, audio_state: null }
+              ),
+            }
+            : { ...m, responses: m.responses.map(b => ({ ...b, audio_state: null })) }
+        )
+      );
+    };
+
+    const handlePause = () => {
+
+      // update ref for centralized audio management
+      if (currentPlayableAudio.current) {
+        currentPlayableAudio.current.state = "paused"
+      }
+      console.log("paused fired")
+      setMessages(prev =>
+        prev.map(m =>
+          m.message_id === currentPlayableAudio.current?.user_message_id
+            ? {
+              ...m,
+              responses: m.responses.map(n =>
+                n.message_id === currentPlayableAudio.current?.response_message_id
+                  ? { ...n, audio_state: "paused" }
+                  : n
+              ),
+            }
+            : m
+        )
+      );
+    };
+
+    const handleEnded = () => {
+      // update ref for centralized audio management
+      if (currentPlayableAudio.current) {
+        currentPlayableAudio.current.state = "ended"
+      }
+      console.log("ended fired")
+      setMessages(prev =>
+        prev.map(m =>
+          m.message_id === currentPlayableAudio.current?.user_message_id
+            ? {
+              ...m,
+              responses: m.responses.map(n =>
+                n.message_id === currentPlayableAudio.current?.response_message_id
+                  ? { ...n, audio_state: "ended" }
+                  : n
+              ),
+            }
+            : m
+        )
+      );
+    };
+
+    audioEl.addEventListener("play", handlePlay);
+    audioEl.addEventListener("pause", handlePause);
+    audioEl.addEventListener("ended", handleEnded);
+
+    return () => {
+      audioEl.removeEventListener("play", handlePlay);
+      audioEl.removeEventListener("pause", handlePause);
+      audioEl.removeEventListener("ended", handleEnded);
+
+      // reset state for this audio
+      setMessages(prev =>
+        prev.map(m =>
+          m.message_id === currentPlayableAudio.current?.user_message_id
+            ? {
+              ...m,
+              responses: m.responses.map(n =>
+                n.message_id === currentPlayableAudio.current?.response_message_id
+                  ? { ...n, audio_state: null }
+                  : n
+              ),
+            }
+            : m
+        )
+      );
+    };
+  }, [audioRef.current]);
 
   useEffect(() => {
     const handleMicStart = () => {
-        setIsRecording(true);
-        setIsTranscribing(false);
-        tempSpeechRef.current = ""; 
+      setIsRecording(true);
+      setIsTranscribing(false);
+      tempSpeechRef.current = "";
     };
 
     const handleMicStop = () => {
@@ -132,24 +239,17 @@ export default function ChatPage() {
     };
 
     const handleTranscriptionStart = () => {
-        setIsTranscribing(true);
+      setIsTranscribing(true);
     };
 
     const handleTranscriptionEnd = () => {
-        setIsTranscribing(false);
+      setIsTranscribing(false);
     };
 
     const handleSTTResult = (e: Event) => {
-        setIsTranscribing(false);
-        const customEvent = e as CustomEvent;
-        const text = customEvent.detail;
-        
-        if (inputRef.current && text) {
-            const currentText = inputRef.current.innerText.trim();
-            const newText = currentText ? `${currentText} ${text}` : text;
-            
-            inputRef.current.innerText = newText;
-            committedTextRef.current = newText;
+      setIsTranscribing(false);
+      const customEvent = e as CustomEvent;
+      const text = customEvent.detail;
 
       if (inputRef.current && text) {
         const currentText = inputRef.current.innerText.trim();
@@ -173,17 +273,17 @@ export default function ChatPage() {
     window.addEventListener("tadabbur-mic-start", handleMicStart);
     window.addEventListener("tadabbur-mic-stop", handleMicStop);
     window.addEventListener("tadabbur-transcription-start", handleTranscriptionStart);
-    window.addEventListener("tadabbur-transcription-error", handleTranscriptionEnd); 
+    window.addEventListener("tadabbur-transcription-error", handleTranscriptionEnd);
     window.addEventListener("tadabbur-stt-result", handleSTTResult);
 
     return () => {
-        window.removeEventListener("tadabbur-mic-start", handleMicStart);
-        window.removeEventListener("tadabbur-mic-stop", handleMicStop);
-        window.removeEventListener("tadabbur-transcription-start", handleTranscriptionStart);
-        window.removeEventListener("tadabbur-transcription-error", handleTranscriptionEnd);
-        window.removeEventListener("tadabbur-stt-result", handleSTTResult);
+      window.removeEventListener("tadabbur-mic-start", handleMicStart);
+      window.removeEventListener("tadabbur-mic-stop", handleMicStop);
+      window.removeEventListener("tadabbur-transcription-start", handleTranscriptionStart);
+      window.removeEventListener("tadabbur-transcription-error", handleTranscriptionEnd);
+      window.removeEventListener("tadabbur-stt-result", handleSTTResult);
     };
-}, []);
+  }, []);
   // In your element
   useEffect(() => {
     const websocket = new WebSocket("ws://localhost:8000/ws/chat");
@@ -216,26 +316,6 @@ export default function ChatPage() {
 
       const type = data.type;
       switch (type) {
-        case "open_audio_dialog":
-          // This is triggered when user asks to listen to Quran
-          setAudioRequest({
-            parsed_request: data.parsed_request,
-            original_message: data.original_message,
-            available_reciters: data.available_reciters,
-            note: data.note || null,
-          });
-          setShowAudioDialog(true);
-          break;
-
-        case "open_verse_dialog":
-          setVerseRequest({
-            parsed_request: data.parsed_request,
-            original_message: data.original_message,
-            note: data.note || null,
-          });
-          setShowQuranVerseDialog(true);
-          break;
-
         case "undo-report":
           const id = data.message_id;
           if (id) {
@@ -246,16 +326,26 @@ export default function ChatPage() {
           }
           break;
 
-        case "tts_audio_chunk":
-          const audioBase64 = data.audio;
+        case "tts_audio_url":
           const audio_url = data.audio_url;
-          if (audio_url && audioRef.current) {
-            audioRef.current.src = audio_url;
-            audioRef.current?.play();
+          const tts_message_id = data.message_id;
+          const user_message_id = data.user_id
+          if (audio_url && tts_message_id && user_message_id) {
+            // logic here
+            try {
+              // store the audio_url for next playback
+              setMessages(prev => prev.map(m => m.message_id === user_message_id ? { ...m, responses: m.responses.map(r => r.message_id === tts_message_id ? { ...r, audio_link: audio_url } : r) } : m))
+
+              // only play if current playable audio is the one that matches response ID
+              if (audioRef.current && currentPlayableAudio.current?.response_message_id == tts_message_id) {
+                audioRef.current.src = ""
+                audioRef.current.src = audio_url
+                audioRef.current.play()
+              }
+            } catch (err) {
+              console.log("Some error occured while assigning audio url", err)
+            }
           }
-          // if (audioBase64) {
-          //   audioScheduler.scheduleChunk(audioBase64);
-          // }
           break;
 
         case "session_id":
@@ -272,6 +362,7 @@ export default function ChatPage() {
               }
               return prevMessages; // Return unchanged if no messages
             });
+            setHidePromptExtraOptionsModelBoxArray([])
             setMessageIDs(message_ids);
           }
           break;
@@ -304,14 +395,16 @@ export default function ChatPage() {
           break;
 
         case "assistance_response":
-          const reply: string = data.content ?? "No reply from server";
+          const reply: string = data.content.response ?? "No reply from server";
+          const has_verse_audio: boolean = data.content.has_verse_audio
+          const has_verse_image: boolean = data.content.has_verse_image
           const message_id: string = data.message_id;
           // assign reply to message ID with order data.reply_to_message_id >> currentMessageIDRef.current >> null
           const reply_to_message_id =
             data.reply_to_message_id || currentMessageIDRef.current || null;
           const resend_flag = data.resend_flag;
-
-          console.log("Current old messages", oldMessagesRef.current);
+          const audio_data: SurahForAudios[] = data.content.audio_data || []
+          const verse_images: SurahForVerseImages[] = data.content.verse_images || []
 
           // check if oldMessages is present with resend flag
           if (resend_flag) {
@@ -326,6 +419,14 @@ export default function ChatPage() {
 
           messageScrollFlag.current = false;
           setLoadingMessage(null);
+
+          // add a new object for the upcoming assistant's message
+          setHidePromptExtraOptionsModelBoxArray((prev) => {
+            return [
+              ...(prev || []),
+              { assistant_message_id: message_id, hidePromptExtraOptionsModelBox: true }
+            ];
+          });
 
           // Add a new assistant message
           setMessages((prev) => {
@@ -358,6 +459,12 @@ export default function ChatPage() {
                 content: "",
                 reply_to_message_id: reply_to_message_id,
                 feedback: null,
+                audio_link: null,
+                audio_state: null,
+                has_verse_audio: has_verse_audio,
+                verse_audio_data: audio_data,
+                has_verse_image: has_verse_image,
+                verse_images: verse_images
               });
 
               // set the number of active message index
@@ -368,26 +475,27 @@ export default function ChatPage() {
             return updated;
           });
 
+
           setLoading(false);
           setLoadingMessage(null);
-          const tokens = reply.split(/(\s+)/); 
+          const tokens = reply.split(/(\s+)/);
 
           (async () => {
             for (let i = 0; i < tokens.length; i += 4) {
               const chunk = tokens.slice(i, i + 4).join("");
-              
+
               await new Promise((resolve) => setTimeout(resolve, 2));
 
               setMessages((prev) => {
                 if (!prev || prev.length === 0) return prev;
                 const updated = [...prev];
                 const streamIndex = streamingMessageIndex ?? updated.length - 1;
-                
+
                 if (streamIndex >= 0 && streamIndex < updated.length) {
                   const lastMsg = updated[streamIndex];
                   const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
-                  
-                  updated[streamIndex].responses[lastResIdx].content = 
+
+                  updated[streamIndex].responses[lastResIdx].content =
                     (updated[streamIndex].responses[lastResIdx].content || "") + chunk;
                 }
                 return updated;
@@ -445,6 +553,12 @@ export default function ChatPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (attachedFile && !uploadResponse && !isUploading) {
+      performBackgroundUpload(attachedFile);
+    }
+  }, [attachedFile, uploadResponse, isUploading]);
+
   const performBackgroundUpload = async (file: File) => {
     setIsUploading(true);
     const formData = new FormData();
@@ -461,40 +575,45 @@ export default function ChatPage() {
         const err = await response.json();
         console.error(`Upload failed: ${err.detail}`);
         setAttachedFile(null); // Clear file on error
+        setAttachFileType(null);
         setIsUploading(false);
         return;
       }
 
       const data = await response.json();
       // Store the data to be used when user hits Enter
-      setUploadResponse(data); 
+      setUploadResponse(data);
     } catch (error) {
       console.error("Upload error:", error);
       setAttachedFile(null);
+      setAttachFileType(null);
     } finally {
       setIsUploading(false);
     }
   };
 
-  useEffect(() => {
-    if (attachedFile && !uploadResponse && !isUploading) {
-      performBackgroundUpload(attachedFile);
-    }
-  }, [attachedFile, uploadResponse, isUploading]);
 
   const ask = async (
     input: string,
     guidelines: string | null = null,
     resend_flag: boolean = false,
     resend_message_id: string | null = null,
-    old_assistant_responses = []
+    old_responses_attachments: { responses: [], attachments: [] } | null = null
   ) => {
     if (streamingMessageIndex !== null || !input.trim()) return;
 
     if (resend_flag) {
-      if (!old_assistant_responses || old_assistant_responses.length === 0) {
+      if (!old_responses_attachments || old_responses_attachments.responses.length === 0) {
         console.log("No old assistant responses, continuing....");
         return;
+      }
+      else {
+        // remove the message object only with the user's message id
+        setMessages((prev: ChatMessage[]) =>
+          prev.filter(
+            (m: any) => m.message_id !== resend_message_id
+          )
+        );
       }
     }
     setError(null);
@@ -520,10 +639,23 @@ export default function ChatPage() {
       return;
     }
 
+
+    let attachments_array: Attachment[] = []
+    if (uploadResponse) {
+      if (attachedFile?.name && attachFileType) {
+        attachments_array.push({ attachmentName: attachedFile?.name, attachmentType: attachFileType })
+      }
+      // Reset file states
+      setAttachedFile(null);
+      setAttachFileType(null);
+      setUploadResponse(null);
+    }
+
     const userMessage: ChatMessage = {
       message_id: messageID,
       role: "user",
       content: input,
+      attachments: resend_flag ? old_responses_attachments?.attachments ?? [] : attachments_array,
       // add a dummy response message for loading state
       responses: [
         {
@@ -532,24 +664,18 @@ export default function ChatPage() {
           reply_to_message_id: "",
           content: "",
           feedback: null,
+          audio_link: null,
+          audio_state: null,
+          has_verse_audio: false,
+          verse_audio_data: [],
+          has_verse_image: false,
+          verse_images: []
         },
       ],
-      number_of_responses: resend_flag ? old_assistant_responses.length : 0,
+      number_of_responses: resend_flag ? old_responses_attachments?.responses.length ?? 0 : 0,
       active_message_index: 0,
     };
-    oldMessagesRef.current = resend_flag ? old_assistant_responses : [];
-
-    // lastUserMessage.responses.push({
-    //   role: "assistant",
-    //   message_id: message_id,
-    //   content: "",
-    //   reply_to_message_id: reply_to_message_id,
-    //   feedback: null,
-    // });
-
-    // // set the number of active message index
-    // lastUserMessage.active_message_index =
-    //   lastUserMessage.number_of_responses - 1;
+    oldMessagesRef.current = resend_flag ? old_responses_attachments?.responses ?? [] : [];
 
     setMessages((prev) => {
       // prev is already typed correctly from useState
@@ -592,22 +718,6 @@ export default function ChatPage() {
           alert("File is still uploading, please wait a moment...");
           return;
         }
-
-        if (uploadResponse) {
-          setMessages((prev: any) => [
-            ...(prev || []),
-            {
-              message_id: uploadResponse.message_id, // Use ID from the background upload
-              role: "user",
-              content: `📂 Attached file: ${attachedFile.name}`,
-              feedback: null,
-            },
-          ]);
-          
-          // Reset file states
-          setAttachedFile(null);
-          setUploadResponse(null);
-        }
       }
 
       const input = inputRef.current?.innerText;
@@ -637,50 +747,26 @@ export default function ChatPage() {
     reply_to_message_id: string | null;
   }
 
-  const PromptExtraOptionsProvider: React.FC<
-    PromptExtraOptionsProviderProps
-  > = ({
-    children,
-    message_id,
-    reply_to_message_id,
-    parent_index,
-    assistant_index,
-  }) => {
-    const [hidePromptExtraOptionsModelBox, setHidePromptExtraOptionsModelBox] =
-      useState<boolean | null>(true);
+  // const PromptExtraOptionsProvider: React.FC<
+  //   PromptExtraOptionsProviderProps
+  // > = ({
+  //   children,
+  // }) => {
+  //     const [hideResendPromptDialogue, setHideResendPromptDialogue] = useState<
+  //       boolean | null
+  //     >(true);
 
-    const [hideResendPromptDialogue, setHideResendPromptDialogue] = useState<
-      boolean | null
-    >(true);
-    const [activeMessageIndex, setActiveMessageIndex] = useState<number | null>(
-      0
-    );
-    return (
-      <PromptExtraOptionsContext.Provider
-        value={{
-          parent_index,
-          assistant_index,
-          messages,
-          setMessages,
-          message_id,
-          reply_to_message_id,
-          hidePromptExtraOptionsModelBox,
-          setHidePromptExtraOptionsModelBox,
-          hideReportContentDialogueBox,
-          setHideReportContentDialogueBox,
-          sessionID,
-          wsRef,
-          ask,
-          hideResendPromptDialogue,
-          setHideResendPromptDialogue,
-          activeMessageIndex,
-          setActiveMessageIndex,
-        }}
-      >
-        {children}
-      </PromptExtraOptionsContext.Provider>
-    );
-  };
+  //     return (
+  //       <PromptExtraOptionsContext.Provider
+  //         value={{
+  //           hideResendPromptDialogue,
+  //           setHideResendPromptDialogue,
+  //         }}
+  //       >
+  //         {children}
+  //       </PromptExtraOptionsContext.Provider>
+  //     );
+  //   };
 
   return (
     <ProtectedRoute>
@@ -692,7 +778,7 @@ export default function ChatPage() {
               setGreeting(
                 `Assalamu Alaykum ${data.username}! 🌟 I am Tadabbur, your friend!`
               );
-              setPlaceholder("Tell me a about prophets...");
+              setPlaceholder("Tell me about prophets...");
             } else {
               setGreeting(
                 `Assalamu Alaykum ${data.username}, I am Tadabbur. How may I assist you with your Quranic studies?`
@@ -711,39 +797,26 @@ export default function ChatPage() {
             setAttachedFile={setAttachedFile}
             messages={messages}
             setMessages={setMessages}
+            audioRef={audioRef}
+            ask={ask}
+            currentPlayableAudio={currentPlayableAudio}
+            hideReportContentDialogueBox={hideReportContentDialogueBox}
+            setHideReportContentDialogueBox={setHideReportContentDialogueBox}
+            hidePromptExtraOptionsModelBoxArray={hidePromptExtraOptionsModelBoxArray}
+            setHidePromptExtraOptionsModelBoxArray={setHidePromptExtraOptionsModelBoxArray}
           >
-            <ChatHisoryDialoguseBox />
-            {showAudioDialog && audioRequest && (
-              <QuranAudioDialog
-                isOpen={showAudioDialog}
-                onClose={() => setShowAudioDialog(false)}
-                parsedRequest={audioRequest.parsed_request}
-                originalMessage={audioRequest.original_message}
-                availableReciters={audioRequest.available_reciters}
-                wsRef={wsRef}
-              />
-            )}
-            {showQuranVerseDialog && verseRequest && (
-              <QuranVerseDialog
-                isOpen={showQuranVerseDialog}
-                onClose={() => setShowQuranVerseDialog(false)}
-                parsedRequest={verseRequest.parsed_request}
-                originalMessage={verseRequest.original_message}
-                note={verseRequest.note}
-                wsRef={wsRef}
-              />
-            )}
+            <ChatHisoryDialogueBox />
+
             <div className="w-full h-full flex flex-col items-center overflow-y-auto">
               <div className="absolute top-0 p-2 w-full">
                 <Controls wsRef={wsRef} />
               </div>
               <div
-                className={`w-full ${
-                  messages && messages?.length > 0 ? "h-max" : "h-full"
-                }
-             px-4 mt-12 lg:w-2/3 chat-box flex flex-col gap-y-4 ${
-               !messages ? "justify-center items-center" : ""
-             }`}
+                id=" chat-box-messages"
+                className={`w-full ${messages && messages?.length > 0 ? "h-max" : "h-full"
+                  }
+             px-4 mt-12 lg:w-2/3 flex flex-col gap-y-4 ${!messages ? "justify-center items-center" : ""
+                  }`}
               >
                 <AnimatePresence>
                   {messages?.length === 0 && (
@@ -833,20 +906,36 @@ export default function ChatPage() {
                   {messages?.map((record, record_index) => {
                     return (
                       <div key={record_index}>
+                        {record?.attachments?.length > 0 && (
+                          record.attachments.map((attachment, attachment_index) => {
+                            return (
+                              <div key={attachment_index} id="chatbot-messages-box" className="w-max min-w-60 max-w-70 border border-black/5 ml-auto px-3 py-3 rounded-md text-xs flex items-center gap-x-2 my-2 relative">
+                                {attachment.attachmentType === "Text" ? (
+                                  <div className="p-1 border border-[#FFA800]/10 shadow-[0.1rem] rounded-md bg-[#FFA800]/10">
+                                    <TextFileIcon className="fill-current text-blue-400 w-8 h-8" />
+                                  </div>
+                                ) : attachment.attachmentType === "PDF" ? (
+                                  <PdfFileIcon className="fill-current text-blue-400 w-8 h-8" />
+                                ) : (null)}
+                                <div className="absolute border border-black/5 rounded-md w-max px-2 py-0.5 poppins-semibold -top-3 z-10 -right-2 shadow-2xs fill-current text-black/30 bg-gray-50 subpixel-antialiased">
+                                  <p>ATTACHED</p>
+                                </div>
+                                <div className="flex flex-col gap-y-0.5">
+                                  <p className="roboto-600 text-[0.9rem]">{attachment.attachmentName}</p>
+                                  <p className="subpixel-antialiased text-black/70" style={{ fontStyle: "italic" }}>{attachment.attachmentType ? attachment.attachmentType : "File"} File</p>
+                                </div>
+                              </div>
+                            )
+                          })
+                        )}
                         <div>
                           <p className="ml-auto w-max min-w-40 max-w-[20rem] bg-neutral-900 text-white switzer-500 py-2 px-3 rounded-md shadow-md border border-black/5">
                             {record.content}
                           </p>
                         </div>
                         <div>
-                          <PromptExtraOptionsProvider
-                            message_id={record.message_id}
-                            reply_to_message_id={null}
-                            parent_index={record_index}
-                            assistant_index={null}
-                          >
-                            <PromptExtraOptions messageType={"user"} />
-                          </PromptExtraOptionsProvider>
+                          <PromptExtraOptions message_id={record.message_id} reply_to_message_id={null} parent_index={record_index} assistant_index={null} messageType="user" />
+
                         </div>
                         {record?.responses?.map((ai_msg, ai_msg_idx) => {
                           // loading circle logic here
@@ -967,7 +1056,7 @@ export default function ChatPage() {
                                       />
                                     ),
                                     table: ({ node, ...props }) => (
-                                      <div className="overflow-x-auto my-4 border rounded-lg shadow-sm">
+                                      <div className="overflow-x-auto my-4 border border-black/20 rounded-lg shadow-sm">
                                         <table className="min-w-full divide-y divide-gray-200" {...props} />
                                       </div>
                                     ),
@@ -981,10 +1070,10 @@ export default function ChatPage() {
                                       <tr className="hover:bg-gray-50" {...props} />
                                     ),
                                     th: ({ node, ...props }) => (
-                                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b" {...props} />
+                                      <th className="px-4 py-3 text-left text-sm font-medium text-black uppercase tracking-wider border-b" {...props} />
                                     ),
                                     td: ({ node, ...props }) => (
-                                      <td className="px-4 py-3 text-sm text-gray-700 border-b whitespace-pre-wrap" {...props} />
+                                      <td className="px-4 py-3 text-sm text-gray-700 border-b border-black/20 whitespace-pre-wrap" {...props} />
                                     ),
 
                                     code({ node, inline, className, children, ...props }: any) {
@@ -1021,20 +1110,32 @@ export default function ChatPage() {
                                   ai_msg?.message_id
                                 ) && (
                                   <div>
-                                    <PromptExtraOptionsProvider
+                                    <PromptExtraOptions
                                       message_id={ai_msg?.message_id}
                                       reply_to_message_id={
                                         ai_msg?.reply_to_message_id
                                       }
                                       parent_index={record_index}
                                       assistant_index={ai_msg_idx}
-                                    >
-                                      <PromptExtraOptions
-                                        messageType={"assistant"}
-                                      />
-                                    </PromptExtraOptionsProvider>
+                                      messageType={"assistant"}
+                                    />
                                   </div>
+
                                 )}
+
+                              {ai_msg.has_verse_audio && ai_msg.verse_audio_data.length > 0 && streamingMessageIndex != record_index && (
+                                <QuranDialogBox
+                                  type="audio"
+                                  surahs={ai_msg?.verse_audio_data}
+                                />
+                              )}
+                              <br />
+                              {ai_msg.has_verse_image && ai_msg.verse_images.length > 0 && streamingMessageIndex != record_index && (
+                                <QuranDialogBox
+                                  type="read"
+                                  surahs={ai_msg?.verse_images}
+                                />
+                              )}
                             </div>
                           ) : reportedMessageIDs &&
                             reportedMessageIDs.includes(ai_msg?.message_id) ? (
@@ -1096,53 +1197,65 @@ export default function ChatPage() {
                 </AnimatePresence>
 
                 <div ref={messagesEndRef}></div>
+
               </div>
             </div>
-            <div className="mr-1.5 bg-gray-50 px-4 mt-4 py-4 w-full lg:w-2/3 input-box">
-              <AnimatePresence>
-                {isRecording && (
-                  <div className="absolute bottom-20 left-0 w-full px-4 z-20">
-                    <WaveForm />
+            <AnimatePresence>
+              {isRecording && (
+                <div className="px-4 w-full lg:w-2/3">
+                  <WaveForm />
+                </div>
+              )}
+              {/* NEW: Transcribing Loading State in place of Waveform */}
+
+              {!isRecording && isTranscribing && (
+                <motion.div
+                  key="transcribing"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="w-full px-4 lg:w-2/3 flex"
+                >
+                  <div className="bg-white/90 backdrop-blur-sm border ml-auto border-black/5 shadow-lg rounded-full px-4 py-3 flex items-center gap-x-3">
+
+                    <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin"></div>
+                    <p className="switzer-500 text-sm text-black/80">Transcribing audio...</p>
                   </div>
-                )}
-                {/* NEW: Transcribing Loading State in place of Waveform */}
-                {!isRecording && isTranscribing && (
-                  <motion.div
-                      key="transcribing"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 10 }}
-                      className="absolute bottom-20 left-0 w-full px-4 z-20 flex justify-center"
-                  >
-                      <div className="bg-white/90 backdrop-blur-sm border border-black/5 shadow-lg rounded-full px-5 py-2.5 flex items-center gap-x-3">
-                        {/* Spinner */}
-                        <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin"></div>
-                        <p className="switzer-500 text-sm text-black/80">Transcribing audio...</p>
-                      </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-              <div
-                className="flex flex-col relative border border-black/10 px-3 py-2 rounded-lg h-40 shadow-md bg-white
-        "
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <div className="mr-1.5 py-4 mt-4 px-4 rounded-md w-full lg:w-2/3 input-box">
+
+              <motion.div
+                animate={{ height: attachedFile ? 200 : 160 }}
+                transition={{ duration: 0.2, ease: easeInOut }}
+                className={`flex flex-col relative border border-black/10 px-3 py-2 rounded-lg shadow-md bg-white
+        `}
               >
+
                 {attachedFile && (
-                  <div className="absolute top-2 right-2 bg-gray-100 border border-gray-200 px-3 py-3 rounded-full text-xs flex items-center gap-x-2 z-10">
-                    <span className="flex font-bold text-gray-700">
-                      <AttachIcon className="fill-current text-black w-4 h-4" />
-                      {attachedFile.name}
-                    </span>
-                    <button
-                      onClick={() => {
-                        setAttachedFile(null);
-                        setUploadResponse(null);
-                        setIsUploading(false);
-                      }}
-                      className="text-gray-400 hover:text-red-500 font-bold px-1"
-                    >
-                      ✕
-                    </button>
-                  </div>
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative w-max bg-white border border-black/10 px-3 py-2 rounded-md text-xs flex items-center gap-x-2 z-10">
+                    {attachFileType === "Text" ? (
+                      <div className="p-1 border border-[#FFA800]/10 shadow-[0.1rem] rounded-md bg-[#FFA800]/10">
+                        <TextFileIcon className="fill-current text-blue-400 w-6 h-6" />
+                      </div>
+                    ) : attachFileType === "PDF" ? (
+                      <PdfFileIcon className="fill-current text-blue-400 w-6 h-6" />
+                    ) : (null)}
+                    <div className="flex flex-col gap-y-0.5">
+                      <p className="roboto-600 tracking-wide">{attachedFile.name}</p>
+                      <p className="subpixel-antialiased text-black/70" style={{ fontStyle: "italic" }}>{attachFileType ? attachFileType : "File"} File</p>
+                    </div>
+
+                    <div className="absolute -right-2 -top-1.5 bg-red-400 hover:bg-red-500 p-0.3 rounded-full" onClick={() => {
+                      setAttachedFile(null);
+                      setAttachFileType(null);
+                      setUploadResponse(null);
+                      setIsUploading(false);
+                    }}>
+                      <CrossIcon className="w-4 h-4 cursor-pointer" />
+                    </div>
+                  </motion.div>
                 )}
                 <div
                   ref={inputRef}
@@ -1155,30 +1268,34 @@ export default function ChatPage() {
                     handleInput(e);
                   }}
                   contentEditable
-                  className="h-2/3 switzer-500 focus:outline-none overflow-y-auto"
+                  className={`h-2/3 switzer-500 ${attachedFile ? "pt-[0.3rem]" : ""} focus:outline-none overflow-y-auto`}
                 ></div>
 
                 {showPlaceholder && (
                   <span
-                    className={`absolute top-2 pointer-events-none placeholder-input-box switzer-500 text-black`}
+                    className={`absolute ${attachedFile ? "top-16" : "top-2"} pointer-events-none placeholder-input-box switzer-500 text-black`}
                   >
                     {placeholder}
                   </span>
                 )}
+
                 <BottomOptions />
                 <ExtraOptions />
                 <ModelBox modelList={ModelList} />
-              </div>
+              </motion.div>
             </div>
 
             <ReportContentDialogueBox
               hideReportContentDialogueBox={hideReportContentDialogueBox}
               setHideReportContentDialogueBox={setHideReportContentDialogueBox}
             />
-            <audio className="hidden" controls ref={audioRef} />
           </ChatProvider>
-        </div>
-      )}
-    </ProtectedRoute>
+
+          <audio className="hidden" controls ref={audioRef} />
+
+        </div >
+      )
+      }
+    </ProtectedRoute >
   );
 }

@@ -19,7 +19,7 @@ embeddings = FireworksEmbeddings(
 )
 
 class ToolSchema(BaseModel):
-    "Surah filters"
+    "Surah and verse filters"
     surah_number: Optional[int] = Field(default=None)
     surah_number_min: Optional[int] = Field(default=None)
     surah_number_max: Optional[int] = Field(default=None)
@@ -31,31 +31,30 @@ class ToolSchema(BaseModel):
     surah_englishName: Optional[str] = Field(default=None)
     surah_englishNameTranslation: Optional[str] = Field(default=None)
     query: Optional[str] = Field(default=None)
-    limit: Optional[int] = Field(default = None)
 
 class ToolSchemaList(BaseModel):
     "List of surah filters"
     args: List[ToolSchema] = Field(default_factory = list, description = "List of surah filters")
 
-@tool(args_schema = ToolSchema)
+@tool(args_schema = ToolSchemaList)
 def searchAsbabNuzul(
     args: List[ToolSchema] = None
-    ) -> List[dict]:
+    ) -> List:
     """Search tool for searching Asbab e Nuzul (Cicrumstances under revelation)
     
     **ARGS:**
     --- args (List[ToolSchema], optional)
-    Each ToolSchema object contains: 
-    1. surah_number (int)
-    2. surah_number_min (int)
-    3. surah_number_max (int)
-    4. verse_number (int)
-    5. verse_number_min (int)
-    6. verse_number_max (int)
-    7. surah_englishName (int)
-    8. surah_englishNameTranslation (str)
-    8. limit (int)
-    8. query (str)
+    Each ToolSchema object contains the following: 
+        1. surah_number (int)
+        2. surah_number_min (int)
+        3. surah_number_max (int)
+        4. verse_number (int)
+        5. verse_number_min (int)
+        6. verse_number_max (int)
+        7. surah_englishName (int)
+        8. surah_englishNameTranslation (str)
+        8. limit (int)
+        8. query (str)
     
     ### • searchAsbabNuzul
     1. Use searchAsbabNuzul when user asks for queries related to Asbab_Nuzul/Shan_Nuzul (Circumstances of revelation)
@@ -71,7 +70,6 @@ def searchAsbabNuzul(
     2. Do **not** infer metadata such as surah_number, verse_number, surah_englishName, surah_englishNameTranslation.  
     3. If the user provides only surah and ayah numbers → pass **only those fields**.  
     """
-
     
     qdrant_client = QdrantClient(
     url=os.getenv("QDRANT_URL_ENDPOINT"),
@@ -83,8 +81,6 @@ def searchAsbabNuzul(
     for row in args:
         query = row.query
         limit = row.query
-        print("Query", query)
-        print("Limit", limit)
         verse_tool_args = {
             "surah_number": row.surah_number,    
             "surah_number_min": row.surah_number_min,
@@ -97,7 +93,8 @@ def searchAsbabNuzul(
             "surah_englishName": normalize_surah(row.surah_englishName , surah_name_english_array), 
             "surah_englishNameTranslation": normalize_surah(row.surah_englishNameTranslation , surah_name_english_translation_array),
         }
-    
+
+        print("Query", query)
         # if no Qdrant Client, then return
         if not qdrant_client:
             print("Qdrant client not instantiated properly")
@@ -118,8 +115,6 @@ def searchAsbabNuzul(
         # build the filter
         for k,v in clean_arguments.items():
             min_or_max = "min" if "_min" in k else ("max" if "_max" in k else None) 
-
-            print("Min or max", min_or_max)
 
             if min_or_max in ("min", "max"):
                 field = k.replace(f"_{min_or_max}", "")
@@ -162,6 +157,6 @@ def searchAsbabNuzul(
         results_array.append(results)
     if results_array:
         print("Resuls to return", results_array)
-        return results
+        return results_array
     else:
-        print("No results for the query")
+        print("No results found for the user's query")

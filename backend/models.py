@@ -1,6 +1,8 @@
 from pydantic import BaseModel, EmailStr, Field, validator
-from typing import Optional, Literal
+from typing import Optional, Literal, Union
 from datetime import datetime, date
+from typing import List
+import uuid
 
 # ==================== AUTH MODELS ====================
 
@@ -26,8 +28,50 @@ class AuthResponse(BaseModel):
     token: str
     message: str
     loginTime: datetime
-    user_id: str
+    user_id: uuid.UUID
     firstname: str
+
+
+class SajdaVerse(BaseModel):
+    id: Optional[int] = Field(None, description="The id of the sajda verse")
+    recommended: Optional[bool] = Field(None, description = "Sajda recommended or not")
+    obligatory: Optional[bool] = Field(None, description="Sajda obligatory or not")
+
+class Verse(BaseModel):
+    number: Optional[int] = None
+    audio: Optional[str] = None
+    audioSecondary: Optional[List[str]] = None
+    text: Optional[str] = None
+    numberInSurah: Optional[int] = None
+    juz: Optional[int] = None
+    manzil: Optional[int] = None
+    ruku: Optional[int] = None
+    hizbQuarter: Optional[int] = None
+    sajda: Optional[Union[bool, SajdaVerse]] = None
+    verse_image_url: Optional[str] = None
+
+
+class Surah(BaseModel):
+    number: Optional[int] = Field(..., description="The number of the Surah")
+    name: Optional[str] = Field(..., description="The name of the Surah")
+    englishName: Optional[str] = Field(None, description="The english name of the surah")
+    englishNameTranslation: Optional[str] = Field(
+        None, description="The translation of the english name of the surah"
+    )
+    revelationType: Optional[Literal["Meccan", "Medinan"]] = Field(
+        None, description="The type of Revelation: Meccan or Medinan"
+    )
+    ayahs: Optional[List[Verse]] = Field(
+        None, description="List of verses in the Surah"
+    )
+
+class VerseImageData(BaseModel):
+    surah_name: str = Field(..., description = "The name of the surah")
+    surah_englishName: str = Field(..., description = "The engish name of the surah")
+    verse_number_in_surah: int = Field(..., description = "The verse number relative to the Surah")
+    text: str = Field(None, description = "The english translation of the verse" )
+    verse_image_url: str = Field(None, description = "The verse image URL")
+
 
 # ==================== NOTIFICATION MODELS ====================
 
