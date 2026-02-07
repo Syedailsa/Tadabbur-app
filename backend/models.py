@@ -1,8 +1,8 @@
-from pydantic import BaseModel, EmailStr, Field, validator
-from typing import Optional, Literal, Union
+import uuid 
+from typing import List,Optional, Literal, Union
+from pydantic import BaseModel, EmailStr, Field, field_validator
+from typing import Optional, Literal
 from datetime import datetime, date
-from typing import List
-import uuid
 
 # ==================== AUTH MODELS ====================
 
@@ -11,13 +11,13 @@ class SignupRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8)
 
-    @validator('firstname')
+    @field_validator('firstname')
     def firstname_alphanumeric(cls, v):
         if not v.replace('_', '').isalnum():
             raise ValueError('Firstname must be alphanumeric')
         return v
 
-class LoginRequest(BaseModel):
+class LoginRequest(BaseModel): 
     email: EmailStr
     password: str
 
@@ -78,7 +78,7 @@ class VerseImageData(BaseModel):
 class NotificationCreate(BaseModel):
     title: str = Field(..., max_length=200)
     message: str = Field(..., max_length=1000)
-    recipientId: str
+    recipientId: uuid.UUID
 
 class NotificationResponse(BaseModel):
     id: str
@@ -125,10 +125,9 @@ class BookmarkDeleteRequest(BaseModel):
 
 class UserProfileResponse(BaseModel):
     """
-    Production-ready profile response
-    Single profileImageUrl field - simple and clear!
+    Single profileImageUrl field 
     """
-    id: str
+    id: uuid.UUID
     firstname: str
     email: str
     profileImageUrl: Optional[str] = Field(None, description="URL to fetch profile image: /users/image/{id}")
@@ -139,6 +138,19 @@ class UserProfileResponse(BaseModel):
     phoneNumber: Optional[str] = None
     gender: Optional[str] = None
     createdAt: datetime
+
+#  ==================== PERSONALIZATION MODELS ====================
+
+class PersonalizationRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=20, description="User's preferred name")
+    age: int = Field(..., ge=1, le=120, description="User's age")
+
+class PersonalizationResponse(BaseModel):
+    message: str
+    username: Optional[str] = None
+    age: Optional[int] = None
+    is_personalized: bool
+    timestamp: datetime
 
 class EditProfileRequest(BaseModel):
     """Simple edit request - no image field needed"""
@@ -170,7 +182,7 @@ class ImageUploadResponse(BaseModel):
 # ==================== FEEDBACK MODELS ====================
 
 class FeedbackCreate(BaseModel):
-    userId: str
+    userId: uuid.UUID
     message: str = Field(..., max_length=2000)
     rating: Literal["like", "dislike"]
 

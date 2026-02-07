@@ -68,6 +68,20 @@ const ChatProvider: React.FC<ChatProviderProps> = ({
   const [reportedMessageID, setReportedMessageID] = useState<{
     messageID: string;
   } | null>(null);
+  const [userId, setUserId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const user = sessionStorage.getItem('user');
+      if (user) {
+        try {
+          const userData = JSON.parse(user);
+          return userData.id;
+        } catch {
+          return null;
+        }
+      }
+    }
+    return null;
+  });
 
   return (
     <ChatContext.Provider

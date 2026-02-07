@@ -5,7 +5,6 @@ import React, { FC, useContext, useEffect, useRef, useState } from "react";
 import SettingIcon from "../../../../icons/settings_icon.svg";
 import HistoryIcon from "../../../../icons/history_icon.svg";
 import NewChatIcon from "../../../../icons/new_chat_icon.svg";
-import { generateNewSessionId } from "@/app/session/session";
 import { ControlProps } from "../interfaces/ControlProps";
 
 const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
@@ -34,13 +33,23 @@ const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
 
   const InitializeNewSession = () => {
     if (!wsRef.current) return;
-    const session_id = generateNewSessionId();
-    if (!session_id) return;
+
+    const user = sessionStorage.getItem('user');
+    let user_id = null;
+    if (user) {
+      try {
+        const userData = JSON.parse(user);
+        user_id = userData.id;
+      } catch (e) {
+        console.error("Error parsing user data:", e);
+      }
+    }
 
     wsRef.current?.send(
       JSON.stringify({
         type: "session-init",
-        session_id: session_id,
+        session_id: "",
+        user_id: user_id,
         model: "kimi-k2-instruct-0905",
       })
     );
@@ -73,7 +82,17 @@ const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
           >
             <div
               onClick={() => {
-                wsRef.current?.send(JSON.stringify({ type: "chat_history" }));
+                const user = sessionStorage.getItem('user');
+                let user_id = null;
+                if (user) {
+                  try {
+                    const userData = JSON.parse(user);
+                    user_id = userData.id;
+                  } catch (e) {
+                    console.error("Error parsing user data:", e);
+                  }
+                }
+                wsRef.current?.send(JSON.stringify({ type: "chat_history", user_id: user_id }));
                 setOpenChatHistoryDialogueBox(true);
               }}
               onMouseOver={() => {

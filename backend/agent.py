@@ -1010,6 +1010,12 @@ def get_agent_by_user_age( age: int , username: str, model_key: str = None ):
         user_context=user_context_str 
     )
 
+    tool_protection = ToolRetryMiddleware(
+        max_retries=1,  
+        on_failure=custom_tool_error_handler, 
+        backoff_factor=1.0,
+    )
+ 
     return create_agent(
         name="QuranTadabburAgent",
         model = llm,

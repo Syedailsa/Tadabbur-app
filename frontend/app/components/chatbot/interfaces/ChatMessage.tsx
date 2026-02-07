@@ -1,5 +1,4 @@
-import Surah from "./Surah"
-
+import { SurahForAudios, SurahForVerseImages } from "./Surah";
 interface ChatMessage {
   message_id: string;
   role: "user";
@@ -8,6 +7,7 @@ interface ChatMessage {
   responses: AssistantMessage[];
   number_of_responses: number | null;
   active_message_index: number | null;
+  attached_files?: any[];
 }
 
 interface Attachment {
@@ -24,9 +24,9 @@ interface AssistantMessage {
   audio_link: string | null
   audio_state: "loading" | "playing" | "paused" | "ended" | null
   has_verse_audio: boolean;
-  verse_audio_data: Surah[]
+  verse_audio_data: SurahForAudios[]
   has_verse_image: boolean;
-  verse_images: Surah[]
+  verse_images: SurahForVerseImages[]
 }
 
 

@@ -1,19 +1,8 @@
 import React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
 import axios from 'axios';
-
-const loginSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(1, "Password is required"),
-});
-
-type LoginInputs = z.infer<typeof loginSchema>;
-
-interface LoginProps {
-  onSuccess: (data: any) => void;
-}
+import { loginSchema, LoginInputs, LoginProps, LoginResponse } from '@/app/utils/types';
 
 export default function LoginForm({ onSuccess }: LoginProps) {
   const [serverError, setServerError] = React.useState<string | null>(null);
@@ -25,7 +14,7 @@ export default function LoginForm({ onSuccess }: LoginProps) {
   const onSubmit = async (data: LoginInputs) => {
     setServerError(null);
     try {
-      const res = await axios.post('http://localhost:8000/auth/login', data);
+      const res = await axios.post<LoginResponse>('http://localhost:8000/auth/login', data);
       onSuccess(res.data);
     } catch (error: any) {
       setServerError(error.response?.data?.detail || "Invalid email or password");

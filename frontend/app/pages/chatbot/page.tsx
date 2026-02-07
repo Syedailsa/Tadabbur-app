@@ -7,13 +7,15 @@ import rehypeRaw from "rehype-raw";
 import { ReactNode, useEffect, useRef, useState } from "react";
 import ChatProvider from "@/app/providers/chatbot/ChatProvider";
 import DisclaimerIcon from "../../../icons/disclaimer.svg";
-import UndoArrow from "../../../icons/refresh.svg";
 import CrossIcon from "../../../icons/cross_icon.svg"
-import { AssistantMessage, Attachment } from "@/app/components/chatbot/interfaces/ChatMessage";
 import TextFileIcon from "../../../icons/text-file-icon.svg"
 import PdfFileIcon from "../../../icons/pdf-file-icon.svg"
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { dracula } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import AttachIcon from "../../../icons/attach_icon.svg"
+import UndoArrow from "../../../icons/refresh.svg";
+import DownArrow from "../../../icons/arrow-down-head.svg";
+import { AssistantMessage, Attachment } from "@/app/components/chatbot/interfaces/ChatMessage";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { dracula } from "react-syntax-highlighter/dist/esm/styles/prism";
 import {
   motion,
   easeInOut,
@@ -21,7 +23,7 @@ import {
   AnimatePresence,
   useAnimationControls,
 } from "framer-motion";
-// import AttachIcon from "../../../icons/attach_icon.svg"
+import { X } from "lucide-react";
 import ProtectedRoute from "@/app/utils/ProtectedRoutes";
 import RegistrationForm, {
   RegistrationData,
@@ -45,6 +47,82 @@ import QuranDialogBox from "@/app/components/chatbot/UI/QuranDialogBox";
 import groupChatMessages from "@/utils/groupChatMessages";
 import WaveForm from "../../components/chatbot/UI/WaveForm";
 import hidePromptExtraOptionsModelBoxArray from "@/app/components/chatbot/interfaces/hidePromptExtraOptionsModelBoxArray";
+import { ChatMessage as ChatMessageInterface } from "../../components/chatbot/interfaces/ChatMessage";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  SessionInitMessage,
+  AudioRequest,
+  VerseRequest,
+  ChatRecordType,
+} from "../../utils/types";
+
+const UploadedFilesDisplay = ({
+  files,
+  onDelete,
+}: {
+  files: Array<{
+    file_id: string;
+    file_name: string;
+    file_type: string;
+    created_at: string;
+  }>;
+  onDelete: (fileId: string) => void;
+}) => {
+  if (!files || files.length === 0) return null;
+
+
+  const getFileIcon = (fileType: string) => {
+    if (fileType.includes("pdf")) return "📄";
+    if (fileType.includes("word") || fileType.includes("document")) return "📝";
+    if (fileType.includes("image")) return "🖼️";
+    if (fileType.includes("text")) return "📃";
+    return "📎";
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="w-full mb-3 px-4"
+    >
+      <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
+        <div className="flex items-center justify-between mb-2">
+          <p className="switzer-600 text-sm text-gray-700">
+            📎 Attached Files ({files.length})
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {files.map((file) => (
+            <div
+              key={file.file_id}
+              className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-md px-3 py-2 group hover:bg-gray-100 transition-colors"
+            >
+              <span className="text-xl">{getFileIcon(file.file_type)}</span>
+
+              <div className="flex flex-col">
+                <span className="switzer-500 text-sm text-gray-800 max-w-[200px] truncate">
+                  {file.file_name}
+                </span>
+                <span className="switzer-400 text-xs text-gray-500">
+                  {new Date(file.created_at).toLocaleDateString()}
+                </span>
+              </div>
+
+              <button
+                onClick={() => onDelete(file.file_id)}
+                className="ml-2 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Delete file"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </motion.div>
+  );
+};
 
 
 export default function ChatPage() {
@@ -54,13 +132,13 @@ export default function ChatPage() {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [greeting, setGreeting] = useState<string | null>(
-    "Assalam O Alaykum, I am Tadabbur, how may I help you today?"
+    "Assalam O Alaykum, I am Tadabbur, how may I help you today?",
   );
   const wsRef = useRef<WebSocket | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
   const [placeholder, setPlaceholder] = useState<string | null>(
-    "Let's learn about the Quran"
+    "Let's learn about the Quran",
   );
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -72,39 +150,62 @@ export default function ChatPage() {
   const currentPlayableAudio = useRef<{ user_message_id: string, response_message_id: string, state: "loading" | "playing" | "paused" | "ended" | null } | null>(null);
 
   const [messageIDs, setMessageIDs] = useState<(string | null)[] | null>(null);
-  const [chatHistory, setChatHistory] = useState<ChatRecord[] | null>(null);
+  const [showAudioDialog, setShowAudioDialog] = useState(false);
+  const [audioRequest, setAudioRequest] = useState<AudioRequest | null>(null);
+  const [showQuranVerseDialog, setShowQuranVerseDialog] = useState(false);
+  const [verseRequest, setVerseRequest] = useState<VerseRequest | null>(null);
+
+  const [showQuranPlayer, setShowQuranPlayer] = useState(false);
+  const [chatHistory, setChatHistory] = useState<ChatRecordType[] | null>(null);
   const messageScrollFlag = useRef<boolean | null>(false);
   const committedTextRef = useRef<string>("");
   const tempSpeechRef = useRef<string>("");
-
+  const [showPersonalizationForm, setShowPersonalizationForm] = useState<boolean>(false)
+  const [isCheckingPersonalization, setIsCheckingPersonalization] = useState<boolean>(true)
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [hideReportContentDialogueBox, setHideReportContentDialogueBox] =
     useState<boolean | null>(true);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const [attachFileType, setAttachFileType] = useState<string | null>(null)
-
+  const [isCancelled, setIsCancelled] = useState<boolean>(false)
+  const [fileContext, setFileContext] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false);
   const [uploadResponse, setUploadResponse] = useState<any>(null);
   const currentMessageIDRef = useRef<string | null>(null);
   const [reportedMessageIDs, setReportedMessageIDs] = useState<string[] | null>(
-    []
+    [],
   );
+  const searchParams = useSearchParams()
   const [userData, setUserData] = useState<RegistrationData | null>(null);
   const oldMessagesRef = useRef<AssistantMessage[]>([]);
   const controls = useAnimationControls();
   const [hidePromptExtraOptionsModelBoxArray, setHidePromptExtraOptionsModelBoxArray] =
     useState<hidePromptExtraOptionsModelBoxArray[]>([]);
-
+  const [uploadedFiles, setUploadedFiles] = useState<
+    Array<{
+      file_id: string;
+      file_name: string;
+      file_type: string;
+      created_at: string;
+    }>
+  >([]);
+  const [sessionFiles, setSessionFiles] = useState<Array<{
+    file_id: string;
+    file_name: string;
+    file_type: string;
+    created_at: string;
+  }>>([]);
+  const router = useRouter()
 
   function preprocessContent(content: string) {
     if (!content) return "";
     let processed = content;
 
-    processed = processed.replace(/\\n/g, '\n');
-    processed = processed.replace(/([^\n])\s*(#{1,6}\s)/g, '$1\n\n$2');
-    processed = processed.replace(/(\|[ -]*\|)\s*(?=\|)/g, '$1\n');
-    processed = processed.replace(/([^\n])\s*(-\s)/g, '$1\n$2');
-    processed = processed.replace(/([^\n])\s*(\d+\.\s)/g, '$1\n$2');
+    processed = processed.replace(/\\n/g, "\n");
+    processed = processed.replace(/([^\n])\s*(#{1,6}\s)/g, "$1\n\n$2");
+    processed = processed.replace(/(\|[ -]*\|)\s*(?=\|)/g, "$1\n");
+    processed = processed.replace(/([^\n])\s*(-\s)/g, "$1\n$2");
+    processed = processed.replace(/([^\n])\s*(\d+\.\s)/g, "$1\n$2");
 
     return processed;
   }
@@ -123,9 +224,16 @@ export default function ChatPage() {
         default:
           break
       }
-
     }
+
   }, [attachedFile])
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    router.push('/pages/auth');
+  };
+
 
   useEffect(() => {
     const audioEl = audioRef.current;
@@ -258,6 +366,7 @@ export default function ChatPage() {
         inputRef.current.innerText = newText;
         committedTextRef.current = newText;
 
+
         const range = document.createRange();
         const sel = window.getSelection();
         if (inputRef.current.lastChild) {
@@ -270,11 +379,13 @@ export default function ChatPage() {
       }
     };
 
+
     window.addEventListener("tadabbur-mic-start", handleMicStart);
     window.addEventListener("tadabbur-mic-stop", handleMicStop);
     window.addEventListener("tadabbur-transcription-start", handleTranscriptionStart);
     window.addEventListener("tadabbur-transcription-error", handleTranscriptionEnd);
     window.addEventListener("tadabbur-stt-result", handleSTTResult);
+
 
     return () => {
       window.removeEventListener("tadabbur-mic-start", handleMicStart);
@@ -284,21 +395,124 @@ export default function ChatPage() {
       window.removeEventListener("tadabbur-stt-result", handleSTTResult);
     };
   }, []);
-  // In your element
+
   useEffect(() => {
-    const websocket = new WebSocket("ws://localhost:8000/ws/chat");
+    const checkPersonalization = async () => {
+      try {
+        const token = localStorage.getItem("token");
+
+        if (!token) {
+          console.log("❌ No token found, showing personalization form");
+          setIsCheckingPersonalization(false);
+          setShowPersonalizationForm(true);
+          return;
+        }
+
+        console.log("🔍 Checking personalization status with token...");
+
+        // Backend se personalization status check karo
+        const response = await fetch(
+          'http://localhost:8000/personalization/status',
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          }
+        );
+
+        if (!response.ok) {
+          console.error("❌ Failed to fetch personalization status:", response.status);
+          setShowPersonalizationForm(true);
+          setIsCheckingPersonalization(false);
+          return;
+        }
+
+        const data = await response.json();
+        console.log("📊 Personalization data received:", data);
+
+        if (data.is_personalized && data.username && data.age) {
+
+          console.log("✅ User already personalized");
+          setUserData({
+            username: data.username,
+            age: data.age
+          });
+          setShowPersonalizationForm(false);
+
+
+          if (data.age <= 12) {
+            setGreeting(
+              `Assalamu Alaykum ${data.username}! 🌟 I am Tadabbur, your friend!`
+            );
+            setPlaceholder("Tell me about prophets...");
+          } else {
+            setGreeting(
+              `Assalamu Alaykum ${data.username}, I am Tadabbur. How may I assist you with your Quranic studies?`
+            );
+            setPlaceholder("Let's learn about the Quran");
+          }
+        } else {
+
+          console.log("❌ User not personalized, showing form");
+          setShowPersonalizationForm(true);
+        }
+      } catch (error) {
+        console.error("❌ Error checking personalization:", error);
+        setShowPersonalizationForm(true);
+      } finally {
+        setIsCheckingPersonalization(false);
+      }
+    };
+
+    checkPersonalization();
+  }, []);
+
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      console.error("No authentication token found. Cannot connect to chat.");
+      return;
+    }
+
+    const urlSessionId = searchParams.get("session_id");
+
+    const websocket = new WebSocket(`ws://localhost:8000/ws/chat?token=${token}`);
     wsRef.current = websocket;
 
-    wsRef.current.onopen = () => {
+    websocket.onopen = () => {
       console.log("Connected to websocket successfully!");
-      const session_id = generateNewSessionId();
-      wsRef.current?.send(
-        JSON.stringify({
-          type: "session-init",
-          session_id: session_id,
-          model: "kimi-k2-instruct-0905",
-        })
-      );
+
+      const user = localStorage.getItem("user");
+      let user_id = null;
+      if (user) {
+        try {
+          const userData = JSON.parse(user);
+          user_id = userData.id;
+        } catch (e) {
+          console.error("Error parsing user data:", e);
+        }
+      }
+
+      const sessionInit: SessionInitMessage = {
+        type: "session-init",
+        session_id: urlSessionId || "",
+        user_id: user_id,
+        model: "kimi-k2-instruct-0905",
+      };
+
+      if (websocket.readyState === WebSocket.OPEN) {
+        websocket.send(JSON.stringify(sessionInit));
+
+        if (urlSessionId) {
+          console.log("Fetching history for session:", urlSessionId);
+          websocket.send(JSON.stringify({
+            type: "get_chat",
+            session_id: urlSessionId,
+            user_id: user_id,
+          }));
+        }
+      }
+
       setReportedMessageIDs([]);
     };
 
@@ -350,12 +564,18 @@ export default function ChatPage() {
 
         case "session_id":
           const session_id = data.session_id;
-          const isNew = session_id != sessionID;
           const session_status = data.status;
           const message_ids = data.message_ids;
-          if (isNew && session_status === "acknowledged") {
+          const uploaded_files = data.uploaded_files;
+          if (session_status === "acknowledged") {
             setSessionID(session_id);
-            // Use functional update to ensure we're working with latest state
+            const currentUrlId = searchParams.get("session_id");
+            if (!currentUrlId || currentUrlId === "") {
+              router.push(`/pages/chatbot?session_id=${session_id}`, { scroll: false });
+            }
+            setMessages([]);
+            setUploadedFiles([]);
+            setSessionFiles([]);
             setMessages((prevMessages) => {
               if (prevMessages && prevMessages.length > 0) {
                 return [];
@@ -364,6 +584,12 @@ export default function ChatPage() {
             });
             setHidePromptExtraOptionsModelBoxArray([])
             setMessageIDs(message_ids);
+
+            if (uploaded_files && uploaded_files.length > 0) {
+              setSessionFiles(uploaded_files);
+              setUploadedFiles([]);
+              console.log("📎 Restored files to session history:", uploaded_files);
+            }
           }
           break;
 
@@ -381,6 +607,46 @@ export default function ChatPage() {
           // handle chat history
           if (history_status === "acknowledged") {
             setChatHistory(chat_history);
+          } else if (history_status === "error") {
+            alert("Error loading chat history: " + data.error);
+          }
+          break;
+
+        case "delete_session":
+          const delete_status = data.status;
+          if (delete_status === "success") {
+            // Refresh chat history
+            const user = localStorage.getItem("user");
+            let user_id = null;
+            if (user) {
+              try {
+                const userData = JSON.parse(user);
+                user_id = userData.id;
+              } catch (e) {
+                console.error("Error parsing user data:", e);
+              }
+            }
+            if (user_id) {
+              wsRef.current?.send(
+                JSON.stringify({
+                  type: "chat_history",
+                  user_id: user_id,
+                }),
+              );
+            }
+            alert("Chat session deleted successfully");
+          } else {
+            alert("Error deleting chat session: " + data.error);
+          }
+          break;
+
+        case "delete_all_sessions":
+          const delete_all_status = data.status;
+          if (delete_all_status === "success") {
+            setChatHistory([]);
+            alert("All chat sessions deleted successfully");
+          } else {
+            alert("Error deleting all chat sessions: " + data.error);
           }
           break;
 
@@ -389,8 +655,42 @@ export default function ChatPage() {
           if (status === "acknowledged") {
             const messageIDs = data.unique_message_ids;
             const chat_history = groupChatMessages(data.chat_history);
-            setMessages(chat_history || []);
+            const uploaded_files = data.uploaded_files;
+
+            // 🆕 File Mapping Logic
+            const filesByMessage: Record<string, any[]> = {};
+            const unattachedFiles: any[] = [];
+
+            if (uploaded_files && uploaded_files.length > 0) {
+              uploaded_files.forEach((file: any) => {
+                if (file.message_id) {
+                  if (!filesByMessage[file.message_id]) {
+                    filesByMessage[file.message_id] = [];
+                  }
+                  filesByMessage[file.message_id].push(file);
+                } else {
+                  unattachedFiles.push(file);
+                }
+              });
+            }
+
+            // Enrich chat history with attached files
+            const enrichedHistory = (chat_history || []).map((msg: any) => ({
+              ...msg,
+              attached_files: filesByMessage[msg.message_id] || [],
+            }));
+
+            setMessages(enrichedHistory);
             setMessageIDs(messageIDs);
+
+            if (unattachedFiles.length > 0) {
+              setSessionFiles(unattachedFiles);
+              console.log("📎 Restored unattached files:", unattachedFiles);
+            } else {
+              setSessionFiles([]);
+            }
+            // Clear input area files just in case
+            setUploadedFiles([]);
           }
           break;
 
@@ -496,7 +796,8 @@ export default function ChatPage() {
                   const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
 
                   updated[streamIndex].responses[lastResIdx].content =
-                    (updated[streamIndex].responses[lastResIdx].content || "") + chunk;
+                    (updated[streamIndex].responses[lastResIdx].content || "") +
+                    chunk;
                 }
                 return updated;
               });
@@ -512,6 +813,8 @@ export default function ChatPage() {
             case "story-telling":
               setPlaceholder("Generate an Islamic story");
               setMessages([]);
+              setUploadedFiles([]);
+              setSessionFiles([]);
               setGreeting(
                 "Generate any Islamic story with the finest AI Models."
               );
@@ -519,6 +822,8 @@ export default function ChatPage() {
             case "tafseer":
               setPlaceholder("Let's lean about the Quran");
               setMessages([]);
+              setUploadedFiles([]);
+              setSessionFiles([]);
               setGreeting(
                 "Assalam O Alaykum, I am Tadabbur, how may I help you today?"
               );
@@ -592,6 +897,49 @@ export default function ChatPage() {
     }
   };
 
+  useEffect(() => {
+    const processFile = async () => {
+      if (attachedFile && !fileContext && !isUploading) {
+        setIsUploading(true);
+        const formData = new FormData();
+        formData.append("file", attachedFile);
+        formData.append("session_id", sessionID || "default_session");
+
+        try {
+          const response = await fetch("http://localhost:8000/api/upload", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!response.ok) throw new Error("Upload failed");
+
+          const data = await response.json();
+
+          if (!isCancelled && data.extracted_text) {
+            setFileContext(data.extracted_text);
+            console.log("File parsed. Text ready to send on Enter.");
+          }
+        } catch (error) {
+          if (!isCancelled) {
+            console.error("Upload error:", error);
+            alert("Failed to process file.");
+            setAttachedFile(null);
+          }
+        } finally {
+          if (!isCancelled) {
+            setIsUploading(false);
+          }
+        }
+      }
+    };
+
+    processFile();
+
+    return () => {
+      setIsCancelled(true);
+    };
+  }, [attachedFile, sessionID]);
+
 
   const ask = async (
     input: string,
@@ -600,7 +948,7 @@ export default function ChatPage() {
     resend_message_id: string | null = null,
     old_responses_attachments: { responses: [], attachments: [] } | null = null
   ) => {
-    if (streamingMessageIndex !== null || !input.trim()) return;
+    if (streamingMessageIndex !== null || (!input.trim() && !fileContext)) return;
 
     if (resend_flag) {
       if (!old_responses_attachments || old_responses_attachments.responses.length === 0) {
@@ -661,7 +1009,7 @@ export default function ChatPage() {
         {
           role: "assistant",
           message_id: "",
-          reply_to_message_id: "",
+          reply_to_message_id: null,
           content: "",
           feedback: null,
           audio_link: null,
@@ -694,10 +1042,15 @@ export default function ChatPage() {
           role: "user",
           system_instructions: guidelines || "",
           content: input,
+          new_file_context: fileContext,
           resend_flag: resend_flag,
           resend_message_id: resend_message_id || "",
         })
       );
+      if (fileContext) {
+        setAttachedFile(null);
+        setFileContext(null);
+      }
       if (inputRef.current) {
         inputRef.current.innerText = "";
         setShowPlaceholder(true);
@@ -713,16 +1066,15 @@ export default function ChatPage() {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
 
-      if (attachedFile) {
-        if (isUploading) {
-          alert("File is still uploading, please wait a moment...");
-          return;
-        }
+      if (attachedFile && isUploading) {
+        alert("File is still uploading, please wait a moment...");
+        return;
+
       }
 
       const input = inputRef.current?.innerText;
-      if (input.trim() != "") {
-        ask(input);
+      if (input.trim() != "" || fileContext) {
+        ask(input.trim());
       }
     }
   };
@@ -747,41 +1099,34 @@ export default function ChatPage() {
     reply_to_message_id: string | null;
   }
 
-  // const PromptExtraOptionsProvider: React.FC<
-  //   PromptExtraOptionsProviderProps
-  // > = ({
-  //   children,
-  // }) => {
-  //     const [hideResendPromptDialogue, setHideResendPromptDialogue] = useState<
-  //       boolean | null
-  //     >(true);
-
-  //     return (
-  //       <PromptExtraOptionsContext.Provider
-  //         value={{
-  //           hideResendPromptDialogue,
-  //           setHideResendPromptDialogue,
-  //         }}
-  //       >
-  //         {children}
-  //       </PromptExtraOptionsContext.Provider>
-  //     );
-  //   };
+  if (isCheckingPersonalization) {
+    return (
+      <ProtectedRoute>
+        <div className="w-screen h-screen flex items-center justify-center bg-gray-50">
+          <div className="flex flex-col items-center gap-y-4">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-black"></div>
+            <p className="switzer-500 text-gray-600">Loading your profile...</p>
+          </div>
+        </div>
+      </ProtectedRoute>
+    );
+  }
 
   return (
     <ProtectedRoute>
-      {!userData ? (
+      {showPersonalizationForm ? (
         <RegistrationForm
           onComplete={(data) => {
             setUserData(data);
+            setShowPersonalizationForm(false);
             if (data.age <= 12) {
               setGreeting(
-                `Assalamu Alaykum ${data.username}! 🌟 I am Tadabbur, your friend!`
+                `Assalamu Alaykum ${data.username}! 🌟 I am Tadabbur, your friend!`,
               );
               setPlaceholder("Tell me about prophets...");
             } else {
               setGreeting(
-                `Assalamu Alaykum ${data.username}, I am Tadabbur. How may I assist you with your Quranic studies?`
+                `Assalamu Alaykum ${data.username}, I am Tadabbur. How may I assist you with your Quranic studies?`,
               );
             }
           }}
@@ -809,21 +1154,30 @@ export default function ChatPage() {
 
             <div className="w-full h-full flex flex-col items-center overflow-y-auto">
               <div className="absolute top-0 p-2 w-full">
-                <Controls wsRef={wsRef} />
+                <div className="pointer-events-auto">
+                  <Controls wsRef={wsRef} />
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="pointer-events-auto mr-2 mt-2 px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm font-medium rounded-md shadow-md transition-colors"
+                >
+                  Logout
+                </button>
               </div>
               <div
-                id=" chat-box-messages"
-                className={`w-full ${messages && messages?.length > 0 ? "h-max" : "h-full"
-                  }
-             px-4 mt-12 lg:w-2/3 flex flex-col gap-y-4 ${!messages ? "justify-center items-center" : ""
-                  }`}
+                id="chat-box-messages"
+                className={`w-full ${messages && messages?.length > 0 ? "h-max" : "h-full"} px-4 mt-12 lg:w-2/3 flex flex-col gap-y-4 ${!messages ? "justify-center items-center" : ""}`}
               >
                 <AnimatePresence>
+                  {/* Session Files (Restored from history) - Always visible at top */}
+                  {sessionFiles.length > 0 && (
+                    <div className="w-full max-w-lg mx-auto mb-6 px-4">
+                      <UploadedFilesDisplay files={sessionFiles} onDelete={() => { }} />
+                    </div>
+                  )}
+
                   {messages?.length === 0 && (
                     <motion.div
-                      // initial={{ opacity: 0, y: -20 }}
-                      // animate={{ opacity: 1, y: 110 }}
-                      // exit={{ opacity: 0, y: -20 }}
                       className="flex flex-col gap-y-4 items-center self-center"
                     >
                       <motion.div
@@ -865,16 +1219,13 @@ export default function ChatPage() {
                                       }}
                                       onClick={() => {
                                         ask(
-                                          `${prompt.title} ${prompt.description}`
+                                          `${prompt.title} ${prompt.description}`,
                                         );
                                       }}
                                       className="bg-white rounded-md shadow-sm backdrop-blur-md cursor-pointer"
                                     >
                                       <div className="w-full flex flex-col px-3 pt-3 pb-6 gap-y-1">
                                         <div className="flex gap-x-3">
-                                          {/* <div className="p-1 h-max border border-black/5 rounded-md">
-                                            <PromptSuggestion className="w-5 h-5 fill-current text-green-700" />
-                                          </div> */}
                                           <div className="default-prompt-text-box">
                                             <div className="heading-text">
                                               <p className="switzer-600 tracking-tight text-black/80">
@@ -932,10 +1283,46 @@ export default function ChatPage() {
                           <p className="ml-auto w-max min-w-40 max-w-[20rem] bg-neutral-900 text-white switzer-500 py-2 px-3 rounded-md shadow-md border border-black/5">
                             {record.content}
                           </p>
+
+                          {/* ✅ Attached Files - OUTSIDE message bubble, ChatGPT style */}
+                          {record.attached_files && record.attached_files.length > 0 && (
+                            <div className="ml-auto w-max max-w-[20rem]">
+                              {record.attached_files.map((file) => (
+                                <motion.div
+                                  key={file.file_id}
+                                  initial={{ opacity: 0, scale: 0.95 }}
+                                  animate={{ opacity: 1, scale: 1 }}
+                                  className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden mb-2"
+                                >
+                                  <div className="flex items-center gap-3 p-3 hover:bg-gray-50 cursor-pointer transition-colors">
+                                    {/* File Icon */}
+                                    <div className="shrink-0 w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                                      <span className="text-xl">
+                                        {file.file_type.includes('pdf') ? '📄' :
+                                          file.file_type.includes('word') ? '📝' :
+                                            file.file_type.includes('image') ? '🖼️' : '📎'}
+                                      </span>
+                                    </div>
+
+                                    {/* File Info */}
+                                    <div className="flex-1 min-w-0">
+                                      <p className="switzer-600 text-sm text-gray-900 truncate">
+                                        {file.file_name}
+                                      </p>
+                                      <p className="switzer-400 text-xs text-gray-500">
+                                        Document
+                                      </p>
+                                    </div>
+                                  </div>
+                                </motion.div>
+                              ))}
+                            </div>
+                          )}
                         </div>
+
+                        {/* PromptExtraOptions */}
                         <div>
                           <PromptExtraOptions message_id={record.message_id} reply_to_message_id={null} parent_index={record_index} assistant_index={null} messageType="user" />
-
                         </div>
                         {record?.responses?.map((ai_msg, ai_msg_idx) => {
                           // loading circle logic here
@@ -1061,13 +1448,22 @@ export default function ChatPage() {
                                       </div>
                                     ),
                                     thead: ({ node, ...props }) => (
-                                      <thead className="bg-gray-50" {...props} />
+                                      <thead
+                                        className="bg-gray-50"
+                                        {...props}
+                                      />
                                     ),
                                     tbody: ({ node, ...props }) => (
-                                      <tbody className="bg-white divide-y divide-gray-200" {...props} />
+                                      <tbody
+                                        className="bg-white divide-y divide-gray-200"
+                                        {...props}
+                                      />
                                     ),
                                     tr: ({ node, ...props }) => (
-                                      <tr className="hover:bg-gray-50" {...props} />
+                                      <tr
+                                        className="hover:bg-gray-50"
+                                        {...props}
+                                      />
                                     ),
                                     th: ({ node, ...props }) => (
                                       <th className="px-4 py-3 text-left text-sm font-medium text-black uppercase tracking-wider border-b" {...props} />
@@ -1076,8 +1472,16 @@ export default function ChatPage() {
                                       <td className="px-4 py-3 text-sm text-gray-700 border-b border-black/20 whitespace-pre-wrap" {...props} />
                                     ),
 
-                                    code({ node, inline, className, children, ...props }: any) {
-                                      const match = /language-(\w+)/.exec(className || '');
+                                    code({
+                                      node,
+                                      inline,
+                                      className,
+                                      children,
+                                      ...props
+                                    }: any) {
+                                      const match = /language-(\w+)/.exec(
+                                        className || '',
+                                      );
                                       if (!inline && match) {
                                         return (
                                           <SyntaxHighlighter
@@ -1087,12 +1491,18 @@ export default function ChatPage() {
                                             className="rounded-md shadow-sm my-4"
                                             {...props}
                                           >
-                                            {String(children).replace(/\n$/, '')}
+                                            {String(children).replace(
+                                              /\n$/,
+                                              "",
+                                            )}
                                           </SyntaxHighlighter>
                                         );
                                       } else {
                                         return (
-                                          <code className="bg-gray-100 text-red-500 px-1.5 py-0.5 rounded text-sm font-mono" {...props}>
+                                          <code
+                                            className="bg-gray-100 text-red-500 px-1.5 py-0.5 rounded text-sm font-mono"
+                                            {...props}
+                                          >
                                             {children}
                                           </code>
                                         );
@@ -1120,7 +1530,6 @@ export default function ChatPage() {
                                       messageType={"assistant"}
                                     />
                                   </div>
-
                                 )}
 
                               {ai_msg.has_verse_audio && ai_msg.verse_audio_data.length > 0 && streamingMessageIndex != record_index && (
@@ -1176,7 +1585,7 @@ export default function ChatPage() {
                                       JSON.stringify({
                                         type: "undo-report",
                                         message_id: ai_msg.message_id,
-                                      })
+                                      }),
                                     );
                                   }}
                                   id="undo-report-box"
@@ -1197,9 +1606,9 @@ export default function ChatPage() {
                 </AnimatePresence>
 
                 <div ref={messagesEndRef}></div>
-
               </div>
             </div>
+
             <AnimatePresence>
               {isRecording && (
                 <div className="px-4 w-full lg:w-2/3">
@@ -1207,7 +1616,6 @@ export default function ChatPage() {
                 </div>
               )}
               {/* NEW: Transcribing Loading State in place of Waveform */}
-
               {!isRecording && isTranscribing && (
                 <motion.div
                   key="transcribing"
@@ -1217,22 +1625,19 @@ export default function ChatPage() {
                   className="w-full px-4 lg:w-2/3 flex"
                 >
                   <div className="bg-white/90 backdrop-blur-sm border ml-auto border-black/5 shadow-lg rounded-full px-4 py-3 flex items-center gap-x-3">
-
                     <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin"></div>
                     <p className="switzer-500 text-sm text-black/80">Transcribing audio...</p>
                   </div>
                 </motion.div>
               )}
             </AnimatePresence>
-            <div className="mr-1.5 py-4 mt-4 px-4 rounded-md w-full lg:w-2/3 input-box">
 
+            <div className="mr-1.5 py-4 mt-4 px-4 rounded-md w-full lg:w-2/3 input-box">
               <motion.div
                 animate={{ height: attachedFile ? 200 : 160 }}
                 transition={{ duration: 0.2, ease: easeInOut }}
-                className={`flex flex-col relative border border-black/10 px-3 py-2 rounded-lg shadow-md bg-white
-        `}
+                className={`flex flex-col relative border border-black/10 px-3 py-2 rounded-lg shadow-md bg-white`}
               >
-
                 {attachedFile && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative w-max bg-white border border-black/10 px-3 py-2 rounded-md text-xs flex items-center gap-x-2 z-10">
                     {attachFileType === "Text" ? (
@@ -1289,13 +1694,11 @@ export default function ChatPage() {
               hideReportContentDialogueBox={hideReportContentDialogueBox}
               setHideReportContentDialogueBox={setHideReportContentDialogueBox}
             />
+
+            <audio className="hidden" controls ref={audioRef} />
           </ChatProvider>
-
-          <audio className="hidden" controls ref={audioRef} />
-
-        </div >
-      )
-      }
-    </ProtectedRoute >
-  );
+        </div>
+      )}
+    </ProtectedRoute>
+  )
 }

@@ -1,7 +1,11 @@
 import os
+import logging
 from dotenv import load_dotenv
 import asyncpg
 from contextlib import asynccontextmanager
+from config.db import get_supabase_client
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables with absolute path
 from pathlib import Path
@@ -80,7 +84,6 @@ async def create_tables():
     
     async with get_db_connection() as conn:
         # USERS TABLE (Email/Password authentication)
-               
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
@@ -88,6 +91,11 @@ async def create_tables():
                 firstname TEXT UNIQUE NOT NULL,
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
+
+                -- 🆕 Personalization fields
+                username TEXT,
+                age INTEGER,
+                is_personalized BOOLEAN DEFAULT FALSE,
 
                 last_name TEXT,
                 date_of_birth DATE,
@@ -100,7 +108,6 @@ async def create_tables():
 
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
-
             )
         """)
 
@@ -110,11 +117,12 @@ async def create_tables():
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT;")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_number TEXT;")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT;")
-        
-        # Add image_url column if not exists
-        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS image_url TEXT;")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT;")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS age INTEGER;")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_personalized BOOLEAN DEFAULT FALSE;")
+
         
         # USER IMAGES TABLE (for storing image bytes)
         await conn.execute("""
@@ -130,7 +138,6 @@ async def create_tables():
             )
         """)
         
-        # Create index for faster queries
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_user_images_user_id ON user_images(user_id);")
         
         # GOOGLE USERS TABLE (OAuth authentication)
@@ -141,15 +148,23 @@ async def create_tables():
                 google_id TEXT UNIQUE NOT NULL,
                 email TEXT UNIQUE NOT NULL,
                 firstname TEXT,
+                -- 🆕 Personalization fields
+                username TEXT,
+                age INTEGER,
+                is_personalized BOOLEAN DEFAULT FALSE,
+                           
                 profile_picture TEXT,
                 image_url TEXT,
                 created_at TIMESTAMP DEFAULT NOW()
             )
         """)
         
-        # Add missing columns if they don't exist for google_users
         await conn.execute("ALTER TABLE google_users ADD COLUMN IF NOT EXISTS firstname TEXT;")
         await conn.execute("ALTER TABLE google_users ADD COLUMN IF NOT EXISTS image_url TEXT;")
+        await conn.execute("ALTER TABLE google_users ADD COLUMN IF NOT EXISTS username TEXT;")
+        await conn.execute("ALTER TABLE google_users ADD COLUMN IF NOT EXISTS age INTEGER;")
+        await conn.execute("ALTER TABLE google_users ADD COLUMN IF NOT EXISTS is_personalized BOOLEAN DEFAULT FALSE;")
+            
         
         # AUTH TOKENS TABLE
         await conn.execute("""
@@ -175,7 +190,6 @@ async def create_tables():
             )
         """)
         
-        # Create index for faster queries
         await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_notifications_user 
             ON notifications(user_id, created_at DESC)
@@ -199,8 +213,8 @@ async def create_tables():
                 UNIQUE(user_id, surah_no, ayah_no)
             )
         """)
-        
-        # Create index
+
+                
         await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_bookmarks_user 
             ON bookmarks(user_id, created_at DESC)
@@ -229,28 +243,27 @@ async def create_tables():
                 UNIQUE(session_id, item_index, feedback_type)
             )
         """)
+        
+        # PASSWORD RESET OTPs TABLE
         await conn.execute("""
-        CREATE TABLE IF NOT EXISTS password_reset_otps (
-        id SERIAL PRIMARY KEY,
-        email TEXT NOT NULL,
-        reset_token TEXT UNIQUE NOT NULL,
-        otp TEXT NOT NULL,
-        expires_at TIMESTAMP NOT NULL,
-        verified BOOLEAN DEFAULT FALSE,
-        created_at TIMESTAMP DEFAULT NOW()
-    )
-  """)
+            CREATE TABLE IF NOT EXISTS password_reset_otps (
+                id SERIAL PRIMARY KEY,
+                email TEXT NOT NULL,
+                reset_token TEXT UNIQUE NOT NULL,
+                otp TEXT NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                verified BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
 
-        # Add reset_token column if not exists
         await conn.execute("ALTER TABLE password_reset_otps ADD COLUMN IF NOT EXISTS reset_token TEXT UNIQUE;")
 
-        # Create index for faster queries
         await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_otp_email
             ON password_reset_otps(email, created_at DESC)
         """)
 
-        # Create index for reset_token
         await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_otp_reset_token
             ON password_reset_otps(reset_token)
@@ -272,15 +285,95 @@ async def create_tables():
             )
         """)
 
-        # Create index
         await conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_reflection_user 
+            CREATE INDEX IF NOT EXISTS idx_reflection_user
             ON recent_reflections(user_id)
         """)
 
-        print("All PostgreSQL tables created/verified (including new tables)")
+        
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS chat_sessions (
+                id SERIAL PRIMARY KEY,
+                session_id TEXT UNIQUE NOT NULL,
+                user_id TEXT,
+                title TEXT,
+                description TEXT,
+                file_context TEXT,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        
+        await conn.execute("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS user_id TEXT;")
+        
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_chat_sessions_user 
+            ON chat_sessions(user_id, created_at DESC)
+        """)
+        
+        print("✅ chat_sessions table created/verified")
 
-        print("All PostgreSQL tables created/verified")
+        # 🆕 SESSION FILES TABLE (Child table - requires chat_sessions to exist)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS session_files (
+                id SERIAL PRIMARY KEY,
+                file_id TEXT UNIQUE NOT NULL,
+                session_id TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                file_type TEXT NOT NULL,
+                file_url TEXT,
+                file_content TEXT,
+                file_size INTEGER,
+                message_id TEXT,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_session_files_session 
+            ON session_files(session_id, created_at DESC)
+        """)
+        
+        print("✅ session_files table created/verified")
+
+        # Add foreign key constraint (only if not already exists)
+        fk_check = await conn.fetchval("""
+            SELECT COUNT(*) FROM information_schema.table_constraints
+            WHERE constraint_name = 'session_files_session_id_fkey'
+        """)
+
+        if fk_check == 0:
+            try:
+                await conn.execute("""
+                    ALTER TABLE session_files
+                    ADD CONSTRAINT session_files_session_id_fkey
+                    FOREIGN KEY (session_id)
+                    REFERENCES chat_sessions(session_id)
+                    ON DELETE CASCADE
+                """)
+                print("✅ Foreign key constraint added to session_files")
+            except Exception as e:
+                logger.warning(f"FK constraint failed (may already exist): {e}")
+
+        # Disable RLS for session_files table (development only)
+        try:
+            await conn.execute("""
+                ALTER TABLE session_files DISABLE ROW LEVEL SECURITY
+            """)
+            print("✅ RLS disabled for session_files table")
+        except Exception as e:
+            logger.warning(f"RLS disable failed: {e}")
+
+        # Add message_id column if it doesn't exist
+        await conn.execute("ALTER TABLE session_files ADD COLUMN IF NOT EXISTS message_id TEXT;")
+        
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_session_files_message_id 
+            ON session_files(message_id)
+        """)
+        print("✅ message_id column added/verified for session_files")
+
+        print("✅ All PostgreSQL tables created/verified")
 
 # Helper functions for quick queries
 async def execute_query(query: str, *args):
@@ -297,3 +390,153 @@ async def execute_write(query: str, *args):
     """Execute INSERT/UPDATE/DELETE query"""
     async with get_db_connection() as conn:
         return await conn.execute(query, *args)
+
+async def delete_all_user_sessions(user_id: str):
+    """Delete all chat sessions and messages for a specific user"""
+    supabase_client = get_supabase_client()
+
+    try:
+        # Get all session_ids for the user
+        sessions_with_user = supabase_client.table('chat_sessions')\
+            .select('session_id')\
+            .eq('user_id', user_id)\
+            .execute()
+
+        # Also get sessions without user_id (backward compatibility)
+        sessions_without_user = supabase_client.table('chat_sessions')\
+            .select('session_id')\
+            .is_('user_id', None)\
+            .execute()
+
+        session_ids = [s['session_id'] for s in sessions_with_user.data + sessions_without_user.data]
+
+        if session_ids:
+            # 🆕 Delete session files first
+            for sess_id in session_ids:
+                try:
+                    supabase_client.table('session_files')\
+                        .delete()\
+                        .eq('session_id', sess_id)\
+                        .execute()
+                except Exception as e:
+                    logger.warning(f"Error deleting files for session {sess_id}: {e}")
+
+            # Get message IDs
+            messages = supabase_client.table('chat_messages')\
+                .select('message_id')\
+                .in_('session_id', session_ids)\
+                .execute()
+
+            message_ids = [m['message_id'] for m in messages.data]
+
+            if message_ids:
+                # Delete chat_rules
+                for msg_id in message_ids:
+                    try:
+                        supabase_client.table('chat_rules')\
+                            .delete()\
+                            .eq('message_id', msg_id)\
+                            .execute()
+                    except Exception:
+                        pass
+
+                # Delete content_feedback
+                for sess_id in session_ids:
+                    try:
+                        supabase_client.table('content_feedback')\
+                            .delete()\
+                            .eq('session_id', sess_id)\
+                            .execute()
+                    except Exception:
+                        pass
+
+                # Delete messages
+                supabase_client.table('chat_messages')\
+                    .delete()\
+                    .in_('session_id', session_ids)\
+                    .execute()
+
+            # Delete sessions
+            supabase_client.table('chat_sessions')\
+                .delete()\
+                .in_('session_id', session_ids)\
+                .execute()
+
+            print(f"✅ Deleted {len(session_ids)} sessions for user {user_id}")
+        return True
+    except Exception as e:
+        print(f"❌ Error deleting all sessions for user {user_id}: {e}")
+        return False
+
+
+async def delete_user_session(user_id: str, session_id: str):
+    """Delete a specific chat session and its messages for a user"""
+    supabase_client = get_supabase_client()
+
+    try:
+        # Verify the session belongs to the user
+        session_check = supabase_client.table('chat_sessions')\
+            .select('session_id')\
+            .eq('session_id', session_id)\
+            .eq('user_id', user_id)\
+            .execute()
+
+        if not session_check.data:
+            print(f"❌ Session {session_id} not found or doesn't belong to user {user_id}")
+            return False
+
+        # 🆕 Delete session files first
+        try:
+            supabase_client.table('session_files')\
+                .delete()\
+                .eq('session_id', session_id)\
+                .execute()
+            print(f"✅ Deleted files for session {session_id}")
+        except Exception as e:
+            logger.warning(f"Error deleting files: {e}")
+
+        # Get message_ids for this session
+        messages = supabase_client.table('chat_messages')\
+            .select('message_id')\
+            .eq('session_id', session_id)\
+            .execute()
+
+        message_ids = [m['message_id'] for m in messages.data]
+
+        if message_ids:
+            # Delete chat_rules
+            for msg_id in message_ids:
+                try:
+                    supabase_client.table('chat_rules')\
+                        .delete()\
+                        .eq('message_id', msg_id)\
+                        .execute()
+                except Exception:
+                    pass
+
+            # Delete content_feedback
+            try:
+                supabase_client.table('content_feedback')\
+                    .delete()\
+                    .eq('session_id', session_id)\
+                    .execute()
+            except Exception:
+                pass
+
+            # Delete messages
+            supabase_client.table('chat_messages')\
+                .delete()\
+                .eq('session_id', session_id)\
+                .execute()
+
+        # Delete the session
+        supabase_client.table('chat_sessions')\
+            .delete()\
+            .eq('session_id', session_id)\
+            .execute()
+
+        print(f"✅ Deleted session {session_id} for user {user_id}")
+        return True
+    except Exception as e:
+        print(f"❌ Error deleting session {session_id} for user {user_id}: {e}")
+        return False
