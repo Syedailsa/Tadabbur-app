@@ -13,7 +13,6 @@ from fastapi import File, UploadFile
 from fastapi import Form
 
 # Local imports
-
 from models import *
 
 from utils.authentication import (
@@ -205,8 +204,6 @@ async def save_personalization(
                 "SELECT 1 FROM google_users WHERE user_id = $1", 
                 user['user_id']
             )
-            
-            
             # Update user
             await conn.execute("""
                 UPDATE users 

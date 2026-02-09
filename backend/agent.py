@@ -13,7 +13,9 @@ from langchain.agents import create_agent
 from tools.audio_playback import get_Quran_Audio
 from tools.verse_reader import get_verse_image
 from tools.story_agent_tool import story_agent_tool
-from models import Surah, VerseImageData
+from models import OutputSchema
+from langchain.agents.middleware import ToolRetryMiddleware
+
 
 load_dotenv()
 
@@ -60,13 +62,6 @@ def get_llm(model_key: str = None):
         raise e
 
 
-class OutputSchema(BaseModel):
-    response: str = Field(..., description="The final response to the user")
-    has_verse_audio: bool = Field(..., description = "Determines whether the response contains Verse audio links or not")
-    audio_data: Optional[List[Surah]] = Field(None, description="Audio data for the required verses")
-    has_verse_image: bool = Field(..., description = "Determines whether the response contains verse image links or not")
-    verse_images: Optional[List[VerseImageData]] = Field(None, description = "Verse image data containing verse-image links, surah names, verse numbers")
-
 
 class TableData(BaseModel):
     headers: List[str] = Field(..., description="Column headers for the table")
@@ -83,6 +78,17 @@ class QuranResponse(BaseModel):
     intro: Optional[str] = Field(..., description="A brief introduction or summary")
     sections: Optional[List[ContentSection]] = Field(..., description="The detailed content divided into logical sections")
     references: Optional[List[str]] = Field(None, description="List of Quranic Surah/Ayah references used")
+
+def custom_tool_error_handler(exception: Exception) -> str:
+    """
+    Returns a custom message to the agent when a tool fails.
+    """
+    return (
+        f"System Notice: The tool encountered a technical error: {str(exception)}. "
+        "Please inform the user effectively that you couldn't retrieve the specific data "
+        "and ask them to try again or rephrase."
+    )
+
 
 def submit_structured_response(**kwargs):
     """
@@ -1019,6 +1025,7 @@ def get_agent_by_user_age( age: int , username: str, model_key: str = None ):
     return create_agent(
         name="QuranTadabburAgent",
         model = llm,
+        middleware = [tool_protection],
         system_prompt = formatted_system_prompt,
         tools = [Search_Quran_By_filters, searchAsbabNuzul, structured_response_tool, get_Quran_Audio, get_verse_image, story_agent_tool],
         response_format = OutputSchema

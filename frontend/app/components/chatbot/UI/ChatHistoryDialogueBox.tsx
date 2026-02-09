@@ -156,6 +156,17 @@ const ChatHisoryDialogueBox = () => {
                 {chatHistory ? (
                   chatHistory?.map((chat: ChatRecord, index: number) => (
                     <motion.div
+                      onClick={() => {
+                        setSelectedSessionID(chat.session_id);
+                        setOpenChatHistoryDialogueBox(false);
+                        wsRef.current?.send(
+                          JSON.stringify({
+                            type: "get_chat",
+                            session_id: chat.session_id,
+                            user_id: userId,
+                          })
+                        );
+                      }}
                       whileHover={{ scale: 1.01 }}
                       transition={{ duration: 0.2 }}
                       key={chat.session_id || index}
@@ -163,18 +174,7 @@ const ChatHisoryDialogueBox = () => {
                     >
                       <div
                         className="flex justify-between cursor-pointer"
-                        onClick={() => {
-                          setSelectedSessionID(chat.session_id);
-                          setOpenChatHistoryDialogueBox(false);
-                          // wsRef.current?.send(
-                          //   JSON.stringify({
-                          //     type: "get_chat",
-                          //     session_id: chat.session_id,
-                          //     user_id: userId,
-                          //   })
-                          // );
-                          router.push(`/pages/chatbot?session_id=${chat.session_id}`);
-                        }}
+
                       >
                         <p className="switzer-500 text-sm text-white tracking-tight">
                           {chat.title}
@@ -185,18 +185,6 @@ const ChatHisoryDialogueBox = () => {
                       </div>
                       <p
                         className="switzer-500 text-sm text-white/70 cursor-pointer"
-                        onClick={() => {
-                          setSelectedSessionID(chat.session_id);
-                          setOpenChatHistoryDialogueBox(false);
-                          // wsRef.current?.send(
-                          //   JSON.stringify({
-                          //     type: "get_chat",
-                          //     session_id: chat.session_id,
-                          //     user_id: userId,
-                          //   })
-                          // );
-                          router.push(`/pages/chatbot?session_id=${chat.session_id}`);
-                        }}
                       >
                         {chat.description}
                       </p>

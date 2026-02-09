@@ -47,6 +47,7 @@ export default function QuranDialogBox(props: AudioDialogProps) {
     return () => clearInterval(id);
   }, []);
 
+  console.log("Surahs", surahs)
   return (
     <div className="">
       <div className={`flex gap-x-4 justify-center`}>
@@ -80,7 +81,7 @@ export default function QuranDialogBox(props: AudioDialogProps) {
               )}
 
 
-              <div className="" style={{ height: type === "read" ? 250 : "auto", overflowY: type === "read" ? "auto" : "visible" }}>
+              <div style={{ height: type === "read" ? 250 : "auto", overflowY: type === "read" ? "auto" : "visible" }}>
                 {surah?.ayahs?.map((ayah, ayah_index) => {
                   if (type === "audio" && activeVerseIndex !== ayah_index) return null;
 
@@ -208,7 +209,6 @@ const SelectBox = ({
     }
   }
   document.addEventListener('click', handleOutsideClick)
-  console.log(dropdownArray)
   if (!openDropdown || dropdownArray.length <= 1) {
     return null
   }

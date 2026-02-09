@@ -56,73 +56,6 @@ import {
   ChatRecordType,
 } from "../../utils/types";
 
-const UploadedFilesDisplay = ({
-  files,
-  onDelete,
-}: {
-  files: Array<{
-    file_id: string;
-    file_name: string;
-    file_type: string;
-    created_at: string;
-  }>;
-  onDelete: (fileId: string) => void;
-}) => {
-  if (!files || files.length === 0) return null;
-
-
-  const getFileIcon = (fileType: string) => {
-    if (fileType.includes("pdf")) return "📄";
-    if (fileType.includes("word") || fileType.includes("document")) return "📝";
-    if (fileType.includes("image")) return "🖼️";
-    if (fileType.includes("text")) return "📃";
-    return "📎";
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="w-full mb-3 px-4"
-    >
-      <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
-        <div className="flex items-center justify-between mb-2">
-          <p className="switzer-600 text-sm text-gray-700">
-            📎 Attached Files ({files.length})
-          </p>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {files.map((file) => (
-            <div
-              key={file.file_id}
-              className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-md px-3 py-2 group hover:bg-gray-100 transition-colors"
-            >
-              <span className="text-xl">{getFileIcon(file.file_type)}</span>
-
-              <div className="flex flex-col">
-                <span className="switzer-500 text-sm text-gray-800 max-w-[200px] truncate">
-                  {file.file_name}
-                </span>
-                <span className="switzer-400 text-xs text-gray-500">
-                  {new Date(file.created_at).toLocaleDateString()}
-                </span>
-              </div>
-
-              <button
-                onClick={() => onDelete(file.file_id)}
-                className="ml-2 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                title="Delete file"
-              >
-                <X size={16} />
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-    </motion.div>
-  );
-};
 
 
 export default function ChatPage() {
@@ -148,14 +81,7 @@ export default function ChatPage() {
   >(null);
 
   const currentPlayableAudio = useRef<{ user_message_id: string, response_message_id: string, state: "loading" | "playing" | "paused" | "ended" | null } | null>(null);
-
   const [messageIDs, setMessageIDs] = useState<(string | null)[] | null>(null);
-  const [showAudioDialog, setShowAudioDialog] = useState(false);
-  const [audioRequest, setAudioRequest] = useState<AudioRequest | null>(null);
-  const [showQuranVerseDialog, setShowQuranVerseDialog] = useState(false);
-  const [verseRequest, setVerseRequest] = useState<VerseRequest | null>(null);
-
-  const [showQuranPlayer, setShowQuranPlayer] = useState(false);
   const [chatHistory, setChatHistory] = useState<ChatRecordType[] | null>(null);
   const messageScrollFlag = useRef<boolean | null>(false);
   const committedTextRef = useRef<string>("");
@@ -170,13 +96,11 @@ export default function ChatPage() {
   const [isCancelled, setIsCancelled] = useState<boolean>(false)
   const [fileContext, setFileContext] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadResponse, setUploadResponse] = useState<any>(null);
   const currentMessageIDRef = useRef<string | null>(null);
   const [reportedMessageIDs, setReportedMessageIDs] = useState<string[] | null>(
     [],
   );
   const searchParams = useSearchParams()
-  const [userData, setUserData] = useState<RegistrationData | null>(null);
   const oldMessagesRef = useRef<AssistantMessage[]>([]);
   const controls = useAnimationControls();
   const [hidePromptExtraOptionsModelBoxArray, setHidePromptExtraOptionsModelBoxArray] =
@@ -433,10 +357,6 @@ export default function ChatPage() {
         if (data.is_personalized && data.username && data.age) {
 
           console.log("✅ User already personalized");
-          setUserData({
-            username: data.username,
-            age: data.age
-          });
           setShowPersonalizationForm(false);
 
 
@@ -502,15 +422,6 @@ export default function ChatPage() {
 
       if (websocket.readyState === WebSocket.OPEN) {
         websocket.send(JSON.stringify(sessionInit));
-
-        if (urlSessionId) {
-          console.log("Fetching history for session:", urlSessionId);
-          websocket.send(JSON.stringify({
-            type: "get_chat",
-            session_id: urlSessionId,
-            user_id: user_id,
-          }));
-        }
       }
 
       setReportedMessageIDs([]);
@@ -654,43 +565,14 @@ export default function ChatPage() {
           const status = data.status;
           if (status === "acknowledged") {
             const messageIDs = data.unique_message_ids;
+            const session_id = data.session_id
             const chat_history = groupChatMessages(data.chat_history);
-            const uploaded_files = data.uploaded_files;
 
-            // 🆕 File Mapping Logic
-            const filesByMessage: Record<string, any[]> = {};
-            const unattachedFiles: any[] = [];
-
-            if (uploaded_files && uploaded_files.length > 0) {
-              uploaded_files.forEach((file: any) => {
-                if (file.message_id) {
-                  if (!filesByMessage[file.message_id]) {
-                    filesByMessage[file.message_id] = [];
-                  }
-                  filesByMessage[file.message_id].push(file);
-                } else {
-                  unattachedFiles.push(file);
-                }
-              });
-            }
-
-            // Enrich chat history with attached files
-            const enrichedHistory = (chat_history || []).map((msg: any) => ({
-              ...msg,
-              attached_files: filesByMessage[msg.message_id] || [],
-            }));
-
-            setMessages(enrichedHistory);
+            setMessages(chat_history);
             setMessageIDs(messageIDs);
 
-            if (unattachedFiles.length > 0) {
-              setSessionFiles(unattachedFiles);
-              console.log("📎 Restored unattached files:", unattachedFiles);
-            } else {
-              setSessionFiles([]);
-            }
-            // Clear input area files just in case
-            setUploadedFiles([]);
+            // set the correct endpoint
+            router.push(`/pages/chatbot?session_id=${session_id}`);
           }
           break;
 
@@ -859,45 +741,8 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => {
-    if (attachedFile && !uploadResponse && !isUploading) {
-      performBackgroundUpload(attachedFile);
-    }
-  }, [attachedFile, uploadResponse, isUploading]);
+    let isCancelled = false;
 
-  const performBackgroundUpload = async (file: File) => {
-    setIsUploading(true);
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("session_id", sessionID || "default_session");
-
-    try {
-      const response = await fetch("http://localhost:8000/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const err = await response.json();
-        console.error(`Upload failed: ${err.detail}`);
-        setAttachedFile(null); // Clear file on error
-        setAttachFileType(null);
-        setIsUploading(false);
-        return;
-      }
-
-      const data = await response.json();
-      // Store the data to be used when user hits Enter
-      setUploadResponse(data);
-    } catch (error) {
-      console.error("Upload error:", error);
-      setAttachedFile(null);
-      setAttachFileType(null);
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  useEffect(() => {
     const processFile = async () => {
       if (attachedFile && !fileContext && !isUploading) {
         setIsUploading(true);
@@ -936,10 +781,9 @@ export default function ChatPage() {
     processFile();
 
     return () => {
-      setIsCancelled(true);
+      isCancelled = true;
     };
   }, [attachedFile, sessionID]);
-
 
   const ask = async (
     input: string,
@@ -989,14 +833,14 @@ export default function ChatPage() {
 
 
     let attachments_array: Attachment[] = []
-    if (uploadResponse) {
+    if (fileContext) {
       if (attachedFile?.name && attachFileType) {
         attachments_array.push({ attachmentName: attachedFile?.name, attachmentType: attachFileType })
       }
       // Reset file states
       setAttachedFile(null);
       setAttachFileType(null);
-      setUploadResponse(null);
+
     }
 
     const userMessage: ChatMessage = {
@@ -1042,15 +886,13 @@ export default function ChatPage() {
           role: "user",
           system_instructions: guidelines || "",
           content: input,
-          new_file_context: fileContext,
           resend_flag: resend_flag,
           resend_message_id: resend_message_id || "",
+          new_file_context: fileContext,
         })
       );
-      if (fileContext) {
-        setAttachedFile(null);
-        setFileContext(null);
-      }
+      setFileContext(null);
+
       if (inputRef.current) {
         inputRef.current.innerText = "";
         setShowPlaceholder(true);
@@ -1117,7 +959,6 @@ export default function ChatPage() {
       {showPersonalizationForm ? (
         <RegistrationForm
           onComplete={(data) => {
-            setUserData(data);
             setShowPersonalizationForm(false);
             if (data.age <= 12) {
               setGreeting(
@@ -1169,13 +1010,6 @@ export default function ChatPage() {
                 className={`w-full ${messages && messages?.length > 0 ? "h-max" : "h-full"} px-4 mt-12 lg:w-2/3 flex flex-col gap-y-4 ${!messages ? "justify-center items-center" : ""}`}
               >
                 <AnimatePresence>
-                  {/* Session Files (Restored from history) - Always visible at top */}
-                  {sessionFiles.length > 0 && (
-                    <div className="w-full max-w-lg mx-auto mb-6 px-4">
-                      <UploadedFilesDisplay files={sessionFiles} onDelete={() => { }} />
-                    </div>
-                  )}
-
                   {messages?.length === 0 && (
                     <motion.div
                       className="flex flex-col gap-y-4 items-center self-center"
@@ -1283,41 +1117,6 @@ export default function ChatPage() {
                           <p className="ml-auto w-max min-w-40 max-w-[20rem] bg-neutral-900 text-white switzer-500 py-2 px-3 rounded-md shadow-md border border-black/5">
                             {record.content}
                           </p>
-
-                          {/* ✅ Attached Files - OUTSIDE message bubble, ChatGPT style */}
-                          {record.attached_files && record.attached_files.length > 0 && (
-                            <div className="ml-auto w-max max-w-[20rem]">
-                              {record.attached_files.map((file) => (
-                                <motion.div
-                                  key={file.file_id}
-                                  initial={{ opacity: 0, scale: 0.95 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden mb-2"
-                                >
-                                  <div className="flex items-center gap-3 p-3 hover:bg-gray-50 cursor-pointer transition-colors">
-                                    {/* File Icon */}
-                                    <div className="shrink-0 w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                                      <span className="text-xl">
-                                        {file.file_type.includes('pdf') ? '📄' :
-                                          file.file_type.includes('word') ? '📝' :
-                                            file.file_type.includes('image') ? '🖼️' : '📎'}
-                                      </span>
-                                    </div>
-
-                                    {/* File Info */}
-                                    <div className="flex-1 min-w-0">
-                                      <p className="switzer-600 text-sm text-gray-900 truncate">
-                                        {file.file_name}
-                                      </p>
-                                      <p className="switzer-400 text-xs text-gray-500">
-                                        Document
-                                      </p>
-                                    </div>
-                                  </div>
-                                </motion.div>
-                              ))}
-                            </div>
-                          )}
                         </div>
 
                         {/* PromptExtraOptions */}
@@ -1655,7 +1454,6 @@ export default function ChatPage() {
                     <div className="absolute -right-2 -top-1.5 bg-red-400 hover:bg-red-500 p-0.3 rounded-full" onClick={() => {
                       setAttachedFile(null);
                       setAttachFileType(null);
-                      setUploadResponse(null);
                       setIsUploading(false);
                     }}>
                       <CrossIcon className="w-4 h-4 cursor-pointer" />

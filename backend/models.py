@@ -37,7 +37,7 @@ class SajdaVerse(BaseModel):
     recommended: Optional[bool] = Field(None, description = "Sajda recommended or not")
     obligatory: Optional[bool] = Field(None, description="Sajda obligatory or not")
 
-class Verse(BaseModel):
+class VerseForAudio(BaseModel):
     number: Optional[int] = None
     audio: Optional[str] = None
     audioSecondary: Optional[List[str]] = None
@@ -51,7 +51,7 @@ class Verse(BaseModel):
     verse_image_url: Optional[str] = None
 
 
-class Surah(BaseModel):
+class SurahForAudio(BaseModel):
     number: Optional[int] = Field(..., description="The number of the Surah")
     name: Optional[str] = Field(..., description="The name of the Surah")
     englishName: Optional[str] = Field(None, description="The english name of the surah")
@@ -61,16 +61,28 @@ class Surah(BaseModel):
     revelationType: Optional[Literal["Meccan", "Medinan"]] = Field(
         None, description="The type of Revelation: Meccan or Medinan"
     )
-    ayahs: Optional[List[Verse]] = Field(
+    ayahs: Optional[List[VerseForAudio]] = Field(
         None, description="List of verses in the Surah"
     )
 
-class VerseImageData(BaseModel):
-    surah_name: str = Field(..., description = "The name of the surah")
-    surah_englishName: str = Field(..., description = "The engish name of the surah")
-    verse_number_in_surah: int = Field(..., description = "The verse number relative to the Surah")
+class VerseForImage(BaseModel):
+    numberInSurah: int = Field(..., description = "The verse number relative to the Surah")
     text: str = Field(None, description = "The english translation of the verse" )
     verse_image_url: str = Field(None, description = "The verse image URL")
+
+class SurahForImage(BaseModel):
+    name: str = Field(..., description = "The name of the surah")
+    englishName: str = Field(..., description = "The engish name of the surah")
+    ayahs: Optional[List[VerseForImage]] = Field(None, description = "List of verses in the Surah")
+
+
+class OutputSchema(BaseModel):
+    response: str = Field(..., description="The final response to the user")
+    has_verse_audio: bool = Field(..., description = "Determines whether the response contains Verse audio links or not")
+    audio_data: Optional[List[SurahForAudio]] = Field(None, description="Audio data for the required verses")
+    has_verse_image: bool = Field(..., description = "Determines whether the response contains verse image links or not")
+    verse_images: Optional[List[SurahForImage]] = Field(None, description = "Verse image data containing verse-image links, surah names, verse numbers")
+
 
 
 # ==================== NOTIFICATION MODELS ====================

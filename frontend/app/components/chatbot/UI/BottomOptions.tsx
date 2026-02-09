@@ -141,7 +141,6 @@ const BottomOptions = () => {
       alert("Only PDF and TXT files are allowed.");
       return;
     }
-
     console.log("📂 File selected:", file.name);
     setAttachedFile(file);
 

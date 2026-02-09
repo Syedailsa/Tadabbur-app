@@ -174,6 +174,7 @@ def get_user_from_token(token: str):
         logger.error(f" Unexpected Token Error: {str(e)}")
         return None
 
+
 def get_chat_messages(session_id: str, user_id: str, supabase_client) -> List[str]:
     """Get all messages of a specific session"""
     if not session_id or not supabase_client:
@@ -183,10 +184,10 @@ def get_chat_messages(session_id: str, user_id: str, supabase_client) -> List[st
     chat_messages = supabase_client.table('chat_messages').select('message_id', 'user_id', 'role', 'content', 'reply_to_message_id', 'feedback', 'audio_url').in_("role", ["user", "assistant"]).eq('session_id', session_id).eq('user_id', user_id).order('created_at').execute().data
 
     
-    # print("chat messages", chat_messages)
-    
-    return chat_messages
-
+    if chat_messages:
+        return chat_messages
+    else:
+        return []
 
 def get_message_ids(supabase_client) -> list[str | None]:
     """Get all message IDs"""
@@ -553,6 +554,24 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 requested_session_id = data.get("session_id", "")
                 try:
                     chat_history = get_chat_messages(requested_session_id, user_id, supabase_client)
+
+                    # for msg in chat_history:
+                    #     if msg.get('audio_url'):
+                    #         logger.info(f"✅ Message {msg['message_id']} HAS audio_url: {msg['audio_url'][:50]}...")
+                    
+                    uploaded_files = []
+                    try:
+                        files_response = supabase_client.table('session_files')\
+                            .select('file_id, file_name, file_type, created_at, message_id')\
+                            .eq('session_id', requested_session_id)\
+                            .order('created_at')\
+                            .execute()
+                        
+                        if files_response.data:
+                            uploaded_files = files_response.data
+                            logger.info(f"📎 Fetched {len(uploaded_files)} files")
+                    except Exception as e:
+                        logger.error(f"Error fetching files: {e}")
                     
                     # Update local state
                     session_id = requested_session_id
@@ -566,7 +585,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         "user_id": user_id,
                         "chat_history": chat_history,
                         "unique_message_ids": unique_message_ids,
-                        # "uploaded_files": uploaded_files  
+                        "uploaded_files": uploaded_files  
                     })
                 except Exception as e:
                     logger.error(f"Error loading chat: {e}")
@@ -818,21 +837,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
                 if not resend_flag:
                     try:
-                        # Check if session exists in DB before inserting message
-                        sess_check = supabase_client.table('chat_sessions').select('session_id').eq('session_id', session_id).execute()
-                        if not sess_check.data:
-                            logger.info(f"📝 First message detected. Persisting session {session_id} to DB.")
-                            supabase_client.table("chat_sessions").insert({
-                                'session_id': session_id, 
-                                'user_id': user_id,   
-                                "title": message[:50] if message else "New Chat",
-                                "description": "Conversation started" 
-                            }).execute()
-                    except Exception as sess_e:
-                        logger.error(f"Failed to lazy-create session: {sess_e}")
-                
-                if not resend_flag:
-                    try:
                         supabase_client.table('chat_messages').insert({
                             "message_id": user_message_id,
                             "user_id": user_id, 
@@ -863,9 +867,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 logger.info(f"[{current_agent_name}] Session: {session_id} | Message: {message_string} ...")
                 # File Feature - Check current session first, then fallback to default_session
                 file_context = session_file_context.get(session_id, "")
-                if not file_context:
-                    # Fallback: check default_session for uploaded files
-                    file_context = session_file_context.get("default_session", "")
 
                 if file_context:
                     logger.info(f"📚 Found context for session {session_id}: {len(file_context)} chars")
@@ -879,7 +880,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     )
 
                     logger.info(f"✅ Injected file context into prompt for {session_id}")
-                print("Dynamic system instructions", dynamic_system_instruction["text"])
+                # print("Dynamic system instructions", dynamic_system_instruction["text"])
                 try:
                     # Prepare messages
                     base_messages = (

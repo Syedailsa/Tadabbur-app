@@ -62,11 +62,12 @@ class Filters(BaseModel):
 QURAN_API_BASE = "http://api.alquran.cloud/v1/quran"
 
 
-class FiltersList(BaseModel):  # New top-level schema
-    """List of Quran filters"""
-    args: List[Filters] = Field(default_factory=list, description="List of filter queries")
 
-@tool(args_schema = FiltersList)
+class QuranAudioInput(BaseModel):
+    args: Optional[List[Filters]] = None
+    reciter: str = "ar.alafasy"
+
+@tool(args_schema = QuranAudioInput)
 def get_Quran_Audio(args: List[Filters] = None, reciter:str = "ar.alafasy") -> List[str]:
 
     """Get Quran Audio using metadata filters
@@ -74,7 +75,7 @@ def get_Quran_Audio(args: List[Filters] = None, reciter:str = "ar.alafasy") -> L
     
     **ARGS:**
 
-    --- args (List[Filters], optional) ---
+    1. --- args (List[Filters], optional) ---
     Each Filters object contains:
     
     - surah_args (SurahFilter):    
@@ -160,7 +161,9 @@ def get_Quran_Audio(args: List[Filters] = None, reciter:str = "ar.alafasy") -> L
 
         20. **limit (int)**
             Number of results to return
-
+    
+    2. --- reciter ---
+    
     **Notes:** Each Filters object represents a single surah–verse query. Multiple queries can be provided as a list of Filters.
 
     **PURPOSE:**
@@ -178,12 +181,14 @@ def get_Quran_Audio(args: List[Filters] = None, reciter:str = "ar.alafasy") -> L
 
     print("Get Quran Audio tool called!")
     if not args:
+        print("No filters provided")
         return "No filters provided"
     # initialize a results array to concatenate results
     surah_array = []    
     # fetch the data
+    print("Reciter", reciter)
     reciter_identifier = normalize_reciter_name(reciter, reciters_name_array)
-    
+    print("Normalized reciter", reciter_identifier)
     request_url = f'{QURAN_API_BASE}/{reciter_identifier}'
     response = requests.get(request_url)
 
@@ -293,22 +298,6 @@ def get_Quran_Audio(args: List[Filters] = None, reciter:str = "ar.alafasy") -> L
 
         # apply the verse filter
         new_filtered_array = []
-
-        # interface SurahForAudios {
-        #     name: string;
-        #     englishName: string;
-        #     revelationType: string;
-        #     ayahs: VerseForImages[]
-        # }
-
-        # interface VerseForAudios {
-        #     audio: string;
-        #     numberInSurah: number;
-        #     juz: number;
-        #     manzil: number;
-        #     ruku: number;
-        #     sajda: boolean | SajdaVerse
-        # }
 
         for surah in filtered_array:
             filtered_verses = list(filter(all_verse_filter_conditions, surah['ayahs']))

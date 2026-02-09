@@ -5,14 +5,14 @@ interface SurahForAudios {
     name: string;
     englishName: string;
     revelationType: string;
-    ayahs: VerseForImages[]
+    ayahs: VerseForAudios[]
 }
 
 
 interface SurahForVerseImages {
     name: string;
     englishName: string;
-    ayahs: VerseForAudios[]
+    ayahs: VerseForImages[]
 }
 
 export type { SurahForAudios, SurahForVerseImages }

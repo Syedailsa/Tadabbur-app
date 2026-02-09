@@ -13,7 +13,7 @@ from tools.verse_reader import get_verse_image
 from data.data import QuranMetaData,surah_name_english_array, surah_name_english_translation_array
 from pydantic import BaseModel, Field
 from langchain.agents.structured_output import ToolStrategy
-from models import Surah
+from models import OutputSchema
 from typing import List
 
 load_dotenv()
@@ -278,13 +278,6 @@ system_instructions = """You are Tadabbur, a storytelling assistant inspired by 
         For simple greetings (hi, hello, salam), respond warmly and naturally **without** calling any tools.
 
         **Default language:** English (unless the user converses in another)."""
-
-
-
-class OutputSchema(BaseModel):
-    response:str = Field(..., description="The final response to the user")
-    has_verse_audio:bool = Field(description = "Determines whether the response contains Verse audio links or not")
-    audio_data:Optional[List[Surah]] = Field(None, description="Audio data for the required verses")
 
 
 formatted_system_prompt = system_instructions.format(
