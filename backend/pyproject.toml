@@ -58,6 +58,10 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.44",
     "pypdf>=6.5.0",
     "murf>=2.2.5",
+<<<<<<< HEAD
+>>>>>>> origin/MVP_2
+=======
+    "dotenv>=0.9.9",
 >>>>>>> origin/MVP_2
 ]
 

@@ -3,7 +3,6 @@ import json
 import asyncio
 import pprint
 import re
-from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
@@ -104,7 +103,7 @@ import sys
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-load_dotenv()
+
 from data.data import comprehensive_surah_metadata
 
 logging.basicConfig(level=logging.INFO)
@@ -406,7 +405,7 @@ async def websocket_chat(websocket: WebSocket):
                             if res.audio_file:
                                 print("Audio url", res.audio_file)
                                 await websocket.send_json({
-                                    "type": "tts_audio_chunk",
+                                    "type": "tts_audio_url",
                                     "message_id": message_id_ref,
                                     "audio_url": res.audio_file
                                 })
@@ -867,7 +866,6 @@ async def websocket_chat(websocket: WebSocket):
                     continue
                 continue
 
-
             if data.get("type") == "report":
                 print("A response is reported")
                 ack_sent = False
@@ -883,11 +881,13 @@ async def websocket_chat(websocket: WebSocket):
                     })
                         ack_sent = True
                         continue
-                    
+                    print("Conversation History", conversation_history)
                     reported_assistant_message = next(
                     (msg for msg in conversation_history if msg["id"] == message_id),
                     None
                     )
+
+
                     if reported_assistant_message:
                         try:
                             # insert hard rule in a different thread for optimization
@@ -924,7 +924,6 @@ async def websocket_chat(websocket: WebSocket):
                         "status": "not-acknowledged"
                     })
                 continue
-
             if data.get("type") in ["like", "dislike"]:
                 type = data.get("type")
                 session_id = data.get('session_id')
@@ -989,7 +988,7 @@ async def websocket_chat(websocket: WebSocket):
                     )
                     
                     logger.info(f"✅ Injected file context into prompt for {session_id}")
-                # print("Dynamic system instructions", dynamic_system_instruction["text"])
+                print("Dynamic system instructions", dynamic_system_instruction["text"])
                 try:
                     # Prepare messages
                     base_messages = (
@@ -1052,7 +1051,6 @@ async def websocket_chat(websocket: WebSocket):
                             "reply_to_message_id": user_message_id,
                             "final": True
                         })
-
                     # # tool logic
                     # response_lower = response.lower() if response else ""
 

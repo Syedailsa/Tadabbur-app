@@ -3,6 +3,7 @@ from uuid import UUID
 from pydantic import BaseModel, EmailStr, Field, validator
 from typing import Optional, Literal
 from datetime import datetime, date
+from uuid import UUID
 
 # ==================== AUTH MODELS ====================
 
@@ -39,7 +40,7 @@ class AuthResponse(BaseModel):
 class NotificationCreate(BaseModel):
     title: str = Field(..., max_length=200)
     message: str = Field(..., max_length=1000)
-    recipientId: str
+    recipientId: UUID
 
 class NotificationResponse(BaseModel):
     id: str
@@ -101,34 +102,6 @@ class UserProfileResponse(BaseModel):
     gender: Optional[str] = None
     createdAt: datetime
 
-class ProfileUpdate(BaseModel):
-    """Update profile with specific fields only"""
-    firstname: Optional[str] = Field(None, min_length=3, max_length=50)
-    lastName: Optional[str] = None
-    dateOfBirth: Optional[str] = None  # Changed
-    address: Optional[str] = None
-    phoneNumber: Optional[str] = Field(None, alias="contact")   # Accept 'contact' in request
-    email: Optional[EmailStr] = None
-    profilePicture: Optional[str] = Field(None, alias="image")  # Accept 'image' in request
-    image_url: Optional[str] = Field(None, alias="imageUrl")    # Accept 'imageUrl' in request
-    bio: Optional[str] = None
-
-    class Config:
-        populate_by_name = True
-
-class UserProfile(BaseModel):
-    id: UUID
-    firstname: str
-    email: str
-    profileImageUrl: Optional[str] = Field(None, description="URL to fetch profile image: /users/image/{id}")
-    bio: Optional[str] = None
-    lastName: Optional[str] = None
-    dateofBirth: Optional[date] = None
-    address: Optional[str] = None
-    phoneNumber: Optional[str] = None
-    gender: Optional[str] = None
-    createdAt: datetime
-
 class EditProfileRequest(BaseModel):
     """Simple edit request - no image field needed"""
     firstname: Optional[str] = Field(None, min_length=3, max_length=50)
@@ -136,7 +109,7 @@ class EditProfileRequest(BaseModel):
     dateofBirth: Optional[date] = None
     address: Optional[str] = None
     phoneNumber: Optional[str] = None
-    email: Optional[EmailStr] = None
+    # email: Optional[EmailStr] = None
     bio: Optional[str] = None
     gender: Optional[str] = None
     imageUrl: Optional[str] = None

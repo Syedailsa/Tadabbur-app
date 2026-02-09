@@ -4,11 +4,17 @@ from models import BookmarkDeleteRequest
 from typing import List
 import logging
 from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form
+from datetime import datetime
+from dateutil.parser import parse
+
+
 
 # Local imports
 from models import *
 from utilities import hash_password,verify_password, create_access_token, verify_google_token, generate_user_id, generate_notification_id, generate_bookmark_id, generate_feedback_id, get_current_user
 import base64
+import uuid
 
 import logging
 from fastapi.responses import StreamingResponse
@@ -458,156 +464,168 @@ profile_router = APIRouter(prefix="/users", tags=["User Profile"])
 
 @profile_router.get("/me", response_model=UserProfileResponse)
 async def get_my_profile(user: dict = Depends(get_current_user)):
-    """Get current user's profile"""
+    """
+    Get current user's profile from 'users' table
+    """
     async with get_db_connection() as conn:
         profile = await conn.fetchrow("""
             SELECT
                 user_id as id,
                 firstname,
                 email,
-                COALESCE(image_url, profile_picture) as "profileImageUrl",
+                profile_image_url as "profileImageUrl", 
+                bio,
                 created_at as "createdAt",
-                NULL as bio,
-                NULL as "lastName",
-                NULL as "dateofBirth",
-                NULL as address,
-                NULL as "phoneNumber",
-                NULL as gender
-            FROM google_users
+                last_name as "lastName",
+                date_of_birth as "dateofBirth",
+                address,
+                phone_number as "phoneNumber",
+                gender
+            FROM users
             WHERE user_id = $1
         """, user['user_id'])
 
         if not profile:
-            profile = await conn.fetchrow("""
-                SELECT
-                    user_id as id,
-                    firstname,
-                    email,
-                    COALESCE(image_url, profile_picture) as "profileImageUrl",
-                    bio,
-                    created_at as "createdAt",
-                    last_name as "lastName",
-                    date_of_birth as "dateofBirth",
-                    address,
-                    phone_number as "phoneNumber",
-                    gender
-                FROM users
-                WHERE user_id = $1
-            """, user['user_id'])
-
-        if not profile:
             raise HTTPException(status_code=404, detail="Profile not found")
 
-        logger.info(f"Profile fetched for user {user['user_id']}")
         return dict(profile)
 
 
+
 @profile_router.put("/edit-profile", response_model=EditProfileResponse)
-async def edit_profile(req: EditProfileRequest, user: dict = Depends(get_current_user)):
-    """Edit Profile API"""
-    async with get_db_connection() as conn:
-        google_user = await conn.fetchrow(
-            "SELECT user_id FROM google_users WHERE user_id = $1", 
-            user['user_id']
-        )
-        is_google = google_user is not None
+async def edit_profile(
+    file: Optional[UploadFile] = File(None),
+    firstname: Optional[str] = Form(None),
+    lastName: Optional[str] = Form(None),
+    phoneNumber: Optional[str] = Form(None),
+    dateofBirth: Optional[str] = Form(None),
+    gender: Optional[str] = Form(None),
+    bio: Optional[str] = Form(None),
+    address: Optional[str] = Form(None),
+    user: dict = Depends(get_current_user)
+):
+    """
+    All fields are optional
+    Handles both Image Upload and Data Update in one request (multipart/form-data)
+    """
+    try:
+        async with get_db_connection() as conn:
+            updates = []
+            values = []
+            updated_fields = []
 
-        updates = []
-        values = []
-        updated_fields = []
+            # ================= IMAGE UPLOAD =================
+            if file and file.filename:
+                allowed_types = ["image/jpeg", "image/png", "image/webp", "image/jpg", "image/avif"]
+                if file.content_type not in allowed_types:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid file type. Only JPG, PNG, WebP, and AVIF are allowed."
+                    )
 
-        if is_google:
-            if req.email:
-                existing = await conn.fetchrow(
-                    "SELECT user_id FROM google_users WHERE email = $1 AND user_id != $2",
-                    req.email, user['user_id']
+                MAX_SIZE = 5 * 1024 * 1024  # 5MB
+                image_data = await file.read()
+
+                if len(image_data) > MAX_SIZE:
+                    raise HTTPException(status_code=400, detail="Image too large (max 5MB)")
+
+                file_ext = file.filename.split('.')[-1].lower()
+                unique_filename = f"{user['user_id']}/{uuid.uuid4()}.{file_ext}"
+
+                old_image_url = await conn.fetchval(
+                    "SELECT profile_image_url FROM users WHERE user_id = $1",
+                    user['user_id']
                 )
-                if existing:
-                    raise HTTPException(status_code=400, detail="Email already in use")
-                updates.append(f"email = ${len(values) + 1}")
-                values.append(req.email)
-                updated_fields.append("email")
 
-            if req.firstname:
+                if old_image_url and SUPABASE_STORAGE_BUCKET in old_image_url:
+                    try:
+                        old_path = old_image_url.split(f'{SUPABASE_STORAGE_BUCKET}/')[-1]
+                        supabase.storage.from_(SUPABASE_STORAGE_BUCKET).remove([old_path])
+                    except Exception:
+                        pass
+
+                supabase.storage.from_(SUPABASE_STORAGE_BUCKET).upload(
+                    path=unique_filename,
+                    file=image_data,
+                    file_options={
+                        "content-type": file.content_type,
+                        "cache-control": "3600",
+                        "upsert": "true"
+                    }
+                )
+
+                public_url = supabase.storage.from_(SUPABASE_STORAGE_BUCKET).get_public_url(unique_filename)
+
+                updates.append(f"profile_image_url = ${len(values) + 1}")
+                values.append(public_url)
+                updated_fields.append("profileImage")
+
+            # ================= DATA FIELDS =================
+            if firstname:
                 updates.append(f"firstname = ${len(values) + 1}")
-                values.append(req.firstname)
+                values.append(firstname)
                 updated_fields.append("firstname")
 
-            if not updates:
-                raise HTTPException(status_code=400, detail="No fields to update")
-
-            values.append(user['user_id'])
-            query = f"UPDATE google_users SET {', '.join(updates)} WHERE user_id = ${len(values)}"
-            await conn.execute(query, *values)
-
-        else:
-            if req.email:
-                existing = await conn.fetchrow(
-                    "SELECT user_id FROM users WHERE email = $1 AND user_id != $2",
-                    req.email, user['user_id']
-                )
-                if existing:
-                    raise HTTPException(status_code=400, detail="Email already in use")
-                updates.append(f"email = ${len(values) + 1}")
-                values.append(req.email)
-                updated_fields.append("email")
-
-            if req.firstname:
-                updates.append(f"firstname = ${len(values) + 1}")
-                values.append(req.firstname)
-                updated_fields.append("firstname")
-
-            if req.lastName:
+            if lastName:
                 updates.append(f"last_name = ${len(values) + 1}")
-                values.append(req.lastName)
+                values.append(lastName)
                 updated_fields.append("lastName")
 
-            if req.imageUrl:
-                updates.append(f"image_url = ${len(values) + 1}")
-                values.append(req.imageUrl)
-                updated_fields.append("imageUrl")
-
-            if req.phoneNumber:
+            if phoneNumber:
                 updates.append(f"phone_number = ${len(values) + 1}")
-                values.append(req.phoneNumber)
+                values.append(phoneNumber)
                 updated_fields.append("phoneNumber")
 
-            # ✅ FIXED: Use correct field name dateofBirth
-            if req.dateofBirth:
-                updates.append(f"date_of_birth = ${len(values) + 1}")
-                values.append(req.dateofBirth)
-                updated_fields.append("dateofBirth")
+            if dateofBirth:
+                  dob_str = dateofBirth.strip()
+                  try:
+                    dob = parse(dob_str, dayfirst=False).date()
+                  except Exception:
+                    raise HTTPException(
+                          status_code=400,
+                          detail=f"Invalid date format: '{dateofBirth}'. Use YYYY-MM-DD"
+                    )
 
-            if req.gender:
+            if gender:
                 updates.append(f"gender = ${len(values) + 1}")
-                values.append(req.gender)
+                values.append(gender)
                 updated_fields.append("gender")
 
-            if req.bio is not None:
+            if bio:
                 updates.append(f"bio = ${len(values) + 1}")
-                values.append(req.bio)
+                values.append(bio)
                 updated_fields.append("bio")
 
-            if req.address is not None:
+            if address:
                 updates.append(f"address = ${len(values) + 1}")
-                values.append(req.address)
+                values.append(address)
                 updated_fields.append("address")
 
+            # ================= EXECUTE UPDATE =================
             if not updates:
-                raise HTTPException(status_code=400, detail="No fields to update")
+                raise HTTPException(status_code=400, detail="No fields provided to update")
 
             updates.append("updated_at = NOW()")
             values.append(user['user_id'])
-            query = f"UPDATE users SET {', '.join(updates)} WHERE user_id = ${len(values)}"
+
+            query = f"""
+                UPDATE users 
+                SET {', '.join(updates)} 
+                WHERE user_id = ${len(values)}
+            """
             await conn.execute(query, *values)
 
-    logger.info(f"Profile updated for user {user['user_id']}: {updated_fields}")
-    
-    return EditProfileResponse(
-        message="Profile updated successfully",
-        updatedFields=updated_fields,
-        timestamp=datetime.utcnow()
-    )
+        return EditProfileResponse(
+            message="Profile updated successfully",
+            updatedFields=updated_fields,
+            timestamp=datetime.utcnow()
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"❌ Edit profile error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Profile update failed")
 
 # ==================== IMAGE ENDPOINTS ====================
 
@@ -618,59 +636,70 @@ async def upload_profile_image(
     file: UploadFile = File(...), 
     user: dict = Depends(get_current_user)
 ):
-    """Upload profile image"""
+    """
+        ✅ Upload profile image to Supabase Storage
+        
+        Flow:
+        1. Validate file type & size
+        2. Upload to Supabase Storage bucket
+        3. Get public CDN URL
+        4. Save URL in database (not image data!)
+        5. Return URL to frontend
+    """
     try:
-        if file.content_type not in ["image/jpeg", "image/png", "image/webp"]:
-            raise HTTPException(status_code=400, detail="Invalid file type. Only JPG, PNG, and WebP are allowed.")
-        
-        MAX_SIZE = 5 * 1024 * 1024
+        # 1. Validate file type
+        allowed_types = ["image/jpeg", "image/png", "image/webp", "image/jpg"]
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid file type. Only JPG, PNG, and WebP are allowed."
+            )
+
+        # 2. Read and validate file size
+        MAX_SIZE = 5 * 1024 * 1024  # 5MB
         image_data = await file.read()
-        
+
         if len(image_data) > MAX_SIZE:
             raise HTTPException(status_code=400, detail="Image too large (max 5MB)")
-            
-        async with get_db_connection() as conn:
-            old_image_url = await conn.fetchval(
-                f"SELECT image_url FROM {'google_users' if await conn.fetchval('SELECT 1 FROM google_users WHERE user_id = $1', user['user_id']) else 'users'} WHERE user_id = $1",
-                user['user_id']
-            )
-            
-            if old_image_url and "/users/image/" in old_image_url:
-                try:
-                    old_id = int(old_image_url.split("/")[-1])
-                    await conn.execute("DELETE FROM user_images WHERE id = $1", old_id)
-                except:
-                    pass
 
-            image_id = await conn.fetchval("""
-                INSERT INTO user_images (user_id, image_name, image_data, content_type, image_size, created_at)
-                VALUES ($1, $2, $3, $4, $5, NOW())
-                RETURNING id
-            """, user['user_id'], file.filename, image_data, file.content_type, len(image_data))
-            
-            image_url = f"/users/image/{image_id}"
-            is_google = await conn.fetchval(
-                "SELECT 1 FROM google_users WHERE user_id = $1", 
-                user['user_id']
-            )
-            
-            if is_google:
-                await conn.execute(
-                    "UPDATE google_users SET image_url = $1 WHERE user_id = $2",
-                    image_url, user['user_id']
-                )
-            else:
-                await conn.execute(
-                    "UPDATE users SET image_url = $1, updated_at = NOW() WHERE user_id = $2",
-                    image_url, user['user_id']
-                )
+        logger.info(f"File size: {len(image_data)} bytes, content-type: {file.content_type}")
+
+        # 3. Generate unique filename
+        file_ext = file.filename.split('.')[-1].lower()
+        unique_filename = f"{user['user_id']}/{uuid.uuid4()}.{file_ext}"
+
+        logger.info(f"Uploading to Supabase: {unique_filename}")
         
-        logger.info(f"Image uploaded to DB: user={user['user_id']}, image_id={image_id}")
+        async with get_db_connection() as conn:
+            old_image_url = await conn.fetchval("SELECT profile_image_url FROM users WHERE user_id = $1", user['user_id'])
+            
+            if old_image_url and SUPABASE_STORAGE_BUCKET in old_image_url:
+                try:
+                    old_path = old_image_url.split(f'{SUPABASE_STORAGE_BUCKET}/')[-1]
+                    supabase.storage.from_(SUPABASE_STORAGE_BUCKET).remove([old_path])
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to delete old image: {str(e)}")
+            
+            try:
+                supabase.storage.from_(SUPABASE_STORAGE_BUCKET).upload(
+                    path=unique_filename,
+                    file=image_data,
+                    file_options={"content-type": file.content_type, "upsert": "true"}
+                )
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to upload to Supabase Storage: {str(e)}")
+
+            public_url = supabase.storage.from_(SUPABASE_STORAGE_BUCKET).get_public_url(unique_filename)
+
+            await conn.execute(
+                "UPDATE users SET profile_image_url = $1, updated_at = NOW() WHERE user_id = $2",
+                public_url, user['user_id']
+            )
         
         return ImageUploadResponse(
             message="Profile image uploaded successfully",
             status="success",
-            profileImageUrl=image_url,
+            profileImageUrl=public_url,
             timestamp=datetime.utcnow()
         )
         
@@ -691,23 +720,11 @@ async def get_profile_image_redirect(user_id: str):
     """
     try:
         async with get_db_connection() as conn:
-            # Check Google users first
-            image_url = await conn.fetchval(
-                "SELECT profile_image_url FROM google_users WHERE user_id = $1",
-                user_id
-            )
-            
-            if not image_url:
-                # Check regular users
-                image_url = await conn.fetchval(
-                    "SELECT profile_image_url FROM users WHERE user_id = $1",
-                    user_id
-                )
+            image_url = await conn.fetchval("SELECT profile_image_url FROM users WHERE user_id = $1", user_id)
             
             if not image_url:
                 raise HTTPException(status_code=404, detail="No profile image found")
             
-            # Return JSON with URL (or redirect)
             from fastapi.responses import RedirectResponse
             return RedirectResponse(url=image_url)
             
@@ -725,59 +742,27 @@ async def delete_profile_image(user: dict = Depends(get_current_user)):
     """
     try:
         async with get_db_connection() as conn:
-            is_google = await conn.fetchval(
-                "SELECT 1 FROM google_users WHERE user_id = $1", 
-                user['user_id']
-            )
-            
-            # Get current image URL
-            image_url = await conn.fetchval(
-                f"SELECT profile_image_url FROM {'google_users' if is_google else 'users'} WHERE user_id = $1",
-                user['user_id']
-            )
+            image_url = await conn.fetchval("SELECT profile_image_url FROM users WHERE user_id = $1", user['user_id'])
             
             if not image_url:
                 raise HTTPException(status_code=404, detail="No profile image to delete")
             
-            # Extract path from Supabase URL
             if SUPABASE_STORAGE_BUCKET in image_url:
                 try:
                     image_path = image_url.split(f'{SUPABASE_STORAGE_BUCKET}/')[-1]
-                    logger.info(f"Deleting from Supabase: {image_path}")
-
-                    # Delete from Supabase Storage
                     supabase.storage.from_(SUPABASE_STORAGE_BUCKET).remove([image_path])
-                    logger.info(f"Deleted from Supabase: {image_path}")
                 except Exception as e:
                     logger.warning(f"Failed to delete from Supabase: {str(e)}")
             
-            # Clear from database
-            if is_google:
-                await conn.execute(
-                    "UPDATE google_users SET profile_image_url = NULL WHERE user_id = $1",
-                    user['user_id']
-                )
-            else:
-                await conn.execute(
-                    "UPDATE users SET profile_image_url = NULL, updated_at = NOW() WHERE user_id = $1",
-                    user['user_id']
-                )
+            await conn.execute("UPDATE users SET profile_image_url = NULL, updated_at = NOW() WHERE user_id = $1", user['user_id'])
             
-            logger.info(f"✅ Profile image deleted for user {user['user_id']}")
-            
-            return SuccessResponse(
-                message="Profile image deleted successfully",
-                timestamp=datetime.utcnow()
-            )
+            return SuccessResponse(message="Profile image deleted successfully", timestamp=datetime.utcnow())
             
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Image deletion error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to delete image")
-
-
-
 # ==================== FEEDBACK ROUTER ====================
 
 feedback_router = APIRouter(prefix="/feedback", tags=["Feedback"])
