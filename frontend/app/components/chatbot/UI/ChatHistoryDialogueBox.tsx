@@ -153,7 +153,7 @@ const ChatHisoryDialogueBox = () => {
                 )}
               </div>
               <motion.div className="grid grid-cols-1 gap-2 px-1 overflow-y-auto h-45">
-                {chatHistory ? (
+                {chatHistory?.length > 0 ? (
                   chatHistory?.map((chat: ChatRecord, index: number) => (
                     <motion.div
                       onClick={() => {

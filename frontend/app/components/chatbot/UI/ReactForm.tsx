@@ -150,7 +150,7 @@ interface RegistrationFormProps {
 
 const RegistrationForm: React.FC<RegistrationFormProps> = ({ onComplete }) => {
   const [serverError, setServerError] = useState<string | null>(null);
-  
+
   const {
     register,
     handleSubmit,
@@ -163,41 +163,41 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onComplete }) => {
     },
   });
 
-const onSubmit: SubmitHandler<RegistrationData> = async (data) => {
-  setServerError(null);
+  const onSubmit: SubmitHandler<RegistrationData> = async (data) => {
+    setServerError(null);
 
-  try {
-    const token = localStorage.getItem("token");
+    try {
+      const token = localStorage.getItem("token");
 
-    if (!token) {
-      throw new Error("User not authenticated");
-    }
-
-    const response = await axios.post(
-      "http://localhost:8000/personalization/save",
-      {
-        username: data.username,
-        age: data.age,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+      if (!token) {
+        throw new Error("User not authenticated");
       }
-    );
 
-    if (response.data.is_personalized) {
-      localStorage.setItem("personalization", JSON.stringify(data));
-      onComplete(data);
-    }
-  } catch (error: any) {
-    console.error("Personalization error:", error);
-    setServerError(
-      error.response?.data?.detail ||
+      const response = await axios.post(
+        `${process.env.NEXT_BACKEND_URL}/personalization/save`,
+        {
+          username: data.username,
+          age: data.age,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.data.is_personalized) {
+        localStorage.setItem("personalization", JSON.stringify(data));
+        onComplete(data);
+      }
+    } catch (error: any) {
+      console.error("Personalization error:", error);
+      setServerError(
+        error.response?.data?.detail ||
         "Failed to save personalization. Please try again."
-    );
-  }
-};
+      );
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
@@ -224,7 +224,7 @@ const onSubmit: SubmitHandler<RegistrationData> = async (data) => {
               {serverError}
             </div>
           )}
-          
+
           <div className="flex flex-col gap-y-1.5">
             <label
               htmlFor="username"
@@ -236,11 +236,10 @@ const onSubmit: SubmitHandler<RegistrationData> = async (data) => {
               id="username"
               type="text"
               placeholder="e.g. Ali"
-              className={`w-full px-4 py-2.5 rounded-lg border ${
-                errors.username
+              className={`w-full px-4 py-2.5 rounded-lg border ${errors.username
                   ? "border-red-500 focus:ring-red-200"
                   : "border-gray-200 focus:ring-blue-100 focus:border-blue-500"
-              } focus:outline-none focus:ring-4 transition-all duration-200 switzer-400`}
+                } focus:outline-none focus:ring-4 transition-all duration-200 switzer-400`}
               {...register("username")}
             />
             {errors.username && (
@@ -261,11 +260,10 @@ const onSubmit: SubmitHandler<RegistrationData> = async (data) => {
               id="age"
               type="number"
               placeholder="e.g. 15"
-              className={`w-full px-4 py-2.5 rounded-lg border ${
-                errors.age
+              className={`w-full px-4 py-2.5 rounded-lg border ${errors.age
                   ? "border-red-500 focus:ring-red-200"
                   : "border-gray-200 focus:ring-blue-100 focus:border-blue-500"
-              } focus:outline-none focus:ring-4 transition-all duration-200 switzer-400`}
+                } focus:outline-none focus:ring-4 transition-all duration-200 switzer-400`}
               {...register("age")}
             />
             {errors.age && (

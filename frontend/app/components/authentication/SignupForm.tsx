@@ -26,7 +26,7 @@ export default function SignupForm({ onSuccess }: SignupProps) {
   const onSubmit = async (data: SignupInputs) => {
     setServerError(null);
     try {
-      const res = await axios.post('http://localhost:8000/auth/signup', data);
+      const res = await axios.post(`${process.env.NEXT_BACKEND_URL}/auth/signup`, data);
       onSuccess(res.data);
     } catch (error: any) {
       setServerError(error.response?.data?.detail || "Signup failed. Try a different email.");

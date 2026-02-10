@@ -92,7 +92,6 @@ export default function ChatPage() {
   const [hideReportContentDialogueBox, setHideReportContentDialogueBox] =
     useState<boolean | null>(true);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
-  const [attachFileType, setAttachFileType] = useState<string | null>(null)
   const [isCancelled, setIsCancelled] = useState<boolean>(false)
   const [fileContext, setFileContext] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false);
@@ -134,24 +133,6 @@ export default function ChatPage() {
     return processed;
   }
 
-  useEffect(() => {
-    if (!attachedFile) return
-    const ext = attachedFile.name.split('.').pop();
-    if (ext) {
-      switch (ext.toLowerCase()) {
-        case "txt":
-          setAttachFileType("Text")
-          break
-        case "pdf":
-          setAttachFileType("PDF")
-          break
-        default:
-          break
-      }
-    }
-
-  }, [attachedFile])
-
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
@@ -168,8 +149,6 @@ export default function ChatPage() {
       if (currentPlayableAudio.current) {
         currentPlayableAudio.current.state = "playing"
       }
-      console.log("Play fired")
-      console.log("Current Playable Audio", currentPlayableAudio)
       setMessages(prev =>
         prev.map(m =>
           m.message_id === currentPlayableAudio.current?.user_message_id
@@ -193,7 +172,6 @@ export default function ChatPage() {
       if (currentPlayableAudio.current) {
         currentPlayableAudio.current.state = "paused"
       }
-      console.log("paused fired")
       setMessages(prev =>
         prev.map(m =>
           m.message_id === currentPlayableAudio.current?.user_message_id
@@ -215,7 +193,6 @@ export default function ChatPage() {
       if (currentPlayableAudio.current) {
         currentPlayableAudio.current.state = "ended"
       }
-      console.log("ended fired")
       setMessages(prev =>
         prev.map(m =>
           m.message_id === currentPlayableAudio.current?.user_message_id
@@ -326,13 +303,13 @@ export default function ChatPage() {
         const token = localStorage.getItem("token");
 
         if (!token) {
-          console.log("❌ No token found, showing personalization form");
+          // console.log("❌ No token found, showing personalization form");
           setIsCheckingPersonalization(false);
           setShowPersonalizationForm(true);
           return;
         }
 
-        console.log("🔍 Checking personalization status with token...");
+        // console.log("🔍 Checking personalization status with token...");
 
         // Backend se personalization status check karo
         const response = await fetch(
@@ -352,11 +329,11 @@ export default function ChatPage() {
         }
 
         const data = await response.json();
-        console.log("📊 Personalization data received:", data);
+        // console.log("📊 Personalization data received:", data);
 
         if (data.is_personalized && data.username && data.age) {
 
-          console.log("✅ User already personalized");
+          // console.log("✅ User already personalized");
           setShowPersonalizationForm(false);
 
 
@@ -373,7 +350,7 @@ export default function ChatPage() {
           }
         } else {
 
-          console.log("❌ User not personalized, showing form");
+          // console.log("❌ User not personalized, showing form");
           setShowPersonalizationForm(true);
         }
       } catch (error) {
@@ -400,8 +377,6 @@ export default function ChatPage() {
     wsRef.current = websocket;
 
     websocket.onopen = () => {
-      console.log("Connected to websocket successfully!");
-
       const user = localStorage.getItem("user");
       let user_id = null;
       if (user) {
@@ -422,6 +397,14 @@ export default function ChatPage() {
 
       if (websocket.readyState === WebSocket.OPEN) {
         websocket.send(JSON.stringify(sessionInit));
+
+        if (urlSessionId) {
+          websocket.send(JSON.stringify({
+            type: "get_chat",
+            session_id: urlSessionId,
+            user_id: user_id,
+          }));
+        }
       }
 
       setReportedMessageIDs([]);
@@ -432,12 +415,12 @@ export default function ChatPage() {
     };
 
     wsRef.current.onclose = () => {
-      console.log("Websocket closed!");
+      // console.log("Websocket closed!");
     };
 
     wsRef.current.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      console.log("Data from websocket", event.data);
+      // console.log("Data from websocket", event.data);
 
       const type = data.type;
       switch (type) {
@@ -499,7 +482,6 @@ export default function ChatPage() {
             if (uploaded_files && uploaded_files.length > 0) {
               setSessionFiles(uploaded_files);
               setUploadedFiles([]);
-              console.log("📎 Restored files to session history:", uploaded_files);
             }
           }
           break;
@@ -567,11 +549,19 @@ export default function ChatPage() {
             const messageIDs = data.unique_message_ids;
             const session_id = data.session_id
             const chat_history = groupChatMessages(data.chat_history);
-
             setMessages(chat_history);
             setMessageIDs(messageIDs);
 
-            // set the correct endpoint
+            // initialize an emtpy array for hidePromptExtraOptionsModelBoxArray
+            const array: hidePromptExtraOptionsModelBoxArray[] = [];
+            if (data.chat_history.length > 0) {
+              for (const record of data.chat_history) {
+                if (record.role === "assistant") {
+                  array.push({ assistant_message_id: record.message_id, hidePromptExtraOptionsModelBox: true })
+                }
+              }
+            }
+            setHidePromptExtraOptionsModelBoxArray(array)
             router.push(`/pages/chatbot?session_id=${session_id}`);
           }
           break;
@@ -594,7 +584,7 @@ export default function ChatPage() {
               !oldMessagesRef.current ||
               oldMessagesRef.current.length === 0
             ) {
-              console.log("No old messages so returning...");
+              // console.log("No old messages so returning...");
               break;
             }
           }
@@ -762,7 +752,7 @@ export default function ChatPage() {
 
           if (!isCancelled && data.extracted_text) {
             setFileContext(data.extracted_text);
-            console.log("File parsed. Text ready to send on Enter.");
+            // console.log("File parsed. Text ready to send on Enter.");
           }
         } catch (error) {
           if (!isCancelled) {
@@ -796,7 +786,7 @@ export default function ChatPage() {
 
     if (resend_flag) {
       if (!old_responses_attachments || old_responses_attachments.responses.length === 0) {
-        console.log("No old assistant responses, continuing....");
+        // console.log("No old assistant responses, continuing....");
         return;
       }
       else {
@@ -827,19 +817,18 @@ export default function ChatPage() {
     }
 
     if (!messageID) {
-      console.log("No message ID so returning");
+      // console.log("No message ID so returning");
       return;
     }
 
 
     let attachments_array: Attachment[] = []
     if (fileContext) {
-      if (attachedFile?.name && attachFileType) {
-        attachments_array.push({ attachmentName: attachedFile?.name, attachmentType: attachFileType })
+      if (attachedFile?.name && attachedFile?.type) {
+        attachments_array.push({ attachmentName: attachedFile.name, attachmentType: attachedFile?.type })
       }
       // Reset file states
       setAttachedFile(null);
-      setAttachFileType(null);
 
     }
 
@@ -848,6 +837,8 @@ export default function ChatPage() {
       role: "user",
       content: input,
       attachments: resend_flag ? old_responses_attachments?.attachments ?? [] : attachments_array,
+      number_of_responses: resend_flag ? old_responses_attachments?.responses.length ?? 0 : 0,
+      active_message_index: 0,
       // add a dummy response message for loading state
       responses: [
         {
@@ -864,8 +855,6 @@ export default function ChatPage() {
           verse_images: []
         },
       ],
-      number_of_responses: resend_flag ? old_responses_attachments?.responses.length ?? 0 : 0,
-      active_message_index: 0,
     };
     oldMessagesRef.current = resend_flag ? old_responses_attachments?.responses ?? [] : [];
 
@@ -886,6 +875,8 @@ export default function ChatPage() {
           role: "user",
           system_instructions: guidelines || "",
           content: input,
+          file_name: attachedFile?.name,
+          file_type: attachedFile?.type,
           resend_flag: resend_flag,
           resend_message_id: resend_message_id || "",
           new_file_context: fileContext,
@@ -1095,11 +1086,11 @@ export default function ChatPage() {
                           record.attachments.map((attachment, attachment_index) => {
                             return (
                               <div key={attachment_index} id="chatbot-messages-box" className="w-max min-w-60 max-w-70 border border-black/5 ml-auto px-3 py-3 rounded-md text-xs flex items-center gap-x-2 my-2 relative">
-                                {attachment.attachmentType === "Text" ? (
+                                {attachment.attachmentType === "text/plain" ? (
                                   <div className="p-1 border border-[#FFA800]/10 shadow-[0.1rem] rounded-md bg-[#FFA800]/10">
                                     <TextFileIcon className="fill-current text-blue-400 w-8 h-8" />
                                   </div>
-                                ) : attachment.attachmentType === "PDF" ? (
+                                ) : attachment.attachmentType === "application/pdf" ? (
                                   <PdfFileIcon className="fill-current text-blue-400 w-8 h-8" />
                                 ) : (null)}
                                 <div className="absolute border border-black/5 rounded-md w-max px-2 py-0.5 poppins-semibold -top-3 z-10 -right-2 shadow-2xs fill-current text-black/30 bg-gray-50 subpixel-antialiased">
@@ -1107,7 +1098,11 @@ export default function ChatPage() {
                                 </div>
                                 <div className="flex flex-col gap-y-0.5">
                                   <p className="roboto-600 text-[0.9rem]">{attachment.attachmentName}</p>
-                                  <p className="subpixel-antialiased text-black/70" style={{ fontStyle: "italic" }}>{attachment.attachmentType ? attachment.attachmentType : "File"} File</p>
+                                  <p className="subpixel-antialiased text-black/70" style={{ fontStyle: "italic" }}>
+                                    {attachment.attachmentType && attachment.attachmentType === "text/plain" ? "Text"
+                                      : attachment.attachmentType === "application/pdf" ? "PDF"
+                                        : "File"} File
+                                  </p>
                                 </div>
                               </div>
                             )
@@ -1439,21 +1434,20 @@ export default function ChatPage() {
               >
                 {attachedFile && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative w-max bg-white border border-black/10 px-3 py-2 rounded-md text-xs flex items-center gap-x-2 z-10">
-                    {attachFileType === "Text" ? (
+                    {attachedFile?.type === "text/plain" ? (
                       <div className="p-1 border border-[#FFA800]/10 shadow-[0.1rem] rounded-md bg-[#FFA800]/10">
                         <TextFileIcon className="fill-current text-blue-400 w-6 h-6" />
                       </div>
-                    ) : attachFileType === "PDF" ? (
+                    ) : attachedFile?.type === "application/pdf" ? (
                       <PdfFileIcon className="fill-current text-blue-400 w-6 h-6" />
                     ) : (null)}
                     <div className="flex flex-col gap-y-0.5">
                       <p className="roboto-600 tracking-wide">{attachedFile.name}</p>
-                      <p className="subpixel-antialiased text-black/70" style={{ fontStyle: "italic" }}>{attachFileType ? attachFileType : "File"} File</p>
+                      <p className="subpixel-antialiased text-black/70" style={{ fontStyle: "italic" }}>{attachedFile?.type ? attachedFile.type : "File"} File</p>
                     </div>
 
                     <div className="absolute -right-2 -top-1.5 bg-red-400 hover:bg-red-500 p-0.3 rounded-full" onClick={() => {
                       setAttachedFile(null);
-                      setAttachFileType(null);
                       setIsUploading(false);
                     }}>
                       <CrossIcon className="w-4 h-4 cursor-pointer" />

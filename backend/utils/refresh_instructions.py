@@ -21,12 +21,12 @@ def group_by_category(system_rules):
     return result
 
 
-async def refresh_system_instructions(state: dict):
+async def refresh_system_instructions(state: dict, user_id:str):
     while True:
         try:
             supabase_client = get_supabase_client()
             # fetch those rules whose weight exceeds 0.8 and build the dynamic system instructions
-            system_rules = supabase_client.table('chat_rules').select('rule','category', 'hard_rule').or_("weight.gte.0.7,hard_rule.eq.True").execute().data
+            system_rules = supabase_client.table('chat_rules').select('rule','category', 'hard_rule').eq("user_id", user_id).or_("weight.gte.0.7,hard_rule.eq.True").execute().data
             print("Refreshing system instructions")
             dynamic_system_instruction_string = ""
             if system_rules:

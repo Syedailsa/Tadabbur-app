@@ -5,10 +5,10 @@ from tadabbur_agents.rule_similarity_checker_generator import rule_similarity_ev
 from typing import Literal
 from config.db import get_supabase_client
 
-def get_rules_grouped_by_category(supabase_client):
+def get_rules_grouped_by_category(supabase_client, user_id: str):
     try:
         # get only soft rules
-        res = supabase_client.table('chat_rules').select('rule_id', 'rule', 'category', 'weight').eq("hard_rule", False).execute()
+        res = supabase_client.table('chat_rules').select('rule_id', 'rule', 'category', 'weight').eq("hard_rule", False).eq("user_id", user_id).execute()
 
         grouped = defaultdict(list)
         if res.data:
@@ -31,7 +31,7 @@ def get_rules_grouped_by_category(supabase_client):
         return []
 
 
-def submit_feedback(user_feedback:Literal['like', 'dislike'], assistant_response:str, message_id:str, supabase_client):
+def submit_feedback(user_feedback:Literal['like', 'dislike'], assistant_response:str, message_id:str, user_id: str, supabase_client):
     try:        
         response = trait_classifier.invoke({"user_feedback": user_feedback, "assistant_response": assistant_response})
 
@@ -40,7 +40,7 @@ def submit_feedback(user_feedback:Literal['like', 'dislike'], assistant_response
             print("No traits found, can't submit user feedback!")
             raise ValueError("No traits found")
 
-        categories = get_rules_grouped_by_category(supabase_client)
+        categories = get_rules_grouped_by_category(supabase_client, user_id)
 
         for record in all_traits:
             trait_category = record.category
@@ -65,7 +65,7 @@ def submit_feedback(user_feedback:Literal['like', 'dislike'], assistant_response
                                 raise ValueError("No rule_id, can't adjust weight of the existing rule!")
                                 
                             print(f"Incrementing weight of rule with rule_id {rule_id}")
-                            result = supabase_client.table("chat_rules").select("weight").eq("rule_id", rule_id).limit(1).execute()
+                            result = supabase_client.table("chat_rules").select("weight").eq("rule_id", rule_id).eq("user_id", user_id).limit(1).execute()
                             existing_weight = result.data[0]['weight']
                            
                             if existing_weight >=1 or existing_weight < 0.3:
@@ -75,7 +75,7 @@ def submit_feedback(user_feedback:Literal['like', 'dislike'], assistant_response
                             elif response.weight_increment is False:
                                 new_weight = existing_weight - 0.1
 
-                            supabase_client.table("chat_rules").update({"weight": new_weight}).eq("rule_id", rule_id).execute()
+                            supabase_client.table("chat_rules").update({"weight": new_weight}).eq("rule_id", rule_id).eq("user_id", user_id).execute()
 
                         else:
                             print("Inserting a new rule")
@@ -84,7 +84,7 @@ def submit_feedback(user_feedback:Literal['like', 'dislike'], assistant_response
                             if not rule or not category:
                                 raise ValueError("No rule and category, can't proceed")
                             # insert a new rule with a small weight
-                            supabase_client.table("chat_rules").insert({"rule": rule, "category": category, "weight": 0.3, "hard_rule": False, "message_id": message_id}).execute()
+                            supabase_client.table("chat_rules").insert({"rule": rule, "category": category, "weight": 0.3, "hard_rule": False, "message_id": message_id, "user_id": user_id}).execute()
 
 
             else:
@@ -94,12 +94,12 @@ def submit_feedback(user_feedback:Literal['like', 'dislike'], assistant_response
                     print("Inserting a new rule")
                     category = response.category
                     new_rule = response.new_rule
-                    supabase_client.table('chat_rules').insert({"rule": new_rule, "category": category, "weight": 0.3, "hard_rule": False, "message_id": message_id}).execute()
+                    supabase_client.table('chat_rules').insert({"rule": new_rule, "category": category, "weight": 0.3, "hard_rule": False, "message_id": message_id, "user_id": user_id}).execute()
             
     except Exception as error:
         print("Some error occured while submitting feedback", error)
         raise
-        
+         
 
 
 def handle_feedback(type, message, message_id, user_id):
@@ -107,7 +107,7 @@ def handle_feedback(type, message, message_id, user_id):
         print("Submitting user feedback")
         # initialize supabase_client
         supabase_client = get_supabase_client()
-        submit_feedback(type, message, message_id, supabase_client)
+        submit_feedback(type, message, message_id, user_id, supabase_client)
 
         supabase_client.table("chat_messages") \
             .update({"feedback": type}) \

@@ -33,7 +33,7 @@ def normalize_reciter_name(name:str, array:list) -> str | None:
     """
 
     if not name:
-        return None
+        return array[0]
 
     name = name.strip().lower()
     best, score,_ = process.extractOne(
@@ -43,8 +43,7 @@ def normalize_reciter_name(name:str, array:list) -> str | None:
     )
 
     if score < 65:
-        
-        return None
+        return array[0]
     
     return best
 

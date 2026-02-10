@@ -99,12 +99,10 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 
-dynamic_system_instruction = {"text":""}
 @app.on_event("startup")
 async def startup_event():
     """Initialize database pool on startup"""
     await init_db_pool()
-    asyncio.create_task(refresh_system_instructions(dynamic_system_instruction))
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -164,7 +162,6 @@ def get_user_from_token(token: str):
         if user_id is None:
             logger.error(f" Token Valid but 'user_id' missing. Payload: {payload}")
             return None
-            
         return user_id
 
     except JWTError as e:
@@ -180,8 +177,8 @@ def get_chat_messages(session_id: str, user_id: str, supabase_client) -> List[st
     if not session_id or not supabase_client:
         print("Session id or supabase client none, so returning...")
         return []
-         
-    chat_messages = supabase_client.table('chat_messages').select('message_id', 'user_id', 'role', 'content', 'reply_to_message_id', 'feedback', 'audio_url').in_("role", ["user", "assistant"]).eq('session_id', session_id).eq('user_id', user_id).order('created_at').execute().data
+
+    chat_messages = supabase_client.table('chat_messages').select('message_id', 'user_id', 'role', 'content', 'reply_to_message_id', 'feedback', 'audio_url', 'has_verse_audio', 'audio_data', 'has_verse_image', 'verse_images').in_("role", ["user", "assistant"]).eq('session_id', session_id).eq('user_id', user_id).order('created_at').execute().data
 
     
     if chat_messages:
@@ -391,12 +388,16 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
     await websocket.accept()
     logger.info(f"WebSocket connected successfully for User ID: {user_id}")
-
+    
+    
+    dynamic_system_instruction = {"text":""}
+    asyncio.create_task(refresh_system_instructions(dynamic_system_instruction, user_id))
     try: 
 
         supabase_client = get_supabase_client()
     except Exception as e:
         print("Some error occured initiating supabase connection", e)
+        raise
 
     # initialize the conversation history and message_IDs set
     conversation_history = []
@@ -555,24 +556,33 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 try:
                     chat_history = get_chat_messages(requested_session_id, user_id, supabase_client)
 
-                    # for msg in chat_history:
-                    #     if msg.get('audio_url'):
-                    #         logger.info(f"✅ Message {msg['message_id']} HAS audio_url: {msg['audio_url'][:50]}...")
-                    
-                    uploaded_files = []
                     try:
+                        combined_file_content = ''
                         files_response = supabase_client.table('session_files')\
-                            .select('file_id, file_name, file_type, created_at, message_id')\
-                            .eq('session_id', requested_session_id)\
+                            .select('file_id, file_name, file_type, message_id')\
+                            .eq("user_id", user_id).eq('session_id', requested_session_id)\
                             .order('created_at')\
-                            .execute()
+                            .execute().data
                         
-                        if files_response.data:
-                            uploaded_files = files_response.data
-                            logger.info(f"📎 Fetched {len(uploaded_files)} files")
+                        files_by_message = defaultdict(list)
+                        
+                        if files_response:
+                            for f in files_response or []:
+                                file_content = f.get("file_content", "")
+                                file_name = f.get("file_name", "")
+                                if file_content and file_name:
+                                    combined_file_content += (f"\n\n --- File Name: {file_name} ---\n\n File Content: {file_content}")
+                                files_by_message[f["message_id"]].append({
+                                    "attachmentType": f.get("file_type", ""),
+                                    "attachmentName": f.get("file_name", "")
+                                })
                     except Exception as e:
-                        logger.error(f"Error fetching files: {e}")
+                        logger.error(f"Error fetching or processing files: {e}")
                     
+                    if combined_file_content:
+                        session_file_context[requested_session_id] = combined_file_content
+                    for msg in chat_history:
+                        msg["attachments"] = files_by_message.get(msg["message_id"], [])                    
                     # Update local state
                     session_id = requested_session_id
                     conversation_history = chat_history or []
@@ -585,7 +595,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         "user_id": user_id,
                         "chat_history": chat_history,
                         "unique_message_ids": unique_message_ids,
-                        "uploaded_files": uploaded_files  
                     })
                 except Exception as e:
                     logger.error(f"Error loading chat: {e}")
@@ -816,11 +825,9 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 
                 if new_file_text:
                     logger.info(f"💾 Committing new file context to session {session_id}")
-                    
                     existing_context = session_file_context.get(session_id, "")
                     updated_context = existing_context + "\n\n--- FILE CONTENT ---\n" + new_file_text
                     session_file_context[session_id] = updated_context
-                    
                     try:
                         await asyncio.to_thread(
                             lambda: supabase_client.table('chat_sessions').update({
@@ -829,11 +836,23 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         )
                     except Exception as db_e:
                         logger.error(f"Failed to save file context to DB: {db_e}")
-
                 if user_message_id not in unique_message_ids:
                     unique_message_ids.append(user_message_id)
 
                 message_string = message + (f"\n\n {additional_instructions}" if additional_instructions else "")
+
+                if not resend_flag:
+                    try:
+                        # Check if session exists in DB before inserting message
+                        sess_check = supabase_client.table('chat_sessions').select('session_id').eq('session_id', session_id).execute()
+                        if not sess_check.data:
+                            logger.info(f"📝 First message detected. Persisting session {session_id} to DB.")
+                            supabase_client.table("chat_sessions").insert({
+                                'session_id': session_id, 
+                                'user_id': user_id,   
+                            }).execute()
+                    except Exception as sess_e:
+                        logger.error(f"Failed to lazy-create session: {sess_e}")
 
                 if not resend_flag:
                     try:
@@ -847,30 +866,34 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         print("✅ User message saved successfully!")
                     except Exception as e:
                         print("Some error occured while inserting user messages", e)
-                        raise 
-
-                # 🆕 Re-enabled File Linking
-                attached_files = data.get("attached_files", [])
-                if attached_files and user_message_id:
-                    file_ids = [f.get('file_id') for f in attached_files if f.get('file_id')]
-                    if file_ids:
+                        raise
+                
+                if not resend_flag:
+                    file_name = data.get("file_name")
+                    file_type = data.get("file_type")
+                    
+                    if file_name and new_file_text:
                         try:
-                            supabase_client.table('session_files')\
-                                .update({'message_id': user_message_id})\
-                                .in_('file_id', file_ids)\
-                                .eq('session_id', session_id)\
-                                .execute()
-                            print(f"✅ Linked {len(file_ids)} files to message {user_message_id}")
+                            supabase_client.table('session_files').insert({
+                                "file_id": generate_uuid(),
+                                "file_name": file_name,
+                                "file_type": file_type,
+                                "file_content": new_file_text, 
+                                "message_id": user_message_id,
+                                "session_id": session_id,
+                                "user_id": user_id
+                            }).execute()
+                            print(f"✅ File record '{file_name}' saved to session_files")
                         except Exception as e:
-                            print(f"❌ Error linking files to message: {e}")
+                            print("Error saving to session_files:", e)
 
                 logger.info(f"[{current_agent_name}] Session: {session_id} | Message: {message_string} ...")
                 # File Feature - Check current session first, then fallback to default_session
-                file_context = session_file_context.get(session_id, "")
-
-                if file_context:
-                    logger.info(f"📚 Found context for session {session_id}: {len(file_context)} chars")
-                    safe_context = (file_context[:8000] + '... [TRUNCATED]') if len(file_context) > 8000 else file_context
+                 
+                if new_file_text:
+                    new_file_text = "\n\n--- FILE CONTENT ---\n" + new_file_text
+                    logger.info(f"📚 Found context for session {session_id}: {len(new_file_text)} chars")
+                    safe_context = (new_file_text[:8000] + '... [TRUNCATED]') if len(new_file_text) > 8000 else new_file_text
                     message_string = (
                         f"The user has attached a file. Use the following content to answer the user's question:\n"
                         f"========================================\n"
@@ -908,17 +931,30 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     unique_message_ids.append(response_message_id)
 
                     user_message_id = user_message_id if not resend_flag else resend_message_id
-                    # append assistant message to conversation history
-                    conversation_history.append({"role": "assistant", "content": structured_output.response or "", "id": response_message_id, "reply_to_message_id": user_message_id})
 
+                    response = structured_output.response or ""
+                    has_verse_audio = structured_output.has_verse_audio or False
+                    has_verse_image = structured_output.has_verse_image or False
+
+
+                    audio_data = [a.model_dump() for a in (structured_output.audio_data or [])]
+                    verse_images = [v.model_dump() for v in (structured_output.verse_images or [])]
+
+                    # append assistant message to conversation history
+                    conversation_history.append({"role": "assistant", "content": response , "id": response_message_id, "reply_to_message_id": user_message_id})
+                    
                     try:
                         supabase_client.table('chat_messages').insert({
                             "message_id": response_message_id,
                             "session_id": session_id,
                             "user_id": user_id,
                             "role": "assistant",
-                            "content": structured_output.response or "",
-                            "reply_to_message_id": user_message_id
+                            "content": response,
+                            "reply_to_message_id": user_message_id,
+                            "has_verse_audio": has_verse_audio,
+                            "audio_data": audio_data,
+                            "has_verse_image": has_verse_image,
+                            "verse_images": verse_images 
                         }).execute()
                         print("✅ Assistant message saved successfully!")
                     except Exception as e:

@@ -14,7 +14,7 @@ export default function LoginForm({ onSuccess }: LoginProps) {
   const onSubmit = async (data: LoginInputs) => {
     setServerError(null);
     try {
-      const res = await axios.post<LoginResponse>('http://localhost:8000/auth/login', data);
+      const res = await axios.post<LoginResponse>(`${process.env.NEXT_BACKEND_URL}/auth/login`, data);
       onSuccess(res.data);
     } catch (error: any) {
       setServerError(error.response?.data?.detail || "Invalid email or password");
@@ -28,7 +28,7 @@ export default function LoginForm({ onSuccess }: LoginProps) {
           {serverError}
         </div>
       )}
-      
+
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
         <input

@@ -1,3 +1,5 @@
+import { AssistantMessage } from "@/app/components/chatbot/interfaces/ChatMessage";
+
 function groupChatMessages(chatMessages: any) {
   const userMessagesMap = new Map();
 
@@ -8,7 +10,7 @@ function groupChatMessages(chatMessages: any) {
         message_id: msg.message_id || null,
         role: "user",
         content: msg.content,
-        attachments: [],
+        attachments: msg.attachments,
         responses: [],
         number_of_responses: 0,
         active_message_index: 0,
@@ -22,12 +24,19 @@ function groupChatMessages(chatMessages: any) {
       const parentId = msg.reply_to_message_id;
       if (parentId && userMessagesMap.has(parentId)) {
         const userMsg = userMessagesMap.get(parentId);
-        const assistantMsg = {
+        const assistantMsg: AssistantMessage = {
           message_id: msg.message_id,
           role: "assistant",
           content: msg.content,
           reply_to_message_id: parentId,
           feedback: msg.feedback,
+          audio_link: msg.audio_url,
+          audio_state: null,
+          has_verse_audio: msg.has_verse_audio,
+          verse_audio_data: msg.audio_data,
+          has_verse_image: msg.has_verse_image,
+          verse_images: msg.verse_images
+
         };
         userMsg.responses.push(assistantMsg);
         userMsg.number_of_responses = userMsg.responses.length;

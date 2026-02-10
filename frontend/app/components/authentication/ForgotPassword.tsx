@@ -17,12 +17,12 @@ export default function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
   const [step, setStep] = useState<Step>("EMAIL");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  
+
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
 
-  const API_URL = "http://localhost:8000/auth"; 
+  const API_URL = `${process.env.NEXT_BACKEND_URL}/auth`;
 
   const handleSendEmail = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
@@ -103,7 +103,7 @@ export default function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
 
       <AnimatePresence mode="wait">
         {error && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
             className="p-3 text-sm text-red-600 bg-red-50 rounded-md"
           >

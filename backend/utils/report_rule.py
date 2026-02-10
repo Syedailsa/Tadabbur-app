@@ -1,11 +1,11 @@
 from tadabbur_agents.report_rule_generator import report_rule_generator
 
-def insert_report_rule(supabase_client, message_id: str, feedback:str):
+def insert_report_rule(supabase_client, message_id: str, feedback:str, user_id: str):
     for i in range(8):
         try:
             print("Inserting hard rule...")
             # first fetch existing rules
-            existing_rules = supabase_client.table('chat_rules').select("rule_id", "rule").eq("hard_rule", True).execute().data
+            existing_rules = supabase_client.table('chat_rules').select("rule_id", "rule").eq("hard_rule", True).eq("user_id", user_id).execute().data
 
             print("All existing hard rules", existing_rules)
             
@@ -35,7 +35,7 @@ def insert_report_rule(supabase_client, message_id: str, feedback:str):
                         return response_data
                     if rule_id:
                         # first delete the conflicting rule
-                        supabase_client.table('chat_rules').delete().eq("rule_id", rule_id).execute()
+                        supabase_client.table('chat_rules').delete().eq("rule_id", rule_id).eq("user_id", user_id).execute()
                 else:
                     print("Report reason not valid")
                     response_data = {
@@ -45,7 +45,7 @@ def insert_report_rule(supabase_client, message_id: str, feedback:str):
                     return response_data
             
             # insert hard rule
-            supabase_client.table('chat_rules').insert({"rule": rule, "hard_rule": True, "message_id": message_id}).execute()
+            supabase_client.table('chat_rules').insert({"rule": rule, "hard_rule": True, "message_id": message_id, "user_id": user_id}).execute()
             print(f"Message with {message_id} is successfully reported!")
             response_data = {
                 "type": "report",
