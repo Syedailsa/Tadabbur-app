@@ -8,7 +8,7 @@ from jose import jwt, JWTError
 from typing import List, Optional
 import asyncio 
 from agents import InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered
-from tadabbur_agents.report_rule_generator import report_rule_generator
+from dotenv import load_dotenv
 from collections import defaultdict
 import agent as agent_module
 from story_agent import story_agent
@@ -121,9 +121,11 @@ app.include_router(story_router)
 app.include_router(reflection_router)
 app.include_router(personalization_router)
 
+FRONTEND_URL = os.getenv("FRONTEND_URL")  
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[FRONTEND_URL],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
