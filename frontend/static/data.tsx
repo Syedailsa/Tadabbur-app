@@ -1,22 +1,22 @@
 const ModelList = [
   {
-    model_name: "kimi-k2-instruct-0905",
-    provider: "Qwen",
+    model_name: "Llama 3.1 8B",
+    provider: "Meta",
     parameters: "235B",
     isNew: true,
     background:
       "bg-linear-to-br rounded-lg from-[#FFB347] via-[#FFCC33] to-[#FFB347]", // Warm Amber (light gold)
   },
   {
-    model_name: "deepseek-v3p1-terminus",
-    provider: "DeepSeek",
+    model_name: "Llama 3.3 70B",
+    provider: "Meta",
     parameters: "120B",
     isNew: false,
     background:
       "bg-linear-to-br rounded-lg from-[#6DD5FA] via-[#2980B9] to-[#6DD5FA]", // Sky Blue
   },
   {
-    model_name: "gpt-oss-120b",
+    model_name: "GPT OSS 120B",
     provider: "OpenAI",
     parameters: "120B",
     isNew: false,
@@ -24,21 +24,21 @@ const ModelList = [
       "bg-linear-to-br rounded-lg from-[#B993D6] via-[#8CA6DB] to-[#B993D6]", // Soft Lavender Blue
   },
   {
-    model_name: "gpt-oss-20b",
+    model_name: "GPT OSS 20B",
     provider: "OpenAI",
     parameters: "20B",
     isNew: false,
     background:
       "bg-linear-to-br rounded-lg from-[#A8EDEA] via-[#FED6E3] to-[#A8EDEA]", // Mint Rose
   },
-  {
-    model_name: "qwen3-235b-a22b-instruct",
-    provider: "Qwen",
-    parameters: "235B",
-    isNew: true,
-    background:
-      "bg-linear-to-br rounded-lg from-[#FBD786] via-[#C6FFDD] to-[#FBD786]", // Soft Sunrise
-  },
+  // {
+  //   model_name: "Llama Guard 4 12B",
+  //   provider: "Meta",
+  //   parameters: "235B",
+  //   isNew: true,
+  //   background:
+  //     "bg-linear-to-br rounded-lg from-[#FBD786] via-[#C6FFDD] to-[#FBD786]", // Soft Sunrise
+  // },
 ];
 
 const chatMessages: { role: "user" | "assistant"; content: string }[] = [
@@ -79,4 +79,167 @@ const chatMessages: { role: "user" | "assistant"; content: string }[] = [
   },
 ];
 
-export { ModelList, chatMessages };
+const dummyChatHistory = [
+  {
+    session_id: "a162542",
+    title: "Surah Baqarah Tafseer",
+    description:
+      "Overview of major themes and lessons. Focus on guidance and faith.",
+    date: "Sep, 2002",
+  },
+  {
+    session_id: "k282383",
+    title: "Asbāb al-Nuzūl of Key Verses",
+    description:
+      "Context behind selected revelations. Explains historical background.",
+    date: "Oct, 2002",
+  },
+  {
+    session_id: "u918233",
+    title: "Surah Yaseen Summary",
+    description:
+      "Central message of Surah Yaseen. Covers warnings and glad tidings.",
+    date: "Nov, 2002",
+  },
+  {
+    session_id: "x552781",
+    title: "Stories of the Prophets in the Quran",
+    description:
+      "Short summaries of prophetic stories. Focus on moral lessons.",
+    date: "Dec, 2002",
+  },
+  {
+    session_id: "p712034",
+    title: "Surah Mulk Explanation",
+    description:
+      "Meaning of verses and key reflections. Emphasis on accountability.",
+    date: "Jan, 2003",
+  },
+  {
+    session_id: "m553910",
+    title: "Names & Attributes of Allah",
+    description:
+      "Explanation of selected names from the Quran. Focus on meaning and impact.",
+    date: "Feb, 2003",
+  },
+  {
+    session_id: "z831002",
+    title: "Surah Rahman Tafseer",
+    description:
+      "Theme of divine mercy. Structure and repeated verse significance.",
+    date: "Mar, 2003",
+  },
+  {
+    session_id: "q482299",
+    title: "Makki vs Madani Surahs",
+    description:
+      "Differences in style and themes. How revelation evolved over time.",
+    date: "Apr, 2003",
+  },
+];
+
+const defaultPrompts = [
+  {
+    title: "Surah Summary",
+    description:
+      "Provide a concise, neutral summary of the selected Surah based only on well-known, non-sectarian scholarly understandings. Do not offer personal opinions, rulings, or new interpretations.",
+  },
+  {
+    title: "Ayah Explanation",
+    description:
+      "Explain the meaning of the selected ayah using widely accepted tafsir principles. Stay neutral across schools of thought, avoid issuing religious rulings, and cite sources when possible.",
+  },
+  {
+    title: "Context of Revelation",
+    description:
+      "Describe the historical context (Asbāb al-Nuzūl) of the selected verse using reliable, established sources. Only share information documented in classical works and avoid speculation.",
+  },
+  {
+    title: "Key Themes",
+    description:
+      "Identify the major themes present in the selected Surah or ayah based on recognized scholarly commentary. Present themes clearly and objectively without independent interpretation.",
+  },
+  {
+    title: "Arabic Vocabulary Help",
+    description:
+      "Explain the meaning of specific Qur’anic Arabic words using standard lexical definitions. Provide root meanings where relevant and avoid theological interpretations or rulings.",
+  },
+  {
+    title: "Reflection Prompt",
+    description:
+      "Offer a gentle, non-prescriptive reflection based on the verse. Keep the reflection general, avoid giving personal religious advice or rulings, and encourage the user to explore established tafsir.",
+  },
+];
+
+// Option 1: With TypeScript interfaces and mapped options
+interface RadioOption {
+  id: string;
+  value: string;
+  label: string;
+}
+
+const reportOptions: RadioOption[] = [
+  {
+    id: "offensive",
+    value: "the response is offensive",
+    label: "The response is offensive",
+  },
+  {
+    id: "ethical",
+    value: "the response violates ethical standards",
+    label: "The response violates ethical standards",
+  },
+  {
+    id: "inaccurate",
+    value: "the response is inaccurate",
+    label: "The response is inaccurate",
+  },
+  {
+    id: "harmful",
+    value: "the response is harmful",
+    label: "The response is harmful",
+  },
+  {
+    id: "violence",
+    value: "the response promotes violence or self-harm",
+    label: "The response promotes violence or self-harm",
+  },
+  {
+    id: "spam",
+    value: "the response is spam or advertising",
+    label: "This appears to be spam or advertising",
+  },
+  {
+    id: "copyright",
+    value: "the response infringes on copyright or intellectual property",
+    label: "This infringes on copyright or intellectual property",
+  },
+  {
+    id: "privacy",
+    value: "the response violates privacy or contains personal information",
+    label: "This violates someone's privacy or contains personal information",
+  },
+  {
+    id: "harassment",
+    value: "the response is harassment or bullying",
+    label: "This is harassment, bullying, or targeted abuse",
+  },
+  {
+    id: "misinformation",
+    value: "the response contains misinformation",
+    label: "This contains misinformation or fake news",
+  },
+  {
+    id: "other",
+    value: "other",
+    label: "Other",
+  },
+];
+
+export {
+  ModelList,
+  chatMessages,
+  dummyChatHistory,
+  defaultPrompts,
+  reportOptions,
+};

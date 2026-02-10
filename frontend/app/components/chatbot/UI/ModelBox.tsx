@@ -1,26 +1,17 @@
 import { FC } from "react";
 import { useState, useRef, useEffect, useContext } from "react";
-import { OptionsContext } from "@/app/context/chatbot/OptionsContext";
+import { ChatContext } from "@/app/context/chatbot/ChatContext";
 import { motion } from "framer-motion";
 import NetworkIntelligence from "../../../../icons/network_intelligence_icon.svg";
-
-interface ModelBoxProps {
-  modelList: {
-    model_name: string;
-    provider: string;
-    parameters: string;
-    isNew: boolean;
-    background: string;
-  }[];
-}
+import { ModelBoxProps } from "../interfaces/ModelBoxProps";
 
 const ModelBox: FC<ModelBoxProps> = ({
   modelList,
 }): React.ReactElement | null => {
   const [filteredModels, setFilteredModels] =
     useState<ModelBoxProps["modelList"]>(modelList);
-  const { hideModelBox, setHideModelBox, setSelectedModel } =
-    useContext(OptionsContext);
+  const { hideModelBox, setHideModelBox, setSelectedModel, setActive, wsRef } =
+    useContext(ChatContext);
   const overlayRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -31,6 +22,11 @@ const ModelBox: FC<ModelBoxProps> = ({
         !overlayRef.current.contains(e.target as Node)
       ) {
         setHideModelBox(true);
+        setActive((prev: boolean[]) => {
+          const current = [...prev];
+          current[0] = false;
+          return current;
+        });
         setFilteredModels(modelList);
       }
     };
@@ -75,6 +71,12 @@ const ModelBox: FC<ModelBoxProps> = ({
               key={index}
               onClick={() => {
                 setSelectedModel(model.model_name);
+                wsRef.current?.send(
+                  JSON.stringify({
+                    type: "model-selection",
+                    model: model.model_name,
+                  })
+                );
                 setHideModelBox(true);
                 setFilteredModels(modelList);
               }}
