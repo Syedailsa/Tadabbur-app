@@ -14,7 +14,7 @@ export default function LoginForm({ onSuccess }: LoginProps) {
   const onSubmit = async (data: LoginInputs) => {
     setServerError(null);
     try {
-      const res = await axios.post<LoginResponse>(`${process.env.NEXT_BACKEND_URL}/auth/login`, data);
+      const res = await axios.post<LoginResponse>(`${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/login`, data);
       onSuccess(res.data);
     } catch (error: any) {
       setServerError(error.response?.data?.detail || "Invalid email or password");

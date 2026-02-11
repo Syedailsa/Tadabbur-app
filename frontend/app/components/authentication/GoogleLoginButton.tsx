@@ -19,7 +19,7 @@ export default function GoogleLoginButton({
         throw new Error("No credential received");
       }
       const request: GoogleSignInRequest = { token: credentialResponse.credential };
-      const res = await axios.post<GoogleSignInResponse>(`${process.env.NEXT_BACKEND_URL}/auth/google-signin`, request);
+      const res = await axios.post<GoogleSignInResponse>(`${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/google-signin`, request);
       onSuccess(res.data);
     } catch (error) {
       onError("Google authentication failed. Please try again.");

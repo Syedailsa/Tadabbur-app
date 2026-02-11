@@ -107,7 +107,7 @@ const BottomOptions = () => {
       // 1. Dispatch event to tell ChatPage to show loading state
       window.dispatchEvent(new Event("tadabbur-transcription-start"));
 
-      const response = await fetch(`${process.env.NEXT_BACKEND_URL}/api/transcribe`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/transcribe`, {
         method: "POST",
         body: formData,
       });

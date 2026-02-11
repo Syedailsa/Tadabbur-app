@@ -123,6 +123,7 @@ app.include_router(personalization_router)
 
 FRONTEND_URL = os.getenv("FRONTEND_URL")  
 
+print("FRONTEND_URL =", FRONTEND_URL)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[FRONTEND_URL],
@@ -723,6 +724,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
             
 
             if data.get("type") == "undo-report":
+                print("Undo request")
                 message_id = data.get("message_id")
                 if not message_id: 
                     print("No message ID found for reported message")
@@ -732,9 +734,9 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     await asyncio.to_thread(delete_report_rule, supabase_client, message_id, user_id)
                     await websocket.send_json({
                         "type": "undo-report",
+                        "status": "acknowledged",
                         "message_id": message_id,
-                        "user_id": user_id,
-                        "status": "acknowledged"
+                        "user_id": user_id
                     })
                 except Exception as e:
                     await websocket.send_json({
@@ -796,7 +798,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         continue
                                 
                 except Exception as e:
-                    print(f"An error occured while the assistant's response {message_id}")    
+                    print(f"An error occured while reporting the assistant's response {message_id}")    
                     if not ack_sent:
                         await websocket.send_json({
                         "type": "report",

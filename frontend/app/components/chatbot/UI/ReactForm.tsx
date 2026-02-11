@@ -174,7 +174,7 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onComplete }) => {
       }
 
       const response = await axios.post(
-        `${process.env.NEXT_BACKEND_URL}/personalization/save`,
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/personalization/save`,
         {
           username: data.username,
           age: data.age,
@@ -237,8 +237,8 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onComplete }) => {
               type="text"
               placeholder="e.g. Ali"
               className={`w-full px-4 py-2.5 rounded-lg border ${errors.username
-                  ? "border-red-500 focus:ring-red-200"
-                  : "border-gray-200 focus:ring-blue-100 focus:border-blue-500"
+                ? "border-red-500 focus:ring-red-200"
+                : "border-gray-200 focus:ring-blue-100 focus:border-blue-500"
                 } focus:outline-none focus:ring-4 transition-all duration-200 switzer-400`}
               {...register("username")}
             />
@@ -261,8 +261,8 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onComplete }) => {
               type="number"
               placeholder="e.g. 15"
               className={`w-full px-4 py-2.5 rounded-lg border ${errors.age
-                  ? "border-red-500 focus:ring-red-200"
-                  : "border-gray-200 focus:ring-blue-100 focus:border-blue-500"
+                ? "border-red-500 focus:ring-red-200"
+                : "border-gray-200 focus:ring-blue-100 focus:border-blue-500"
                 } focus:outline-none focus:ring-4 transition-all duration-200 switzer-400`}
               {...register("age")}
             />

@@ -313,7 +313,7 @@ export default function ChatPage() {
 
         // Backend se personalization status check karo
         const response = await fetch(
-          'http://localhost:8000/personalization/status',
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/personalization/status`,
           {
             headers: {
               'Authorization': `Bearer ${token}`
@@ -373,7 +373,7 @@ export default function ChatPage() {
 
     const urlSessionId = searchParams.get("session_id");
 
-    const websocket = new WebSocket(`ws://localhost:8000/ws/chat?token=${token}`);
+    const websocket = new WebSocket(`${process.env.NEXT_PUBLIC_WEBSOCKET_URL}/ws/chat?token=${token}`);
     wsRef.current = websocket;
 
     websocket.onopen = () => {
@@ -741,7 +741,7 @@ export default function ChatPage() {
         formData.append("session_id", sessionID || "default_session");
 
         try {
-          const response = await fetch("http://localhost:8000/api/upload", {
+          const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/upload`, {
             method: "POST",
             body: formData,
           });
