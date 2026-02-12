@@ -50,7 +50,8 @@ async def signup(req: SignupRequest):
         # Check if user exists
         existing = await conn.fetchrow(
             "SELECT email FROM users WHERE email = $1 OR firstname = $2",
-            req.email
+            req.email,
+            req.firstname,
         )
 
         if existing:

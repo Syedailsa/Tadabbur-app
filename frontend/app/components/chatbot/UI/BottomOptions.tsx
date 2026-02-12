@@ -6,6 +6,7 @@ import AttachIcon from "../../../../icons/attach_icon.svg";
 import PlusIcon from "../../../../icons/plus-icon.svg";
 import StoryIcon from "../../../../icons/story_telling_icon.svg";
 import MicIcon from "../../../../icons/mic_icon.svg";
+import { retryOperation, wsSendAsync } from "@/app/utils/retryOpernation";
 
 
 const BottomOptions = () => {
@@ -91,7 +92,7 @@ const BottomOptions = () => {
 
       // 1. Dispatch event to tell ChatPage to show loading state
       window.dispatchEvent(new Event("tadabbur-transcription-start"));
-
+    const data = await retryOperation(async () => {
       const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/transcribe`, {
         method: "POST",
         body: formData,
@@ -99,7 +100,9 @@ const BottomOptions = () => {
 
       if (!response.ok) throw new Error("Transcription failed");
 
-      const data = await response.json();
+      return await response.json();
+    },8,1000)
+
       const text = data.text;
 
       if (text) {
@@ -202,17 +205,13 @@ const BottomOptions = () => {
         </motion.div>
         <motion.div
           id="story-telling-box"
-          onClick={() => {
+          onClick={async () => {
             setActive((prev: boolean[]) => {
               const current = [...prev];
               if (current[1]) {
-                wsRef.current?.send(
-                  JSON.stringify({ type: "agent", agent: "normal" })
-                );
+                wsSendAsync(wsRef.current, { type: "agent", agent: "normal" });
               } else {
-                wsRef.current?.send(
-                  JSON.stringify({ type: "agent", agent: "story-telling" })
-                );
+                wsSendAsync(wsRef.current, { type: "agent", agent: "story-telling" });
               }
               current[1] = !current[1];
               return current;

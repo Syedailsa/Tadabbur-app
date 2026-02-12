@@ -3,11 +3,13 @@ import { ChatContext, ChatRecord } from "@/app/context/chatbot/ChatContext";
 import { useContext, useEffect, useRef, useState } from "react";
 import ChatHistory from "../../../../icons/history_icon.svg";
 import { X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { wsSendAsync } from "@/app/utils/retryOpernation";
 
 const formatDateToDMY = (dateString: string | null): string => {
   const date = new Date(dateString || new Date());
   const day = date.getDate().toString().padStart(2, "0");
-  const month = (date.getMonth() + 1).toString().padStart(2, "0"); // Months are 0-indexed
+  const month = (date.getMonth() + 1).toString().padStart(2, "0"); 
   const year = date.getFullYear();
 
   return `${day}-${month}-${year}`;
@@ -54,12 +56,10 @@ const ChatHisoryDialogueBox = () => {
           console.error("Error parsing user data:", e);
         }
       }
-      wsRef.current?.send(
-        JSON.stringify({
-          type: "chat_history",
-          user_id: user_id,
-        })
-      );
+      wsSendAsync(wsRef.current, {
+        type: "chat_history",
+        user_id: user_id,
+      });
     }
   }, [openChatHistoryDialogueBox, wsRef]);
 
@@ -135,12 +135,10 @@ const ChatHisoryDialogueBox = () => {
                             console.error("Error parsing user data:", e);
                           }
                         }
-                        wsRef.current?.send(
-                          JSON.stringify({
-                            type: "delete_all_sessions",
-                            user_id: user_id,
-                          })
-                        );
+                         wsSendAsync(wsRef.current, {
+                          type: "delete_all_sessions",
+                          user_id: user_id,
+                        });
                       }
                     }}
                     className="switzer-500 text-xs text-red-500 hover:text-red-700 underline"
@@ -156,12 +154,11 @@ const ChatHisoryDialogueBox = () => {
                       onClick={() => {
                         setSelectedSessionID(chat.session_id);
                         setOpenChatHistoryDialogueBox(false);
-                        wsRef.current?.send(
-                          JSON.stringify({
-                            type: "get_chat",
-                            session_id: chat.session_id,
-                          })
-                        );
+                        wsSendAsync(wsRef.current, {
+                          type: "get_chat",
+                          session_id: chat.session_id,
+                          user_id: userId,
+                        });
                       }}
                       whileHover={{ scale: 1.01 }}
                       transition={{ duration: 0.2 }}
@@ -198,13 +195,11 @@ const ChatHisoryDialogueBox = () => {
                                 console.error("Error parsing user data:", e);
                               }
                             }
-                            wsRef.current?.send(
-                              JSON.stringify({
-                                type: "delete_session",
-                                user_id: user_id,
-                                session_id: chat.session_id,
-                              })
-                            );
+                            wsSendAsync(wsRef.current, {
+                              type: "delete_session",
+                              user_id: user_id,
+                              session_id: chat.session_id,
+                            });
                           }
                         }}
                         className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-red-500 hover:bg-red-600 text-white rounded-full p-1"

@@ -1,27 +1,33 @@
 "use client";
-export const dynamic = "force-dynamic";
+
 import type React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
-import { useEffect, useRef, useState, CSSProperties, ReactNode, HTMLAttributes, Suspense } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import ChatProvider from "@/app/providers/chatbot/ChatProvider";
 import DisclaimerIcon from "../../../icons/disclaimer.svg";
 import CrossIcon from "../../../icons/cross_icon.svg"
 import TextFileIcon from "../../../icons/text-file-icon.svg"
 import PdfFileIcon from "../../../icons/pdf-file-icon.svg"
+import AttachIcon from "../../../icons/attach_icon.svg"
 import UndoArrow from "../../../icons/refresh.svg";
+import DownArrow from "../../../icons/arrow-down-head.svg";
 import { AssistantMessage, Attachment } from "@/app/components/chatbot/interfaces/ChatMessage";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { dracula } from "react-syntax-highlighter/dist/esm/styles/prism";
 import {
   motion,
   easeInOut,
+  easeIn,
   AnimatePresence,
   useAnimationControls,
 } from "framer-motion";
+import { X } from "lucide-react";
 import ProtectedRoute from "@/app/utils/ProtectedRoutes";
-import RegistrationForm from "@/app/components/chatbot/UI/ReactForm";
+import RegistrationForm, {
+  RegistrationData,
+} from "@/app/components/chatbot/UI/ReactForm";
 import { ModelList } from "@/static/data";
 import BottomOptions from "../../components/chatbot/UI/BottomOptions";
 import ExtraOptions from "../../components/chatbot/UI/ExtraOptions";
@@ -31,7 +37,9 @@ import ModelBox from "../../components/chatbot/UI/ModelBox";
 import Controls from "../../components/chatbot/UI/Controls";
 import PromptExtraOptions from "../../components/chatbot/UI/PrompExtraOptions";
 import generateUUID from "@/utils/generateShortId";
+import { generateNewSessionId } from "@/app/session/session";
 import { ChatHisoryDialogueBox } from "../../components/chatbot/UI/ChatHistoryDialogueBox";
+import { ChatRecord } from "@/app/context/chatbot/ChatContext";
 import { SurahForAudios, SurahForVerseImages } from "@/app/components/chatbot/interfaces/Surah";
 import ReportContentDialogueBox from "../../components/chatbot/UI/ReportContentDialogueBox";
 import { ChatMessage } from "../../components/chatbot/interfaces/ChatMessage";
@@ -39,15 +47,17 @@ import QuranDialogBox from "@/app/components/chatbot/UI/QuranDialogBox";
 import groupChatMessages from "@/utils/groupChatMessages";
 import WaveForm from "../../components/chatbot/UI/WaveForm";
 import hidePromptExtraOptionsModelBoxArray from "@/app/components/chatbot/interfaces/hidePromptExtraOptionsModelBoxArray";
+import { ChatMessage as ChatMessageInterface } from "../../components/chatbot/interfaces/ChatMessage";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   SessionInitMessage,
+  AudioRequest,
+  VerseRequest,
   ChatRecordType,
 } from "../../utils/types";
+import { retryOperation, wsSendAsync } from "@/app/utils/retryOpernation";
 
-
-
-function ChatContent() {
+export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const inputRef = useRef<HTMLDivElement | null>(null);
   const [showPlaceholder, setShowPlaceholder] = useState<boolean | null>(true);
@@ -62,7 +72,6 @@ function ChatContent() {
   const [placeholder, setPlaceholder] = useState<string | null>(
     "Let's learn about the Quran",
   );
-  const draculaTheme = dracula as { [key: string]: CSSProperties };
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const [sessionID, setSessionID] = useState<string | null>(null);
@@ -82,6 +91,7 @@ function ChatContent() {
   const [hideReportContentDialogueBox, setHideReportContentDialogueBox] =
     useState<boolean | null>(true);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [isCancelled, setIsCancelled] = useState<boolean>(false)
   const [fileContext, setFileContext] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false);
   const currentMessageIDRef = useRef<string | null>(null);
@@ -93,7 +103,20 @@ function ChatContent() {
   const controls = useAnimationControls();
   const [hidePromptExtraOptionsModelBoxArray, setHidePromptExtraOptionsModelBoxArray] =
     useState<hidePromptExtraOptionsModelBoxArray[]>([]);
-
+  const [uploadedFiles, setUploadedFiles] = useState<
+    Array<{
+      file_id: string;
+      file_name: string;
+      file_type: string;
+      created_at: string;
+    }>
+  >([]);
+  const [sessionFiles, setSessionFiles] = useState<Array<{
+    file_id: string;
+    file_name: string;
+    file_type: string;
+    created_at: string;
+  }>>([]);
   const router = useRouter()
 
   function preprocessContent(content: string) {
@@ -118,21 +141,20 @@ function ChatContent() {
 
   useEffect(() => {
     const audioEl = audioRef.current;
-    const playableAudio = currentPlayableAudio.current
-    if (!audioEl || !playableAudio) return;
+    if (!audioEl) return;
 
     const handlePlay = () => {
       // update ref for centralized audio management
-      if (playableAudio) {
-        playableAudio.state = "playing"
+      if (currentPlayableAudio.current) {
+        currentPlayableAudio.current.state = "playing"
       }
       setMessages(prev =>
         prev.map(m =>
-          m.message_id === playableAudio?.user_message_id
+          m.message_id === currentPlayableAudio.current?.user_message_id
             ? {
               ...m,
               responses: m.responses.map(n =>
-                n.message_id === playableAudio?.response_message_id
+                n.message_id === currentPlayableAudio.current?.response_message_id
                   ? { ...n, audio_state: "playing" }
                   // nullify the rest
                   : { ...n, audio_state: null }
@@ -146,16 +168,16 @@ function ChatContent() {
     const handlePause = () => {
 
       // update ref for centralized audio management
-      if (playableAudio) {
-        playableAudio.state = "paused"
+      if (currentPlayableAudio.current) {
+        currentPlayableAudio.current.state = "paused"
       }
       setMessages(prev =>
         prev.map(m =>
-          m.message_id === playableAudio?.user_message_id
+          m.message_id === currentPlayableAudio.current?.user_message_id
             ? {
               ...m,
               responses: m.responses.map(n =>
-                n.message_id === playableAudio?.response_message_id
+                n.message_id === currentPlayableAudio.current?.response_message_id
                   ? { ...n, audio_state: "paused" }
                   : n
               ),
@@ -167,16 +189,16 @@ function ChatContent() {
 
     const handleEnded = () => {
       // update ref for centralized audio management
-      if (playableAudio) {
-        playableAudio.state = "ended"
+      if (currentPlayableAudio.current) {
+        currentPlayableAudio.current.state = "ended"
       }
       setMessages(prev =>
         prev.map(m =>
-          m.message_id === playableAudio?.user_message_id
+          m.message_id === currentPlayableAudio.current?.user_message_id
             ? {
               ...m,
               responses: m.responses.map(n =>
-                n.message_id === playableAudio?.response_message_id
+                n.message_id === currentPlayableAudio.current?.response_message_id
                   ? { ...n, audio_state: "ended" }
                   : n
               ),
@@ -198,11 +220,11 @@ function ChatContent() {
       // reset state for this audio
       setMessages(prev =>
         prev.map(m =>
-          m.message_id === playableAudio?.user_message_id
+          m.message_id === currentPlayableAudio.current?.user_message_id
             ? {
               ...m,
               responses: m.responses.map(n =>
-                n.message_id === playableAudio?.response_message_id
+                n.message_id === currentPlayableAudio.current?.response_message_id
                   ? { ...n, audio_state: null }
                   : n
               ),
@@ -211,8 +233,7 @@ function ChatContent() {
         )
       );
     };
-  }, [audioRef]);
-
+  }, [audioRef.current]);
 
   useEffect(() => {
     const handleMicStart = () => {
@@ -279,17 +300,12 @@ function ChatContent() {
     const checkPersonalization = async () => {
       try {
         const token = localStorage.getItem("token");
-
         if (!token) {
-          // console.log("❌ No token found, showing personalization form");
           setIsCheckingPersonalization(false);
           setShowPersonalizationForm(true);
           return;
         }
-
-        // console.log("🔍 Checking personalization status with token...");
-
-        // Backend se personalization status check karo
+        const data = await retryOperation(async () => {
         const response = await fetch(
           `${process.env.NEXT_PUBLIC_BACKEND_URL}/personalization/status`,
           {
@@ -298,15 +314,14 @@ function ChatContent() {
             }
           }
         );
-
         if (!response.ok) {
           console.error("❌ Failed to fetch personalization status:", response.status);
           setShowPersonalizationForm(true);
           setIsCheckingPersonalization(false);
           return;
         }
-
-        const data = await response.json();
+        return await response.json();
+        }, 5, 1000);
         // console.log("📊 Personalization data received:", data);
 
         if (data.is_personalized && data.username && data.age) {
@@ -353,8 +368,7 @@ function ChatContent() {
 
     const websocket = new WebSocket(`${process.env.NEXT_PUBLIC_WEBSOCKET_URL}/ws/chat?token=${token}`);
     wsRef.current = websocket;
-
-    websocket.onopen = () => {
+    websocket.onopen = async () => {
       const user = localStorage.getItem("user");
       let user_id = null;
       if (user) {
@@ -373,18 +387,26 @@ function ChatContent() {
         model: "kimi-k2-instruct-0905",
       };
 
-      if (websocket.readyState === WebSocket.OPEN) {
-        websocket.send(JSON.stringify(sessionInit));
-
+      try {   
+      await wsSendAsync(
+        websocket,
+        sessionInit,  
+        8,
+        500
+      );
         if (urlSessionId) {
-          websocket.send(JSON.stringify({
+          await wsSendAsync(
+            websocket,  {
             type: "get_chat",
             session_id: urlSessionId,
             user_id: user_id,
-          }));
+            }, 8, 500
+          )
         }
-      }
-
+      } 
+      catch (error) {
+      console.error("❌ Failed to initialize WebSocket session:", error);
+  }
       setReportedMessageIDs([]);
     };
 
@@ -438,6 +460,7 @@ function ChatContent() {
           const session_id = data.session_id;
           const session_status = data.status;
           const message_ids = data.message_ids;
+          const uploaded_files = data.uploaded_files;
           if (session_status === "acknowledged") {
             setSessionID(session_id);
             const currentUrlId = searchParams.get("session_id");
@@ -445,6 +468,8 @@ function ChatContent() {
               router.push(`/pages/chatbot?session_id=${session_id}`, { scroll: false });
             }
             setMessages([]);
+            setUploadedFiles([]);
+            setSessionFiles([]);
             setMessages((prevMessages) => {
               if (prevMessages && prevMessages.length > 0) {
                 return [];
@@ -453,6 +478,11 @@ function ChatContent() {
             });
             setHidePromptExtraOptionsModelBoxArray([])
             setMessageIDs(message_ids);
+
+            if (uploaded_files && uploaded_files.length > 0) {
+              setSessionFiles(uploaded_files);
+              setUploadedFiles([]);
+            }
           }
           break;
 
@@ -490,12 +520,10 @@ function ChatContent() {
               }
             }
             if (user_id) {
-              wsRef.current?.send(
-                JSON.stringify({
-                  type: "chat_history",
-                  user_id: user_id,
-                }),
-              );
+              wsSendAsync(wsRef.current, {
+                type: "chat_history",
+                user_id: user_id,
+              });
             }
             alert("Chat session deleted successfully");
           } else {
@@ -655,6 +683,8 @@ function ChatContent() {
             case "story-telling":
               setPlaceholder("Generate an Islamic story");
               setMessages([]);
+              setUploadedFiles([]);
+              setSessionFiles([]);
               setGreeting(
                 "Generate any Islamic story with the finest AI Models."
               );
@@ -662,6 +692,8 @@ function ChatContent() {
             case "tafseer":
               setPlaceholder("Let's lean about the Quran");
               setMessages([]);
+              setUploadedFiles([]);
+              setSessionFiles([]);
               setGreeting(
                 "Assalam O Alaykum, I am Tadabbur, how may I help you today?"
               );
@@ -670,7 +702,7 @@ function ChatContent() {
           break;
         case "loading_message":
           const message = data.content ?? "Thinking to enhance response";
-          setLoadingMessage(message);
+          // setLoadingMessage(message);
           break;
         case "report":
           const report_status = data.status;
@@ -686,6 +718,9 @@ function ChatContent() {
           }
 
           break;
+        // case "streaming_end":
+        //   audioScheduler.flush();
+        //   break;
 
         default:
           break;
@@ -704,14 +739,14 @@ function ChatContent() {
         formData.append("session_id", sessionID || "default_session");
 
         try {
+          const data = await retryOperation(async () => {
           const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/upload`, {
             method: "POST",
             body: formData,
           });
-
           if (!response.ok) throw new Error("Upload failed");
-
-          const data = await response.json();
+          return await response.json();
+          }, 8, 1000)
 
           if (!isCancelled && data.extracted_text) {
             setFileContext(data.extracted_text);
@@ -736,14 +771,14 @@ function ChatContent() {
     return () => {
       isCancelled = true;
     };
-  }, [fileContext, isUploading, attachedFile, sessionID]);
+  }, [attachedFile, sessionID]);
 
   const ask = async (
     input: string,
     guidelines: string | null = null,
     resend_flag: boolean = false,
     resend_message_id: string | null = null,
-    old_responses_attachments: { responses: AssistantMessage[], attachments: Attachment[] } | null = null
+    old_responses_attachments: { responses: [], attachments: [] } | null = null
   ) => {
     if (streamingMessageIndex !== null || (!input.trim() && !fileContext)) return;
 
@@ -756,7 +791,7 @@ function ChatContent() {
         // remove the message object only with the user's message id
         setMessages((prev: ChatMessage[]) =>
           prev.filter(
-            (m) => m.message_id !== resend_message_id
+            (m: any) => m.message_id !== resend_message_id
           )
         );
       }
@@ -785,7 +820,7 @@ function ChatContent() {
     }
 
 
-    const attachments_array: Attachment[] = []
+    let attachments_array: Attachment[] = []
     if (fileContext) {
       if (attachedFile?.name && attachedFile?.type) {
         attachments_array.push({ attachmentName: attachedFile.name, attachmentType: attachedFile?.type })
@@ -830,33 +865,23 @@ function ChatContent() {
     });
 
     currentMessageIDRef.current = messageID;
-    try {
-      wsRef.current?.send(
-        JSON.stringify({
-          type: "user_message",
-          message_id: messageID,
-          role: "user",
-          system_instructions: guidelines || "",
-          content: input,
-          file_name: attachedFile?.name,
-          file_type: attachedFile?.type,
-          resend_flag: resend_flag,
-          resend_message_id: resend_message_id || "",
-          new_file_context: fileContext,
-        })
-      );
-      setFileContext(null);
-
-      if (inputRef.current) {
-        inputRef.current.innerText = "";
-        setShowPlaceholder(true);
-      }
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError("Something went wrong");
-      }
+    
+    await wsSendAsync(wsRef.current, {
+      type: "user_message",
+      message_id: messageID,
+      role: "user",
+      system_instructions: guidelines || "",
+      content: input,
+      file_name: attachedFile?.name,
+      file_type: attachedFile?.type,
+      resend_flag: resend_flag,
+      resend_message_id: resend_message_id || "",
+      new_file_context: fileContext,
+    });
+    setFileContext(null);
+    if (inputRef.current) {
+      inputRef.current.innerText = "";
+      setShowPlaceholder(true);
     }
   };
 
@@ -889,8 +914,15 @@ function ChatContent() {
     controls?.start({
       x: "-60%",
     });
-  }, [controls]);
+  }, []);
 
+  interface PromptExtraOptionsProviderProps {
+    children: ReactNode;
+    parent_index: number | null;
+    assistant_index: number | null;
+    message_id: string | null;
+    reply_to_message_id: string | null;
+  }
 
   if (isCheckingPersonalization) {
     return (
@@ -1104,19 +1136,19 @@ function ChatContent() {
                                   rehypePlugins={[rehypeRaw]}
                                   components={{
                                     // HEADERS
-                                    h1: ({ ...props }) => (
+                                    h1: ({ node, ...props }) => (
                                       <h1
                                         className="text-3xl font-bold"
                                         {...props}
                                       />
                                     ),
-                                    h2: ({ ...props }) => (
+                                    h2: ({ node, ...props }) => (
                                       <h2
                                         className="text-2xl font-semibold"
                                         {...props}
                                       />
                                     ),
-                                    h3: ({ ...props }) => (
+                                    h3: ({ node, ...props }) => (
                                       <h3
                                         className="text-xl font-semibold"
                                         {...props}
@@ -1124,7 +1156,7 @@ function ChatContent() {
                                     ),
 
                                     // PARAGRAPH
-                                    p: ({ ...props }) => (
+                                    p: ({ node, ...props }) => (
                                       <p
                                         className="leading-7 my-2 text-gray-800"
                                         {...props}
@@ -1132,7 +1164,7 @@ function ChatContent() {
                                     ),
 
                                     // STRONG ( **bold** )
-                                    strong: ({ ...props }) => (
+                                    strong: ({ node, ...props }) => (
                                       <strong
                                         className="font-bold text-black"
                                         {...props}
@@ -1140,7 +1172,7 @@ function ChatContent() {
                                     ),
 
                                     // EMPHASIS ( *italic* )
-                                    em: ({ ...props }) => (
+                                    em: ({ node, ...props }) => (
                                       <em
                                         className="italic text-gray-700"
                                         {...props}
@@ -1148,10 +1180,10 @@ function ChatContent() {
                                     ),
 
                                     // LINE BREAK
-                                    br: () => <br />,
+                                    br: ({ node, ...props }) => <br />,
 
                                     // LINKS
-                                    a: ({ ...props }) => (
+                                    a: ({ node, ...props }) => (
                                       <a
                                         className="text-blue-600 underline"
                                         target="_blank"
@@ -1161,22 +1193,22 @@ function ChatContent() {
                                     ),
 
                                     // LISTS
-                                    ul: ({ ...props }) => (
+                                    ul: ({ node, ...props }) => (
                                       <ul
                                         className="list-disc pl-6"
                                         {...props}
                                       />
                                     ),
-                                    ol: ({ ...props }) => (
+                                    ol: ({ node, ...props }) => (
                                       <ol
                                         className="list-decimal pl-6"
                                         {...props}
                                       />
                                     ),
-                                    li: ({ ...props }) => (
+                                    li: ({ node, ...props }) => (
                                       <li className="my-1" {...props} />
                                     ),
-                                    blockquote: ({ ...props }) => (
+                                    blockquote: ({ node, ...props }) => (
                                       <blockquote
                                         className="border-l-4 border-gray-400 pl-4 italic my-3"
                                         {...props}
@@ -1187,60 +1219,68 @@ function ChatContent() {
                                     hr: () => (
                                       <hr className="my-4 border-gray-300" />
                                     ),
-                                    table: ({ ...props }) => (
+
+                                    // IMAGES
+                                    img: ({ node, ...props }) => (
+                                      <img
+                                        className="rounded-md my-2"
+                                        alt=""
+                                        {...props}
+                                      />
+                                    ),
+                                    table: ({ node, ...props }) => (
                                       <div className="overflow-x-auto my-4 border border-black/20 rounded-lg shadow-sm">
                                         <table className="min-w-full divide-y divide-gray-200" {...props} />
                                       </div>
                                     ),
-                                    thead: ({ ...props }) => (
+                                    thead: ({ node, ...props }) => (
                                       <thead
                                         className="bg-gray-50"
                                         {...props}
                                       />
                                     ),
-                                    tbody: ({ ...props }) => (
+                                    tbody: ({ node, ...props }) => (
                                       <tbody
                                         className="bg-white divide-y divide-gray-200"
                                         {...props}
                                       />
                                     ),
-                                    tr: ({ ...props }) => (
+                                    tr: ({ node, ...props }) => (
                                       <tr
                                         className="hover:bg-gray-50"
                                         {...props}
                                       />
                                     ),
-                                    th: ({ ...props }) => (
+                                    th: ({ node, ...props }) => (
                                       <th className="px-4 py-3 text-left text-sm font-medium text-black uppercase tracking-wider border-b" {...props} />
                                     ),
-                                    td: ({ ...props }) => (
+                                    td: ({ node, ...props }) => (
                                       <td className="px-4 py-3 text-sm text-gray-700 border-b border-black/20 whitespace-pre-wrap" {...props} />
                                     ),
+
                                     code({
+                                      node,
                                       inline,
                                       className,
                                       children,
                                       ...props
-                                    }: {
-                                      inline?: boolean;
-                                      className?: string;
-                                      children?: ReactNode;
-                                    } & HTMLAttributes<HTMLElement>) {
-                                      const match = /language-(\w+)/.exec(className || '');
-
+                                    }: any) {
+                                      const match = /language-(\w+)/.exec(
+                                        className || '',
+                                      );
                                       if (!inline && match) {
-                                        // Extract only the props that SyntaxHighlighter accepts
-                                        const { style: _, ...syntaxProps } = props;
-
                                         return (
                                           <SyntaxHighlighter
-                                            style={dracula as { [key: string]: CSSProperties }}
+                                            style={dracula}
                                             language={match[1]}
                                             PreTag="div"
                                             className="rounded-md shadow-sm my-4"
-                                            {...syntaxProps}
+                                            {...props}
                                           >
-                                            {String(children).replace(/\n$/, "")}
+                                            {String(children).replace(
+                                              /\n$/,
+                                              "",
+                                            )}
                                           </SyntaxHighlighter>
                                         );
                                       } else {
@@ -1327,12 +1367,10 @@ function ChatContent() {
                                 <div className="ml-1 w-[0.5px] h-3.5 bg-black/40"></div>
                                 <div
                                   onClick={() => {
-                                    wsRef?.current?.send(
-                                      JSON.stringify({
-                                        type: "undo-report",
-                                        message_id: ai_msg.message_id,
-                                      }),
-                                    );
+                                    wsSendAsync(wsRef.current, {
+                                      type: "undo-report",
+                                      message_id: ai_msg.message_id,
+                                    });
                                   }}
                                   id="undo-report-box"
                                   className="undo-report-box flex justify-center items-center gap-x-2 flex-row-reverse px-2 py-1 hover:bg-black/5 rounded-md cursor-pointer"
@@ -1445,15 +1483,4 @@ function ChatContent() {
       )}
     </ProtectedRoute>
   )
-}
-
-
-
-
-
-export default function ChatPage() {
-  return (
-    <Suspense>
-      <ChatContent />
-    </Suspense>)
 }
