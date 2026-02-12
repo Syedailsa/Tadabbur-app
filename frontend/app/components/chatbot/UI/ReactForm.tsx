@@ -130,6 +130,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { motion } from "framer-motion";
 import axios from "axios";
+import { retryOperation } from "@/app/utils/retryOpernation";
 
 const RegistrationSchema = z.object({
   username: z
@@ -173,23 +174,23 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onComplete }) => {
         throw new Error("User not authenticated");
       }
 
-      const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/personalization/save`,
-        {
-          username: data.username,
-          age: data.age,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
+      await retryOperation(async () => {
+        await axios.post(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/personalization/save`,
+          {
+            username: data.username,
+            age: data.age,
           },
-        }
-      );
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+      }, 8, 1000);
 
-      if (response.data.is_personalized) {
-        localStorage.setItem("personalization", JSON.stringify(data));
-        onComplete(data);
-      }
+      localStorage.setItem("personalization", JSON.stringify(data));
+      onComplete(data);
     } catch (error: any) {
       console.error("Personalization error:", error);
       setServerError(

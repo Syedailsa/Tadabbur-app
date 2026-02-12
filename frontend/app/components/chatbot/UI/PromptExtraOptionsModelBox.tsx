@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { ChatContext } from "@/app/context/chatbot/ChatContext";
 import { AssistantMessage, ChatMessage } from "../interfaces/ChatMessage";
 import hidePromptExtraOptionsModelBoxArray from "../interfaces/hidePromptExtraOptionsModelBoxArray";
+import { wsSendAsync } from "@/app/utils/retryOpernation";
 
 type PromptExtraOptionsModelBoxProps = {
   message_id: string;
@@ -64,17 +65,15 @@ const PromptExtraOptionsModelBox = ({
             audioRef.current.play()
             break
           }
-          wsRef.current.send(
-            JSON.stringify({
-              type: "tts_request",
-              text:
-                messages?.[parent_index]?.responses?.[assistant_index]
-                  ?.content || "",
-              message_id: message_id,
-              reply_to_message_id: reply_to_message_id,
-              session_id: sessionID,
-            })
-          );
+          wsSendAsync(wsRef.current, {
+            type: "tts_request",
+            text:
+              messages?.[parent_index]?.responses?.[assistant_index]
+                ?.content || "",
+            message_id: message_id,
+            reply_to_message_id: reply_to_message_id,
+            session_id: sessionID,
+          });
 
           setMessages((prev: ChatMessage[]) => prev.map((m) => m.message_id === reply_to_message_id ? { ...m, responses: m.responses.map((n) => n.message_id === message_id ? { ...n, audio_state: "loading" } : { ...n, audio_state: null }) } : { ...m, responses: m.responses.map(o => ({ ...o, audio_state: null })) }))
 

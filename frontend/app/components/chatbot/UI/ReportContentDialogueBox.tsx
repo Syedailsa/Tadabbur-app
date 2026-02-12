@@ -3,6 +3,7 @@ import { ChatContext } from "@/app/context/chatbot/ChatContext";
 import { reportOptions } from "@/static/data";
 import { useContext, useState } from "react";
 import { easeInOut, motion } from "framer-motion";
+import { wsSendAsync } from "@/app/utils/retryOpernation";
 
 interface ReportContenDialogueBoxProps {
   hideReportContentDialogueBox: boolean | null;
@@ -29,21 +30,21 @@ const ReportContentDialogueBox: React.FC<ReportContenDialogueBoxProps> = ({
 
     if (selectedReason === "other") {
       if (!customFeedback) return;
-      wsRef?.current.send(
-        JSON.stringify({
+      wsSendAsync(
+      wsRef?.current,{
           type: "report",
           message_id: reportedMessageID,
           feedback: customFeedback,
-        })
-      );
+        }).catch(() => {})
+      
     } else {
-      wsRef?.current.send(
-        JSON.stringify({
+      wsSendAsync(
+      wsRef?.current,{
           type: "report",
           message_id: reportedMessageID,
           feedback: selectedReason,
-        })
-      );
+        }).catch(() => {})
+      
     }
     setHideReportContentDialogueBox(true);
   };

@@ -4,6 +4,7 @@ import { ChatContext } from "@/app/context/chatbot/ChatContext";
 import { motion } from "framer-motion";
 import NetworkIntelligence from "../../../../icons/network_intelligence_icon.svg";
 import { ModelBoxProps } from "../interfaces/ModelBoxProps";
+import { wsSendAsync } from "@/app/utils/retryOpernation";
 
 const ModelBox: FC<ModelBoxProps> = ({
   modelList,
@@ -71,12 +72,13 @@ const ModelBox: FC<ModelBoxProps> = ({
               key={index}
               onClick={() => {
                 setSelectedModel(model.model_name);
-                wsRef.current?.send(
-                  JSON.stringify({
+                wsSendAsync(
+                wsRef.current,
+                {
                     type: "model-selection",
                     model: model.model_name,
-                  })
-                );
+                  }
+                ).catch(() => {});
                 setHideModelBox(true);
                 setFilteredModels(modelList);
               }}
