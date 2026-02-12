@@ -48,7 +48,6 @@ export const wsSendAsync = <T extends { type?: string }>(
         }
       } else if (ws.readyState === WebSocket.CONNECTING) {
         console.log("⏳ WebSocket connecting, waiting...");
-
         const timeout = setTimeout(() => {
           ws.removeEventListener('open', onOpen);
           ws.removeEventListener('error', onError);
@@ -75,7 +74,6 @@ export const wsSendAsync = <T extends { type?: string }>(
 
         ws.addEventListener('open', onOpen, { once: true });
         ws.addEventListener('error', onError, { once: true });
-
       } else {
         reject(new Error(`WebSocket not ready (state: ${ws.readyState})`));
       }

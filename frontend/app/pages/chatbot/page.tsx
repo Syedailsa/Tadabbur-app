@@ -10,24 +10,18 @@ import DisclaimerIcon from "../../../icons/disclaimer.svg";
 import CrossIcon from "../../../icons/cross_icon.svg"
 import TextFileIcon from "../../../icons/text-file-icon.svg"
 import PdfFileIcon from "../../../icons/pdf-file-icon.svg"
-import AttachIcon from "../../../icons/attach_icon.svg"
 import UndoArrow from "../../../icons/refresh.svg";
-import DownArrow from "../../../icons/arrow-down-head.svg";
 import { AssistantMessage, Attachment } from "@/app/components/chatbot/interfaces/ChatMessage";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { dracula } from "react-syntax-highlighter/dist/esm/styles/prism";
 import {
   motion,
   easeInOut,
-  easeIn,
   AnimatePresence,
   useAnimationControls,
 } from "framer-motion";
-import { X } from "lucide-react";
 import ProtectedRoute from "@/app/utils/ProtectedRoutes";
-import RegistrationForm, {
-  RegistrationData,
-} from "@/app/components/chatbot/UI/ReactForm";
+import RegistrationForm from "@/app/components/chatbot/UI/ReactForm";
 import { ModelList } from "@/static/data";
 import BottomOptions from "../../components/chatbot/UI/BottomOptions";
 import ExtraOptions from "../../components/chatbot/UI/ExtraOptions";
@@ -37,7 +31,6 @@ import ModelBox from "../../components/chatbot/UI/ModelBox";
 import Controls from "../../components/chatbot/UI/Controls";
 import PromptExtraOptions from "../../components/chatbot/UI/PrompExtraOptions";
 import generateUUID from "@/utils/generateShortId";
-import { generateNewSessionId } from "@/app/session/session";
 import { ChatHisoryDialogueBox } from "../../components/chatbot/UI/ChatHistoryDialogueBox";
 import { ChatRecord } from "@/app/context/chatbot/ChatContext";
 import { SurahForAudios, SurahForVerseImages } from "@/app/components/chatbot/interfaces/Surah";
@@ -47,12 +40,9 @@ import QuranDialogBox from "@/app/components/chatbot/UI/QuranDialogBox";
 import groupChatMessages from "@/utils/groupChatMessages";
 import WaveForm from "../../components/chatbot/UI/WaveForm";
 import hidePromptExtraOptionsModelBoxArray from "@/app/components/chatbot/interfaces/hidePromptExtraOptionsModelBoxArray";
-import { ChatMessage as ChatMessageInterface } from "../../components/chatbot/interfaces/ChatMessage";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   SessionInitMessage,
-  AudioRequest,
-  VerseRequest,
   ChatRecordType,
 } from "../../utils/types";
 import { retryOperation, wsSendAsync } from "@/app/utils/retryOpernation";
