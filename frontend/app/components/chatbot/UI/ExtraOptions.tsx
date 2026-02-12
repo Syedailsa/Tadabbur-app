@@ -9,7 +9,7 @@ import Image1 from "../../../../images/Smiling Boy Portrait.png";
 import { OptionProps } from "../interfaces/OptionsProps";
 
 const ExtraOptions = (): React.ReactElement | null => {
-  const { hideExtraOptions, setHideExtraOptions } = useContext(ChatContext);
+  const { hideExtraOptions, setHideExtraOptions } = useContext(ChatContext)!;
   const scrollInterval = useRef<NodeJS.Timeout | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const [hasScrolled, setHasScrolled] = useState<boolean>(false);

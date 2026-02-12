@@ -1,33 +1,27 @@
 "use client";
-
+export const dynamic = "force-dynamic";
 import type React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
-import { ReactNode, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, CSSProperties, ReactNode, HTMLAttributes, Suspense } from "react";
 import ChatProvider from "@/app/providers/chatbot/ChatProvider";
 import DisclaimerIcon from "../../../icons/disclaimer.svg";
 import CrossIcon from "../../../icons/cross_icon.svg"
 import TextFileIcon from "../../../icons/text-file-icon.svg"
 import PdfFileIcon from "../../../icons/pdf-file-icon.svg"
-import AttachIcon from "../../../icons/attach_icon.svg"
 import UndoArrow from "../../../icons/refresh.svg";
-import DownArrow from "../../../icons/arrow-down-head.svg";
 import { AssistantMessage, Attachment } from "@/app/components/chatbot/interfaces/ChatMessage";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { dracula } from "react-syntax-highlighter/dist/esm/styles/prism";
 import {
   motion,
   easeInOut,
-  easeIn,
   AnimatePresence,
   useAnimationControls,
 } from "framer-motion";
-import { X } from "lucide-react";
 import ProtectedRoute from "@/app/utils/ProtectedRoutes";
-import RegistrationForm, {
-  RegistrationData,
-} from "@/app/components/chatbot/UI/ReactForm";
+import RegistrationForm from "@/app/components/chatbot/UI/ReactForm";
 import { ModelList } from "@/static/data";
 import BottomOptions from "../../components/chatbot/UI/BottomOptions";
 import ExtraOptions from "../../components/chatbot/UI/ExtraOptions";
@@ -37,9 +31,7 @@ import ModelBox from "../../components/chatbot/UI/ModelBox";
 import Controls from "../../components/chatbot/UI/Controls";
 import PromptExtraOptions from "../../components/chatbot/UI/PrompExtraOptions";
 import generateUUID from "@/utils/generateShortId";
-import { generateNewSessionId } from "@/app/session/session";
 import { ChatHisoryDialogueBox } from "../../components/chatbot/UI/ChatHistoryDialogueBox";
-import { ChatRecord } from "@/app/context/chatbot/ChatContext";
 import { SurahForAudios, SurahForVerseImages } from "@/app/components/chatbot/interfaces/Surah";
 import ReportContentDialogueBox from "../../components/chatbot/UI/ReportContentDialogueBox";
 import { ChatMessage } from "../../components/chatbot/interfaces/ChatMessage";
@@ -47,18 +39,15 @@ import QuranDialogBox from "@/app/components/chatbot/UI/QuranDialogBox";
 import groupChatMessages from "@/utils/groupChatMessages";
 import WaveForm from "../../components/chatbot/UI/WaveForm";
 import hidePromptExtraOptionsModelBoxArray from "@/app/components/chatbot/interfaces/hidePromptExtraOptionsModelBoxArray";
-import { ChatMessage as ChatMessageInterface } from "../../components/chatbot/interfaces/ChatMessage";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   SessionInitMessage,
-  AudioRequest,
-  VerseRequest,
   ChatRecordType,
 } from "../../utils/types";
 
 
 
-export default function ChatPage() {
+function ChatContent() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const inputRef = useRef<HTMLDivElement | null>(null);
   const [showPlaceholder, setShowPlaceholder] = useState<boolean | null>(true);
@@ -73,6 +62,7 @@ export default function ChatPage() {
   const [placeholder, setPlaceholder] = useState<string | null>(
     "Let's learn about the Quran",
   );
+  const draculaTheme = dracula as { [key: string]: CSSProperties };
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const [sessionID, setSessionID] = useState<string | null>(null);
@@ -92,7 +82,6 @@ export default function ChatPage() {
   const [hideReportContentDialogueBox, setHideReportContentDialogueBox] =
     useState<boolean | null>(true);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
-  const [isCancelled, setIsCancelled] = useState<boolean>(false)
   const [fileContext, setFileContext] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false);
   const currentMessageIDRef = useRef<string | null>(null);
@@ -104,20 +93,7 @@ export default function ChatPage() {
   const controls = useAnimationControls();
   const [hidePromptExtraOptionsModelBoxArray, setHidePromptExtraOptionsModelBoxArray] =
     useState<hidePromptExtraOptionsModelBoxArray[]>([]);
-  const [uploadedFiles, setUploadedFiles] = useState<
-    Array<{
-      file_id: string;
-      file_name: string;
-      file_type: string;
-      created_at: string;
-    }>
-  >([]);
-  const [sessionFiles, setSessionFiles] = useState<Array<{
-    file_id: string;
-    file_name: string;
-    file_type: string;
-    created_at: string;
-  }>>([]);
+
   const router = useRouter()
 
   function preprocessContent(content: string) {
@@ -142,20 +118,21 @@ export default function ChatPage() {
 
   useEffect(() => {
     const audioEl = audioRef.current;
-    if (!audioEl) return;
+    const playableAudio = currentPlayableAudio.current
+    if (!audioEl || !playableAudio) return;
 
     const handlePlay = () => {
       // update ref for centralized audio management
-      if (currentPlayableAudio.current) {
-        currentPlayableAudio.current.state = "playing"
+      if (playableAudio) {
+        playableAudio.state = "playing"
       }
       setMessages(prev =>
         prev.map(m =>
-          m.message_id === currentPlayableAudio.current?.user_message_id
+          m.message_id === playableAudio?.user_message_id
             ? {
               ...m,
               responses: m.responses.map(n =>
-                n.message_id === currentPlayableAudio.current?.response_message_id
+                n.message_id === playableAudio?.response_message_id
                   ? { ...n, audio_state: "playing" }
                   // nullify the rest
                   : { ...n, audio_state: null }
@@ -169,16 +146,16 @@ export default function ChatPage() {
     const handlePause = () => {
 
       // update ref for centralized audio management
-      if (currentPlayableAudio.current) {
-        currentPlayableAudio.current.state = "paused"
+      if (playableAudio) {
+        playableAudio.state = "paused"
       }
       setMessages(prev =>
         prev.map(m =>
-          m.message_id === currentPlayableAudio.current?.user_message_id
+          m.message_id === playableAudio?.user_message_id
             ? {
               ...m,
               responses: m.responses.map(n =>
-                n.message_id === currentPlayableAudio.current?.response_message_id
+                n.message_id === playableAudio?.response_message_id
                   ? { ...n, audio_state: "paused" }
                   : n
               ),
@@ -190,16 +167,16 @@ export default function ChatPage() {
 
     const handleEnded = () => {
       // update ref for centralized audio management
-      if (currentPlayableAudio.current) {
-        currentPlayableAudio.current.state = "ended"
+      if (playableAudio) {
+        playableAudio.state = "ended"
       }
       setMessages(prev =>
         prev.map(m =>
-          m.message_id === currentPlayableAudio.current?.user_message_id
+          m.message_id === playableAudio?.user_message_id
             ? {
               ...m,
               responses: m.responses.map(n =>
-                n.message_id === currentPlayableAudio.current?.response_message_id
+                n.message_id === playableAudio?.response_message_id
                   ? { ...n, audio_state: "ended" }
                   : n
               ),
@@ -221,11 +198,11 @@ export default function ChatPage() {
       // reset state for this audio
       setMessages(prev =>
         prev.map(m =>
-          m.message_id === currentPlayableAudio.current?.user_message_id
+          m.message_id === playableAudio?.user_message_id
             ? {
               ...m,
               responses: m.responses.map(n =>
-                n.message_id === currentPlayableAudio.current?.response_message_id
+                n.message_id === playableAudio?.response_message_id
                   ? { ...n, audio_state: null }
                   : n
               ),
@@ -234,7 +211,8 @@ export default function ChatPage() {
         )
       );
     };
-  }, [audioRef.current]);
+  }, [audioRef]);
+
 
   useEffect(() => {
     const handleMicStart = () => {
@@ -313,7 +291,7 @@ export default function ChatPage() {
 
         // Backend se personalization status check karo
         const response = await fetch(
-          'http://localhost:8000/personalization/status',
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/personalization/status`,
           {
             headers: {
               'Authorization': `Bearer ${token}`
@@ -373,7 +351,7 @@ export default function ChatPage() {
 
     const urlSessionId = searchParams.get("session_id");
 
-    const websocket = new WebSocket(`ws://localhost:8000/ws/chat?token=${token}`);
+    const websocket = new WebSocket(`${process.env.NEXT_PUBLIC_WEBSOCKET_URL}/ws/chat?token=${token}`);
     wsRef.current = websocket;
 
     websocket.onopen = () => {
@@ -460,7 +438,6 @@ export default function ChatPage() {
           const session_id = data.session_id;
           const session_status = data.status;
           const message_ids = data.message_ids;
-          const uploaded_files = data.uploaded_files;
           if (session_status === "acknowledged") {
             setSessionID(session_id);
             const currentUrlId = searchParams.get("session_id");
@@ -468,8 +445,6 @@ export default function ChatPage() {
               router.push(`/pages/chatbot?session_id=${session_id}`, { scroll: false });
             }
             setMessages([]);
-            setUploadedFiles([]);
-            setSessionFiles([]);
             setMessages((prevMessages) => {
               if (prevMessages && prevMessages.length > 0) {
                 return [];
@@ -478,11 +453,6 @@ export default function ChatPage() {
             });
             setHidePromptExtraOptionsModelBoxArray([])
             setMessageIDs(message_ids);
-
-            if (uploaded_files && uploaded_files.length > 0) {
-              setSessionFiles(uploaded_files);
-              setUploadedFiles([]);
-            }
           }
           break;
 
@@ -685,8 +655,6 @@ export default function ChatPage() {
             case "story-telling":
               setPlaceholder("Generate an Islamic story");
               setMessages([]);
-              setUploadedFiles([]);
-              setSessionFiles([]);
               setGreeting(
                 "Generate any Islamic story with the finest AI Models."
               );
@@ -694,8 +662,6 @@ export default function ChatPage() {
             case "tafseer":
               setPlaceholder("Let's lean about the Quran");
               setMessages([]);
-              setUploadedFiles([]);
-              setSessionFiles([]);
               setGreeting(
                 "Assalam O Alaykum, I am Tadabbur, how may I help you today?"
               );
@@ -704,7 +670,7 @@ export default function ChatPage() {
           break;
         case "loading_message":
           const message = data.content ?? "Thinking to enhance response";
-          // setLoadingMessage(message);
+          setLoadingMessage(message);
           break;
         case "report":
           const report_status = data.status;
@@ -720,9 +686,6 @@ export default function ChatPage() {
           }
 
           break;
-        // case "streaming_end":
-        //   audioScheduler.flush();
-        //   break;
 
         default:
           break;
@@ -741,7 +704,7 @@ export default function ChatPage() {
         formData.append("session_id", sessionID || "default_session");
 
         try {
-          const response = await fetch("http://localhost:8000/api/upload", {
+          const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/upload`, {
             method: "POST",
             body: formData,
           });
@@ -773,14 +736,14 @@ export default function ChatPage() {
     return () => {
       isCancelled = true;
     };
-  }, [attachedFile, sessionID]);
+  }, [fileContext, isUploading, attachedFile, sessionID]);
 
   const ask = async (
     input: string,
     guidelines: string | null = null,
     resend_flag: boolean = false,
     resend_message_id: string | null = null,
-    old_responses_attachments: { responses: [], attachments: [] } | null = null
+    old_responses_attachments: { responses: AssistantMessage[], attachments: Attachment[] } | null = null
   ) => {
     if (streamingMessageIndex !== null || (!input.trim() && !fileContext)) return;
 
@@ -793,7 +756,7 @@ export default function ChatPage() {
         // remove the message object only with the user's message id
         setMessages((prev: ChatMessage[]) =>
           prev.filter(
-            (m: any) => m.message_id !== resend_message_id
+            (m) => m.message_id !== resend_message_id
           )
         );
       }
@@ -822,7 +785,7 @@ export default function ChatPage() {
     }
 
 
-    let attachments_array: Attachment[] = []
+    const attachments_array: Attachment[] = []
     if (fileContext) {
       if (attachedFile?.name && attachedFile?.type) {
         attachments_array.push({ attachmentName: attachedFile.name, attachmentType: attachedFile?.type })
@@ -888,8 +851,12 @@ export default function ChatPage() {
         inputRef.current.innerText = "";
         setShowPlaceholder(true);
       }
-    } catch (err: any) {
-      setError(err?.message ?? "Something went wrong");
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("Something went wrong");
+      }
     }
   };
 
@@ -922,15 +889,8 @@ export default function ChatPage() {
     controls?.start({
       x: "-60%",
     });
-  }, []);
+  }, [controls]);
 
-  interface PromptExtraOptionsProviderProps {
-    children: ReactNode;
-    parent_index: number | null;
-    assistant_index: number | null;
-    message_id: string | null;
-    reply_to_message_id: string | null;
-  }
 
   if (isCheckingPersonalization) {
     return (
@@ -1144,19 +1104,19 @@ export default function ChatPage() {
                                   rehypePlugins={[rehypeRaw]}
                                   components={{
                                     // HEADERS
-                                    h1: ({ node, ...props }) => (
+                                    h1: ({ ...props }) => (
                                       <h1
                                         className="text-3xl font-bold"
                                         {...props}
                                       />
                                     ),
-                                    h2: ({ node, ...props }) => (
+                                    h2: ({ ...props }) => (
                                       <h2
                                         className="text-2xl font-semibold"
                                         {...props}
                                       />
                                     ),
-                                    h3: ({ node, ...props }) => (
+                                    h3: ({ ...props }) => (
                                       <h3
                                         className="text-xl font-semibold"
                                         {...props}
@@ -1164,7 +1124,7 @@ export default function ChatPage() {
                                     ),
 
                                     // PARAGRAPH
-                                    p: ({ node, ...props }) => (
+                                    p: ({ ...props }) => (
                                       <p
                                         className="leading-7 my-2 text-gray-800"
                                         {...props}
@@ -1172,7 +1132,7 @@ export default function ChatPage() {
                                     ),
 
                                     // STRONG ( **bold** )
-                                    strong: ({ node, ...props }) => (
+                                    strong: ({ ...props }) => (
                                       <strong
                                         className="font-bold text-black"
                                         {...props}
@@ -1180,7 +1140,7 @@ export default function ChatPage() {
                                     ),
 
                                     // EMPHASIS ( *italic* )
-                                    em: ({ node, ...props }) => (
+                                    em: ({ ...props }) => (
                                       <em
                                         className="italic text-gray-700"
                                         {...props}
@@ -1188,10 +1148,10 @@ export default function ChatPage() {
                                     ),
 
                                     // LINE BREAK
-                                    br: ({ node, ...props }) => <br />,
+                                    br: () => <br />,
 
                                     // LINKS
-                                    a: ({ node, ...props }) => (
+                                    a: ({ ...props }) => (
                                       <a
                                         className="text-blue-600 underline"
                                         target="_blank"
@@ -1201,22 +1161,22 @@ export default function ChatPage() {
                                     ),
 
                                     // LISTS
-                                    ul: ({ node, ...props }) => (
+                                    ul: ({ ...props }) => (
                                       <ul
                                         className="list-disc pl-6"
                                         {...props}
                                       />
                                     ),
-                                    ol: ({ node, ...props }) => (
+                                    ol: ({ ...props }) => (
                                       <ol
                                         className="list-decimal pl-6"
                                         {...props}
                                       />
                                     ),
-                                    li: ({ node, ...props }) => (
+                                    li: ({ ...props }) => (
                                       <li className="my-1" {...props} />
                                     ),
-                                    blockquote: ({ node, ...props }) => (
+                                    blockquote: ({ ...props }) => (
                                       <blockquote
                                         className="border-l-4 border-gray-400 pl-4 italic my-3"
                                         {...props}
@@ -1227,68 +1187,60 @@ export default function ChatPage() {
                                     hr: () => (
                                       <hr className="my-4 border-gray-300" />
                                     ),
-
-                                    // IMAGES
-                                    img: ({ node, ...props }) => (
-                                      <img
-                                        className="rounded-md my-2"
-                                        alt=""
-                                        {...props}
-                                      />
-                                    ),
-                                    table: ({ node, ...props }) => (
+                                    table: ({ ...props }) => (
                                       <div className="overflow-x-auto my-4 border border-black/20 rounded-lg shadow-sm">
                                         <table className="min-w-full divide-y divide-gray-200" {...props} />
                                       </div>
                                     ),
-                                    thead: ({ node, ...props }) => (
+                                    thead: ({ ...props }) => (
                                       <thead
                                         className="bg-gray-50"
                                         {...props}
                                       />
                                     ),
-                                    tbody: ({ node, ...props }) => (
+                                    tbody: ({ ...props }) => (
                                       <tbody
                                         className="bg-white divide-y divide-gray-200"
                                         {...props}
                                       />
                                     ),
-                                    tr: ({ node, ...props }) => (
+                                    tr: ({ ...props }) => (
                                       <tr
                                         className="hover:bg-gray-50"
                                         {...props}
                                       />
                                     ),
-                                    th: ({ node, ...props }) => (
+                                    th: ({ ...props }) => (
                                       <th className="px-4 py-3 text-left text-sm font-medium text-black uppercase tracking-wider border-b" {...props} />
                                     ),
-                                    td: ({ node, ...props }) => (
+                                    td: ({ ...props }) => (
                                       <td className="px-4 py-3 text-sm text-gray-700 border-b border-black/20 whitespace-pre-wrap" {...props} />
                                     ),
-
                                     code({
-                                      node,
                                       inline,
                                       className,
                                       children,
                                       ...props
-                                    }: any) {
-                                      const match = /language-(\w+)/.exec(
-                                        className || '',
-                                      );
+                                    }: {
+                                      inline?: boolean;
+                                      className?: string;
+                                      children?: ReactNode;
+                                    } & HTMLAttributes<HTMLElement>) {
+                                      const match = /language-(\w+)/.exec(className || '');
+
                                       if (!inline && match) {
+                                        // Extract only the props that SyntaxHighlighter accepts
+                                        const { style: _, ...syntaxProps } = props;
+
                                         return (
                                           <SyntaxHighlighter
-                                            style={dracula}
+                                            style={dracula as { [key: string]: CSSProperties }}
                                             language={match[1]}
                                             PreTag="div"
                                             className="rounded-md shadow-sm my-4"
-                                            {...props}
+                                            {...syntaxProps}
                                           >
-                                            {String(children).replace(
-                                              /\n$/,
-                                              "",
-                                            )}
+                                            {String(children).replace(/\n$/, "")}
                                           </SyntaxHighlighter>
                                         );
                                       } else {
@@ -1493,4 +1445,15 @@ export default function ChatPage() {
       )}
     </ProtectedRoute>
   )
+}
+
+
+
+
+
+export default function ChatPage() {
+  return (
+    <Suspense>
+      <ChatContent />
+    </Suspense>)
 }

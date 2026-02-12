@@ -2,7 +2,7 @@ import React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 
 const signupSchema = z.object({
   firstname: z.string().min(2, "First name must be at least 2 characters"),
@@ -12,8 +12,14 @@ const signupSchema = z.object({
 
 type SignupInputs = z.infer<typeof signupSchema>;
 
+interface SignupResponse {
+  token: string;
+  user_id: string;
+  firstname: string;
+}
+
 interface SignupProps {
-  onSuccess: (data: any) => void;
+  onSuccess: (data: SignupResponse) => void;
 }
 
 export default function SignupForm({ onSuccess }: SignupProps) {
@@ -26,10 +32,11 @@ export default function SignupForm({ onSuccess }: SignupProps) {
   const onSubmit = async (data: SignupInputs) => {
     setServerError(null);
     try {
-      const res = await axios.post(`${process.env.NEXT_BACKEND_URL}/auth/signup`, data);
+      const res = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/signup`, data);
       onSuccess(res.data);
-    } catch (error: any) {
-      setServerError(error.response?.data?.detail || "Signup failed. Try a different email.");
+    } catch (error) {
+      const err = error as AxiosError<{ detail?: string }>
+      setServerError(err.response?.data?.detail || "Signup failed. Try a different email.");
     }
   };
 

@@ -22,7 +22,7 @@ export default function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
 
-  const API_URL = `${process.env.NEXT_BACKEND_URL}/auth`;
+  const API_URL = `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth`;
 
   const handleSendEmail = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();

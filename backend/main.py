@@ -8,7 +8,7 @@ from jose import jwt, JWTError
 from typing import List, Optional
 import asyncio 
 from agents import InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered
-from tadabbur_agents.report_rule_generator import report_rule_generator
+from dotenv import load_dotenv
 from collections import defaultdict
 import agent as agent_module
 from story_agent import story_agent
@@ -121,9 +121,12 @@ app.include_router(story_router)
 app.include_router(reflection_router)
 app.include_router(personalization_router)
 
+FRONTEND_URL = os.getenv("FRONTEND_URL")  
+
+print("FRONTEND_URL =", FRONTEND_URL)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[FRONTEND_URL],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -721,6 +724,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
             
 
             if data.get("type") == "undo-report":
+                print("Undo request")
                 message_id = data.get("message_id")
                 if not message_id: 
                     print("No message ID found for reported message")
@@ -730,9 +734,9 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     await asyncio.to_thread(delete_report_rule, supabase_client, message_id, user_id)
                     await websocket.send_json({
                         "type": "undo-report",
+                        "status": "acknowledged",
                         "message_id": message_id,
-                        "user_id": user_id,
-                        "status": "acknowledged"
+                        "user_id": user_id
                     })
                 except Exception as e:
                     await websocket.send_json({
@@ -766,7 +770,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     if reported_assistant_message:
                         try: 
                             # insert hard rule in a different thread for optimization
-                            print("Reported assistant message",reported_assistant_message['content'] )
+                            print("Reported assistant message", reported_assistant_message['content'] )
                             response = await asyncio.to_thread(insert_report_rule, supabase_client, message_id, feedback, user_id)
 
                             print("Report response", response)
@@ -794,7 +798,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         continue
                                 
                 except Exception as e:
-                    print(f"An error occured while the assistant's response {message_id}")    
+                    print(f"An error occured while reporting the assistant's response {message_id}")    
                     if not ack_sent:
                         await websocket.send_json({
                         "type": "report",
@@ -802,7 +806,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     })
                 continue
 
-            if data.get("type") in ["like", "dislike"]:
+            if data.get("type") in ["liked", "disliked"]:
                 type = data.get("type")
                 session_id = data.get('session_id')
                 message_id = data.get('message_id')
@@ -990,7 +994,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 except WebSocketDisconnect:
                     logger.info("Client disconnected")
                     print("Closing websocket...")
-                    websocket.close()
+                    await websocket.close()
                     break
 
 

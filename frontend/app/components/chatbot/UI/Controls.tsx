@@ -1,5 +1,4 @@
-import { easeInOut, motion, spring } from "framer-motion";
-import { div } from "framer-motion/m";
+import { easeInOut, motion } from "framer-motion";
 import { ChatContext } from "@/app/context/chatbot/ChatContext";
 import React, { FC, useContext, useEffect, useRef, useState } from "react";
 import SettingIcon from "../../../../icons/settings_icon.svg";
@@ -11,7 +10,7 @@ const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
   const [active, setActive] = useState<boolean | null>(false);
   const controlRef = useRef<HTMLDivElement | null>(null);
   const [overlayText, setOverlayText] = useState<string | null>(null);
-  const { setOpenChatHistoryDialogueBox } = useContext(ChatContext);
+  const { setOpenChatHistoryDialogueBox } = useContext(ChatContext)!;
   const [overlayTranslate, setOverlayTranslate] = useState<number>(0);
 
   useEffect(() => {

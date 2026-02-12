@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { SurahForAudios, SurahForVerseImages } from "../interfaces/Surah";
 import { VerseForAudios, VerseForImages } from "../interfaces/Verse";
-import { motion } from "framer-motion"
+import { motion, animate, useMotionValue } from "framer-motion"
 import ArrowLeft from "../../../../icons/arrow-down-head.svg"
 import { Noto_Kufi_Arabic } from "next/font/google";
 import Navigate from "../../../../icons/navigate_icon.svg"
@@ -33,21 +33,20 @@ export default function QuranDialogBox(props: AudioDialogProps) {
   const [openSurahDropdown, setOpenSurahDropdown] = useState<boolean>(false)
   const [activeVerseIndex, setActiveVerseIndex] = useState<number>(0)
   const [openVerseDropdown, setOpenVerseDropdown] = useState<boolean>(false)
-  const [slideAmount, setSlideAmount] = useState<number>(0)
+  const x = useMotionValue("0%");
 
   useEffect(() => {
     setActiveVerseIndex(0)
   }, [activeSurahIndex])
-
   useEffect(() => {
-    const id = setInterval(() => {
-      setSlideAmount((prev) => (prev >= 200 ? 0 : prev + 104.5));
-    }, 4000);
+    const controls = animate(x, ["0%", "-104.5%", "-209%", "0%"], {
+      duration: 20,
+      ease: "easeInOut",
+      repeat: Infinity,
+    });
+    return () => controls.stop();
+  }, [x]);
 
-    return () => clearInterval(id);
-  }, []);
-
-  console.log("Surahs", surahs)
   return (
     <div className="">
       <div className={`flex gap-x-4 justify-center`}>
@@ -72,7 +71,7 @@ export default function QuranDialogBox(props: AudioDialogProps) {
 
               {type === "audio" && (
                 <motion.div className="my-2 overflow-x-hidden">
-                  <motion.div animate={{ x: `-${slideAmount}%` }} transition={{ duration: 1.2, ease: "easeInOut" }} className="flex gap-x-4">
+                  <motion.div style={{ x }} transition={{ duration: 1.2, ease: "easeInOut" }} className="flex gap-x-4">
                     <Image className="min-w-full rounded-md h-65 object-cover object-center" src={MosquePic} alt="mosque-pic" />
                     <Image className="min-w-full rounded-md h-65 object-cover object-center" src={HighWayPic} alt="highway-pic" />
                     <Image className="min-w-full rounded-md h-65 object-cover object-center" src={Cluster} alt="cluster-pic" />
@@ -203,12 +202,20 @@ const SelectBox = ({
   const isSurah = (item: SurahType | VerseType): item is SurahType => {
     return "englishName" in item;
   }
-  const handleOutsideClick = (e: MouseEvent) => {
-    if (overlayRef.current && !overlayRef.current.contains(e.target as Node)) {
-      setOpenDropdown(false)
+
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (overlayRef.current && !overlayRef.current.contains(e.target as Node)) {
+        setOpenDropdown(false)
+      }
     }
-  }
-  document.addEventListener('click', handleOutsideClick)
+    document.addEventListener('click', handleOutsideClick)
+    return () => {
+      document.removeEventListener('click', handleOutsideClick)
+    }
+  }, [setOpenDropdown])
+
   if (!openDropdown || dropdownArray.length <= 1) {
     return null
   }

@@ -64,12 +64,12 @@ def insert_report_rule(supabase_client, message_id: str, feedback:str, user_id: 
     ) from last_error
 
 
-def delete_report_rule(supabase_client, message_id:str):
+def delete_report_rule(supabase_client, message_id:str, user_id: str):
     # insert rule in the feedback system
     for i in range(8):
         try:
             print("Deleting hard rule...")
-            supabase_client.table('chat_rules').delete().eq("message_id", message_id).execute()
+            supabase_client.table('chat_rules').delete().eq("user_id", user_id).eq("message_id", message_id).execute()
             print(f"✅ Hard rule with message_id {message_id} deleted successfully!")
             return  # Success, return 
         except Exception as e:

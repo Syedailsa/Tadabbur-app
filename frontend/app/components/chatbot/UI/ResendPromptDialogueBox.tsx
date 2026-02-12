@@ -6,24 +6,21 @@ import ShortText from "../../../../icons/short_text.svg";
 import LongText from "../../../../icons/long_text.svg";
 import Reference from "../../../../icons/reference.svg";
 import Engaging from "../../../../icons/engage_icon.svg";
-import { ChatMessage } from "../interfaces/ChatMessage";
 import { ChatContext } from "@/app/context/chatbot/ChatContext";
 
 type ResendPromptDialogueBoxProps = {
   parent_index: number | null;
   message_id: string | null;
   reply_to_message_id: string | null;
-  hideResendPromptDialogue: boolean | null;
   setHideResendPromptDialogue: React.Dispatch<React.SetStateAction<boolean | null>>
 }
 
-const ResendPromptDialogueBox = ({ parent_index, reply_to_message_id, hideResendPromptDialogue, setHideResendPromptDialogue }: ResendPromptDialogueBoxProps) => {
+const ResendPromptDialogueBox = ({ parent_index, reply_to_message_id, setHideResendPromptDialogue }: ResendPromptDialogueBoxProps) => {
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLDivElement>(null);
   const [hidePlaceholder, setHidePlaceholder] = useState<boolean>(false);
-  const { messages,
-    setMessages, ask
-  } = useContext(ChatContext)
+  const { messages, ask
+  } = useContext(ChatContext)!
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -38,7 +35,7 @@ const ResendPromptDialogueBox = ({ parent_index, reply_to_message_id, hideResend
     return () => {
       document.removeEventListener("click", handleOutsideClick);
     };
-  }, []);
+  }, [setHideResendPromptDialogue]);
 
   const handleInput = () => {
     if (!inputRef.current || parent_index == null || !inputRef.current.innerText.trim()) return;
