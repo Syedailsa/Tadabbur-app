@@ -1,5 +1,5 @@
 "use client";
-
+export const dynamic = "force-dynamic";
 import type React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -46,7 +46,8 @@ import {
 } from "../../utils/types";
 
 
-export default function ChatPage() {
+
+function ChatContent() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const inputRef = useRef<HTMLDivElement | null>(null);
   const [showPlaceholder, setShowPlaceholder] = useState<boolean | null>(true);
@@ -905,545 +906,555 @@ export default function ChatPage() {
   }
 
   return (
-    <Suspense>
-      <ProtectedRoute>
-        {showPersonalizationForm ? (
-          <RegistrationForm
-            onComplete={(data) => {
-              setShowPersonalizationForm(false);
-              if (data.age <= 12) {
-                setGreeting(
-                  `Assalamu Alaykum ${data.username}! 🌟 I am Tadabbur, your friend!`,
-                );
-                setPlaceholder("Tell me about prophets...");
-              } else {
-                setGreeting(
-                  `Assalamu Alaykum ${data.username}, I am Tadabbur. How may I assist you with your Quranic studies?`,
-                );
-              }
-            }}
-          />
-        ) : (
-          <div className="relative w-screen h-screen bg-gray-50 flex flex-col items-center">
-            <ChatProvider
-              chatHistory={chatHistory}
-              setChatHistory={setChatHistory}
-              wsRef={wsRef}
-              sessionID={sessionID}
-              attachedFile={attachedFile}
-              setAttachedFile={setAttachedFile}
-              messages={messages}
-              setMessages={setMessages}
-              audioRef={audioRef}
-              ask={ask}
-              currentPlayableAudio={currentPlayableAudio}
-              hideReportContentDialogueBox={hideReportContentDialogueBox}
-              setHideReportContentDialogueBox={setHideReportContentDialogueBox}
-              hidePromptExtraOptionsModelBoxArray={hidePromptExtraOptionsModelBoxArray}
-              setHidePromptExtraOptionsModelBoxArray={setHidePromptExtraOptionsModelBoxArray}
-            >
-              <ChatHisoryDialogueBox />
+    <ProtectedRoute>
+      {showPersonalizationForm ? (
+        <RegistrationForm
+          onComplete={(data) => {
+            setShowPersonalizationForm(false);
+            if (data.age <= 12) {
+              setGreeting(
+                `Assalamu Alaykum ${data.username}! 🌟 I am Tadabbur, your friend!`,
+              );
+              setPlaceholder("Tell me about prophets...");
+            } else {
+              setGreeting(
+                `Assalamu Alaykum ${data.username}, I am Tadabbur. How may I assist you with your Quranic studies?`,
+              );
+            }
+          }}
+        />
+      ) : (
+        <div className="relative w-screen h-screen bg-gray-50 flex flex-col items-center">
+          <ChatProvider
+            chatHistory={chatHistory}
+            setChatHistory={setChatHistory}
+            wsRef={wsRef}
+            sessionID={sessionID}
+            attachedFile={attachedFile}
+            setAttachedFile={setAttachedFile}
+            messages={messages}
+            setMessages={setMessages}
+            audioRef={audioRef}
+            ask={ask}
+            currentPlayableAudio={currentPlayableAudio}
+            hideReportContentDialogueBox={hideReportContentDialogueBox}
+            setHideReportContentDialogueBox={setHideReportContentDialogueBox}
+            hidePromptExtraOptionsModelBoxArray={hidePromptExtraOptionsModelBoxArray}
+            setHidePromptExtraOptionsModelBoxArray={setHidePromptExtraOptionsModelBoxArray}
+          >
+            <ChatHisoryDialogueBox />
 
-              <div className="w-full h-full flex flex-col items-center overflow-y-auto">
-                <div className="absolute top-0 p-2 w-full">
-                  <div className="pointer-events-auto">
-                    <Controls wsRef={wsRef} />
-                  </div>
-                  <button
-                    onClick={handleLogout}
-                    className="pointer-events-auto mr-2 mt-2 px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm font-medium rounded-md shadow-md transition-colors"
-                  >
-                    Logout
-                  </button>
+            <div className="w-full h-full flex flex-col items-center overflow-y-auto">
+              <div className="absolute top-0 p-2 w-full">
+                <div className="pointer-events-auto">
+                  <Controls wsRef={wsRef} />
                 </div>
-                <div
-                  id="chat-box-messages"
-                  className={`w-full ${messages && messages?.length > 0 ? "h-max" : "h-full"} px-4 mt-12 lg:w-2/3 flex flex-col gap-y-4 ${!messages ? "justify-center items-center" : ""}`}
+                <button
+                  onClick={handleLogout}
+                  className="pointer-events-auto mr-2 mt-2 px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm font-medium rounded-md shadow-md transition-colors"
                 >
-                  <AnimatePresence>
-                    {messages?.length === 0 && (
+                  Logout
+                </button>
+              </div>
+              <div
+                id="chat-box-messages"
+                className={`w-full ${messages && messages?.length > 0 ? "h-max" : "h-full"} px-4 mt-12 lg:w-2/3 flex flex-col gap-y-4 ${!messages ? "justify-center items-center" : ""}`}
+              >
+                <AnimatePresence>
+                  {messages?.length === 0 && (
+                    <motion.div
+                      className="flex flex-col gap-y-4 items-center self-center"
+                    >
                       <motion.div
-                        className="flex flex-col gap-y-4 items-center self-center"
+                        key="greeting"
+                        transition={{ duration: 0.4, ease: easeInOut }}
                       >
+                        <p className="switzer-500 text-center tracking-tight text-4xl px-6 text-black/90">
+                          {greeting}
+                        </p>
+                      </motion.div>
+                      <div className="default-prompts-box w-full relative overflow-x-clip">
                         <motion.div
-                          key="greeting"
-                          transition={{ duration: 0.4, ease: easeInOut }}
+                          animate={controls}
+                          transition={{
+                            duration: 25,
+                            ease: easeInOut,
+                            repeat: Infinity,
+                            repeatType: "loop",
+                          }}
+                          className="w-[1200%] md:w-[600%] flex gap-x-2"
                         >
-                          <p className="switzer-500 text-center tracking-tight text-4xl px-6 text-black/90">
-                            {greeting}
-                          </p>
-                        </motion.div>
-                        <div className="default-prompts-box w-full relative overflow-x-clip">
-                          <motion.div
-                            animate={controls}
-                            transition={{
-                              duration: 25,
-                              ease: easeInOut,
-                              repeat: Infinity,
-                              repeatType: "loop",
-                            }}
-                            className="w-[1200%] md:w-[600%] flex gap-x-2"
-                          >
-                            {Array.from({ length: 2 }).map((_, i) => (
-                              <motion.div key={i} className="carousel w-1/2">
-                                <div className="carousel-controls-slider flex">
-                                  <div className="h-max grid grid-cols-6 grid-rows-1 rounded-md gap-4 w-full">
-                                    {defaultPrompts.map((prompt, index) => (
-                                      <motion.div
-                                        key={index}
-                                        whileHover={{ scale: 1.01 }}
-                                        transition={{
-                                          duration: 0.5,
-                                          ease: easeInOut,
-                                        }}
-                                        onMouseOver={() => {
-                                          controls.stop();
-                                        }}
-                                        onMouseLeave={() => {
-                                          controls.start({ x: "-60%" });
-                                        }}
-                                        onClick={() => {
-                                          ask(
-                                            `${prompt.title} ${prompt.description}`,
-                                          );
-                                        }}
-                                        className="bg-white rounded-md shadow-sm backdrop-blur-md cursor-pointer"
-                                      >
-                                        <div className="w-full flex flex-col px-3 pt-3 pb-6 gap-y-1">
-                                          <div className="flex gap-x-3">
-                                            <div className="default-prompt-text-box">
-                                              <div className="heading-text">
-                                                <p className="switzer-600 tracking-tight text-black/80">
-                                                  {prompt.title}
-                                                </p>
-                                              </div>
-                                              <div className="system-instructions text-[0.9rem] switzer-500 text-black/80 ">
-                                                <p className="">
-                                                  {prompt.description}
-                                                </p>
-                                              </div>
+                          {Array.from({ length: 2 }).map((_, i) => (
+                            <motion.div key={i} className="carousel w-1/2">
+                              <div className="carousel-controls-slider flex">
+                                <div className="h-max grid grid-cols-6 grid-rows-1 rounded-md gap-4 w-full">
+                                  {defaultPrompts.map((prompt, index) => (
+                                    <motion.div
+                                      key={index}
+                                      whileHover={{ scale: 1.01 }}
+                                      transition={{
+                                        duration: 0.5,
+                                        ease: easeInOut,
+                                      }}
+                                      onMouseOver={() => {
+                                        controls.stop();
+                                      }}
+                                      onMouseLeave={() => {
+                                        controls.start({ x: "-60%" });
+                                      }}
+                                      onClick={() => {
+                                        ask(
+                                          `${prompt.title} ${prompt.description}`,
+                                        );
+                                      }}
+                                      className="bg-white rounded-md shadow-sm backdrop-blur-md cursor-pointer"
+                                    >
+                                      <div className="w-full flex flex-col px-3 pt-3 pb-6 gap-y-1">
+                                        <div className="flex gap-x-3">
+                                          <div className="default-prompt-text-box">
+                                            <div className="heading-text">
+                                              <p className="switzer-600 tracking-tight text-black/80">
+                                                {prompt.title}
+                                              </p>
+                                            </div>
+                                            <div className="system-instructions text-[0.9rem] switzer-500 text-black/80 ">
+                                              <p className="">
+                                                {prompt.description}
+                                              </p>
                                             </div>
                                           </div>
                                         </div>
-                                      </motion.div>
-                                    ))}
-                                  </div>
-                                </div>
-                              </motion.div>
-                            ))}
-                          </motion.div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  <AnimatePresence mode="popLayout">
-                    {/* first render user messages */}
-                    {messages?.map((record, record_index) => {
-                      return (
-                        <div key={record_index}>
-                          {record?.attachments?.length > 0 && (
-                            record.attachments.map((attachment, attachment_index) => {
-                              return (
-                                <div key={attachment_index} id="chatbot-messages-box" className="w-max min-w-60 max-w-70 border border-black/5 ml-auto px-3 py-3 rounded-md text-xs flex items-center gap-x-2 my-2 relative">
-                                  {attachment.attachmentType === "text/plain" ? (
-                                    <div className="p-1 border border-[#FFA800]/10 shadow-[0.1rem] rounded-md bg-[#FFA800]/10">
-                                      <TextFileIcon className="fill-current text-blue-400 w-8 h-8" />
-                                    </div>
-                                  ) : attachment.attachmentType === "application/pdf" ? (
-                                    <PdfFileIcon className="fill-current text-blue-400 w-8 h-8" />
-                                  ) : (null)}
-                                  <div className="absolute border border-black/5 rounded-md w-max px-2 py-0.5 poppins-semibold -top-3 z-10 -right-2 shadow-2xs fill-current text-black/30 bg-gray-50 subpixel-antialiased">
-                                    <p>ATTACHED</p>
-                                  </div>
-                                  <div className="flex flex-col gap-y-0.5">
-                                    <p className="roboto-600 text-[0.9rem]">{attachment.attachmentName}</p>
-                                    <p className="subpixel-antialiased text-black/70" style={{ fontStyle: "italic" }}>
-                                      {attachment.attachmentType && attachment.attachmentType === "text/plain" ? "Text"
-                                        : attachment.attachmentType === "application/pdf" ? "PDF"
-                                          : "File"} File
-                                    </p>
-                                  </div>
-                                </div>
-                              )
-                            })
-                          )}
-                          <div>
-                            <p className="ml-auto w-max min-w-40 max-w-[20rem] bg-neutral-900 text-white switzer-500 py-2 px-3 rounded-md shadow-md border border-black/5">
-                              {record.content}
-                            </p>
-                          </div>
-
-                          {/* PromptExtraOptions */}
-                          <div>
-                            <PromptExtraOptions message_id={record.message_id} reply_to_message_id={null} parent_index={record_index} assistant_index={null} messageType="user" />
-                          </div>
-                          {record?.responses?.map((ai_msg, ai_msg_idx) => {
-                            // loading circle logic here
-                            return loading &&
-                              !loadingMessage &&
-                              !ai_msg.content ? (
-                              <motion.div
-                                key={ai_msg_idx}
-                                animate={{ scale: [1, 1.2, 1] }}
-                                transition={{
-                                  duration: 0.4,
-                                  ease: easeInOut,
-                                  repeat: Infinity,
-                                  repeatType: "loop",
-                                }}
-                                className="w-3 h-3 rounded-full bg-black"
-                              ></motion.div>
-                            ) : reportedMessageIDs &&
-                              !reportedMessageIDs.includes(ai_msg?.message_id) &&
-                              ai_msg_idx === record.active_message_index ? (
-                              <div key={ai_msg_idx}>
-                                <div className="w-max min-w-40 max-w-full switzer-500 mt-2 py-2 px-3 rounded-md bg-white shadow-md">
-                                  <ReactMarkdown
-                                    remarkPlugins={[remarkGfm]}
-                                    rehypePlugins={[rehypeRaw]}
-                                    components={{
-                                      // HEADERS
-                                      h1: ({ ...props }) => (
-                                        <h1
-                                          className="text-3xl font-bold"
-                                          {...props}
-                                        />
-                                      ),
-                                      h2: ({ ...props }) => (
-                                        <h2
-                                          className="text-2xl font-semibold"
-                                          {...props}
-                                        />
-                                      ),
-                                      h3: ({ ...props }) => (
-                                        <h3
-                                          className="text-xl font-semibold"
-                                          {...props}
-                                        />
-                                      ),
-
-                                      // PARAGRAPH
-                                      p: ({ ...props }) => (
-                                        <p
-                                          className="leading-7 my-2 text-gray-800"
-                                          {...props}
-                                        />
-                                      ),
-
-                                      // STRONG ( **bold** )
-                                      strong: ({ ...props }) => (
-                                        <strong
-                                          className="font-bold text-black"
-                                          {...props}
-                                        />
-                                      ),
-
-                                      // EMPHASIS ( *italic* )
-                                      em: ({ ...props }) => (
-                                        <em
-                                          className="italic text-gray-700"
-                                          {...props}
-                                        />
-                                      ),
-
-                                      // LINE BREAK
-                                      br: () => <br />,
-
-                                      // LINKS
-                                      a: ({ ...props }) => (
-                                        <a
-                                          className="text-blue-600 underline"
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          {...props}
-                                        />
-                                      ),
-
-                                      // LISTS
-                                      ul: ({ ...props }) => (
-                                        <ul
-                                          className="list-disc pl-6"
-                                          {...props}
-                                        />
-                                      ),
-                                      ol: ({ ...props }) => (
-                                        <ol
-                                          className="list-decimal pl-6"
-                                          {...props}
-                                        />
-                                      ),
-                                      li: ({ ...props }) => (
-                                        <li className="my-1" {...props} />
-                                      ),
-                                      blockquote: ({ ...props }) => (
-                                        <blockquote
-                                          className="border-l-4 border-gray-400 pl-4 italic my-3"
-                                          {...props}
-                                        />
-                                      ),
-
-                                      // HORIZONTAL RULE
-                                      hr: () => (
-                                        <hr className="my-4 border-gray-300" />
-                                      ),
-                                      table: ({ ...props }) => (
-                                        <div className="overflow-x-auto my-4 border border-black/20 rounded-lg shadow-sm">
-                                          <table className="min-w-full divide-y divide-gray-200" {...props} />
-                                        </div>
-                                      ),
-                                      thead: ({ ...props }) => (
-                                        <thead
-                                          className="bg-gray-50"
-                                          {...props}
-                                        />
-                                      ),
-                                      tbody: ({ ...props }) => (
-                                        <tbody
-                                          className="bg-white divide-y divide-gray-200"
-                                          {...props}
-                                        />
-                                      ),
-                                      tr: ({ ...props }) => (
-                                        <tr
-                                          className="hover:bg-gray-50"
-                                          {...props}
-                                        />
-                                      ),
-                                      th: ({ ...props }) => (
-                                        <th className="px-4 py-3 text-left text-sm font-medium text-black uppercase tracking-wider border-b" {...props} />
-                                      ),
-                                      td: ({ ...props }) => (
-                                        <td className="px-4 py-3 text-sm text-gray-700 border-b border-black/20 whitespace-pre-wrap" {...props} />
-                                      ),
-                                      code({
-                                        inline,
-                                        className,
-                                        children,
-                                        ...props
-                                      }: {
-                                        inline?: boolean;
-                                        className?: string;
-                                        children?: ReactNode;
-                                      } & HTMLAttributes<HTMLElement>) {
-                                        const match = /language-(\w+)/.exec(className || '');
-
-                                        if (!inline && match) {
-                                          // Extract only the props that SyntaxHighlighter accepts
-                                          const { style: _, ...syntaxProps } = props;
-
-                                          return (
-                                            <SyntaxHighlighter
-                                              style={dracula as { [key: string]: CSSProperties }}
-                                              language={match[1]}
-                                              PreTag="div"
-                                              className="rounded-md shadow-sm my-4"
-                                              {...syntaxProps}
-                                            >
-                                              {String(children).replace(/\n$/, "")}
-                                            </SyntaxHighlighter>
-                                          );
-                                        } else {
-                                          return (
-                                            <code
-                                              className="bg-gray-100 text-red-500 px-1.5 py-0.5 rounded text-sm font-mono"
-                                              {...props}
-                                            >
-                                              {children}
-                                            </code>
-                                          );
-                                        }
-                                      },
-                                    }}
-                                  >
-                                    {preprocessContent(ai_msg.content)}
-                                  </ReactMarkdown>
-                                </div>
-                                {/* Place it here, inside the div */}
-                                {streamingMessageIndex != record_index &&
-                                  reportedMessageIDs &&
-                                  !reportedMessageIDs.includes(
-                                    ai_msg?.message_id
-                                  ) && (
-                                    <div>
-                                      <PromptExtraOptions
-                                        message_id={ai_msg?.message_id}
-                                        reply_to_message_id={
-                                          ai_msg?.reply_to_message_id
-                                        }
-                                        parent_index={record_index}
-                                        assistant_index={ai_msg_idx}
-                                        messageType={"assistant"}
-                                      />
-                                    </div>
-                                  )}
-
-                                {ai_msg.has_verse_audio && ai_msg.verse_audio_data.length > 0 && streamingMessageIndex != record_index && (
-                                  <QuranDialogBox
-                                    type="audio"
-                                    surahs={ai_msg?.verse_audio_data}
-                                  />
-                                )}
-                                <br />
-                                {ai_msg.has_verse_image && ai_msg.verse_images.length > 0 && streamingMessageIndex != record_index && (
-                                  <QuranDialogBox
-                                    type="read"
-                                    surahs={ai_msg?.verse_images}
-                                  />
-                                )}
-                              </div>
-                            ) : reportedMessageIDs &&
-                              reportedMessageIDs.includes(ai_msg?.message_id) ? (
-                              // reportedmessage component here
-                              <div
-                                key={ai_msg_idx}
-                                className="flex flex-col gap-y-1.5 w-[90%] max-w-120 "
-                              >
-                                <div className="h-max rounded-md shadow-md min-h-25 border border-red-200/10 px-2 pt-2 pb-3">
-                                  <div className="mb-0.5 w-full flex justify-between">
-                                    <p
-                                      id="report-title"
-                                      className="text-red-800 switzer-500 text-[1.1rem] tracking-[-0.04rem]"
-                                    >
-                                      This response is reported
-                                    </p>
-                                    <DisclaimerIcon className="w-5 h-5 fill-current text-red-700/90" />
-                                  </div>
-
-                                  <p
-                                    id="report-description"
-                                    className="switzer-500 text-black/60 tracking-tight"
-                                  >
-                                    This response promotes violence or self-harm
-                                    and goes against our community policies.
-                                  </p>
-                                </div>
-                                <div className="flex items-center gap-x-2 px-1">
-                                  <div id="learn-more-box" className="ml-auto">
-                                    <p className="inter-500 text-[0.9rem] text-red-700/80 cursor-pointer hover:text-red-700 tracking-tight">
-                                      Learn More about guidelines
-                                    </p>
-                                  </div>
-                                  <div className="ml-1 w-[0.5px] h-3.5 bg-black/40"></div>
-                                  <div
-                                    onClick={() => {
-                                      wsRef?.current?.send(
-                                        JSON.stringify({
-                                          type: "undo-report",
-                                          message_id: ai_msg.message_id,
-                                        }),
-                                      );
-                                    }}
-                                    id="undo-report-box"
-                                    className="undo-report-box flex justify-center items-center gap-x-2 flex-row-reverse px-2 py-1 hover:bg-black/5 rounded-md cursor-pointer"
-                                  >
-                                    <p className="switzer-500 text-[0.9rem]">
-                                      Undo
-                                    </p>
-                                    <UndoArrow className="w-3.5 h-3.5" />
-                                  </div>
+                                      </div>
+                                    </motion.div>
+                                  ))}
                                 </div>
                               </div>
-                            ) : null;
-                          })}
-                        </div>
-                      );
-                    })}
-                  </AnimatePresence>
-
-                  <div ref={messagesEndRef}></div>
-                </div>
-              </div>
-
-              <AnimatePresence>
-                {isRecording && (
-                  <div className="px-4 w-full lg:w-2/3">
-                    <WaveForm />
-                  </div>
-                )}
-                {/* NEW: Transcribing Loading State in place of Waveform */}
-                {!isRecording && isTranscribing && (
-                  <motion.div
-                    key="transcribing"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 10 }}
-                    className="w-full px-4 lg:w-2/3 flex"
-                  >
-                    <div className="bg-white/90 backdrop-blur-sm border ml-auto border-black/5 shadow-lg rounded-full px-4 py-3 flex items-center gap-x-3">
-                      <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin"></div>
-                      <p className="switzer-500 text-sm text-black/80">Transcribing audio...</p>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <div className="mr-1.5 py-4 mt-4 px-4 rounded-md w-full lg:w-2/3 input-box">
-                <motion.div
-                  animate={{ height: attachedFile ? 200 : 160 }}
-                  transition={{ duration: 0.2, ease: easeInOut }}
-                  className={`flex flex-col relative border border-black/10 px-3 py-2 rounded-lg shadow-md bg-white`}
-                >
-                  {attachedFile && (
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative w-max bg-white border border-black/10 px-3 py-2 rounded-md text-xs flex items-center gap-x-2 z-10">
-                      {attachedFile?.type === "text/plain" ? (
-                        <div className="p-1 border border-[#FFA800]/10 shadow-[0.1rem] rounded-md bg-[#FFA800]/10">
-                          <TextFileIcon className="fill-current text-blue-400 w-6 h-6" />
-                        </div>
-                      ) : attachedFile?.type === "application/pdf" ? (
-                        <PdfFileIcon className="fill-current text-blue-400 w-6 h-6" />
-                      ) : (null)}
-                      <div className="flex flex-col gap-y-0.5">
-                        <p className="roboto-600 tracking-wide">{attachedFile.name}</p>
-                        <p className="subpixel-antialiased text-black/70" style={{ fontStyle: "italic" }}>{attachedFile?.type ? attachedFile.type : "File"} File</p>
-                      </div>
-
-                      <div className="absolute -right-2 -top-1.5 bg-red-400 hover:bg-red-500 p-0.3 rounded-full" onClick={() => {
-                        setAttachedFile(null);
-                        setIsUploading(false);
-                      }}>
-                        <CrossIcon className="w-4 h-4 cursor-pointer" />
+                            </motion.div>
+                          ))}
+                        </motion.div>
                       </div>
                     </motion.div>
                   )}
-                  <div
-                    ref={inputRef}
-                    onInput={(e) => {
-                      const target = e.target as HTMLDivElement;
-                      const text = target.textContent.trim() ?? "";
-                      setShowPlaceholder(text === "");
-                    }}
-                    onKeyDown={(e) => {
-                      handleInput(e);
-                    }}
-                    contentEditable
-                    className={`h-2/3 switzer-500 ${attachedFile ? "pt-[0.3rem]" : ""} focus:outline-none overflow-y-auto`}
-                  ></div>
+                </AnimatePresence>
 
-                  {showPlaceholder && (
-                    <span
-                      className={`absolute ${attachedFile ? "top-16" : "top-2"} pointer-events-none placeholder-input-box switzer-500 text-black`}
-                    >
-                      {placeholder}
-                    </span>
-                  )}
+                <AnimatePresence mode="popLayout">
+                  {/* first render user messages */}
+                  {messages?.map((record, record_index) => {
+                    return (
+                      <div key={record_index}>
+                        {record?.attachments?.length > 0 && (
+                          record.attachments.map((attachment, attachment_index) => {
+                            return (
+                              <div key={attachment_index} id="chatbot-messages-box" className="w-max min-w-60 max-w-70 border border-black/5 ml-auto px-3 py-3 rounded-md text-xs flex items-center gap-x-2 my-2 relative">
+                                {attachment.attachmentType === "text/plain" ? (
+                                  <div className="p-1 border border-[#FFA800]/10 shadow-[0.1rem] rounded-md bg-[#FFA800]/10">
+                                    <TextFileIcon className="fill-current text-blue-400 w-8 h-8" />
+                                  </div>
+                                ) : attachment.attachmentType === "application/pdf" ? (
+                                  <PdfFileIcon className="fill-current text-blue-400 w-8 h-8" />
+                                ) : (null)}
+                                <div className="absolute border border-black/5 rounded-md w-max px-2 py-0.5 poppins-semibold -top-3 z-10 -right-2 shadow-2xs fill-current text-black/30 bg-gray-50 subpixel-antialiased">
+                                  <p>ATTACHED</p>
+                                </div>
+                                <div className="flex flex-col gap-y-0.5">
+                                  <p className="roboto-600 text-[0.9rem]">{attachment.attachmentName}</p>
+                                  <p className="subpixel-antialiased text-black/70" style={{ fontStyle: "italic" }}>
+                                    {attachment.attachmentType && attachment.attachmentType === "text/plain" ? "Text"
+                                      : attachment.attachmentType === "application/pdf" ? "PDF"
+                                        : "File"} File
+                                  </p>
+                                </div>
+                              </div>
+                            )
+                          })
+                        )}
+                        <div>
+                          <p className="ml-auto w-max min-w-40 max-w-[20rem] bg-neutral-900 text-white switzer-500 py-2 px-3 rounded-md shadow-md border border-black/5">
+                            {record.content}
+                          </p>
+                        </div>
 
-                  <BottomOptions />
-                  <ExtraOptions />
-                  <ModelBox modelList={ModelList} />
-                </motion.div>
+                        {/* PromptExtraOptions */}
+                        <div>
+                          <PromptExtraOptions message_id={record.message_id} reply_to_message_id={null} parent_index={record_index} assistant_index={null} messageType="user" />
+                        </div>
+                        {record?.responses?.map((ai_msg, ai_msg_idx) => {
+                          // loading circle logic here
+                          return loading &&
+                            !loadingMessage &&
+                            !ai_msg.content ? (
+                            <motion.div
+                              key={ai_msg_idx}
+                              animate={{ scale: [1, 1.2, 1] }}
+                              transition={{
+                                duration: 0.4,
+                                ease: easeInOut,
+                                repeat: Infinity,
+                                repeatType: "loop",
+                              }}
+                              className="w-3 h-3 rounded-full bg-black"
+                            ></motion.div>
+                          ) : reportedMessageIDs &&
+                            !reportedMessageIDs.includes(ai_msg?.message_id) &&
+                            ai_msg_idx === record.active_message_index ? (
+                            <div key={ai_msg_idx}>
+                              <div className="w-max min-w-40 max-w-full switzer-500 mt-2 py-2 px-3 rounded-md bg-white shadow-md">
+                                <ReactMarkdown
+                                  remarkPlugins={[remarkGfm]}
+                                  rehypePlugins={[rehypeRaw]}
+                                  components={{
+                                    // HEADERS
+                                    h1: ({ ...props }) => (
+                                      <h1
+                                        className="text-3xl font-bold"
+                                        {...props}
+                                      />
+                                    ),
+                                    h2: ({ ...props }) => (
+                                      <h2
+                                        className="text-2xl font-semibold"
+                                        {...props}
+                                      />
+                                    ),
+                                    h3: ({ ...props }) => (
+                                      <h3
+                                        className="text-xl font-semibold"
+                                        {...props}
+                                      />
+                                    ),
+
+                                    // PARAGRAPH
+                                    p: ({ ...props }) => (
+                                      <p
+                                        className="leading-7 my-2 text-gray-800"
+                                        {...props}
+                                      />
+                                    ),
+
+                                    // STRONG ( **bold** )
+                                    strong: ({ ...props }) => (
+                                      <strong
+                                        className="font-bold text-black"
+                                        {...props}
+                                      />
+                                    ),
+
+                                    // EMPHASIS ( *italic* )
+                                    em: ({ ...props }) => (
+                                      <em
+                                        className="italic text-gray-700"
+                                        {...props}
+                                      />
+                                    ),
+
+                                    // LINE BREAK
+                                    br: () => <br />,
+
+                                    // LINKS
+                                    a: ({ ...props }) => (
+                                      <a
+                                        className="text-blue-600 underline"
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        {...props}
+                                      />
+                                    ),
+
+                                    // LISTS
+                                    ul: ({ ...props }) => (
+                                      <ul
+                                        className="list-disc pl-6"
+                                        {...props}
+                                      />
+                                    ),
+                                    ol: ({ ...props }) => (
+                                      <ol
+                                        className="list-decimal pl-6"
+                                        {...props}
+                                      />
+                                    ),
+                                    li: ({ ...props }) => (
+                                      <li className="my-1" {...props} />
+                                    ),
+                                    blockquote: ({ ...props }) => (
+                                      <blockquote
+                                        className="border-l-4 border-gray-400 pl-4 italic my-3"
+                                        {...props}
+                                      />
+                                    ),
+
+                                    // HORIZONTAL RULE
+                                    hr: () => (
+                                      <hr className="my-4 border-gray-300" />
+                                    ),
+                                    table: ({ ...props }) => (
+                                      <div className="overflow-x-auto my-4 border border-black/20 rounded-lg shadow-sm">
+                                        <table className="min-w-full divide-y divide-gray-200" {...props} />
+                                      </div>
+                                    ),
+                                    thead: ({ ...props }) => (
+                                      <thead
+                                        className="bg-gray-50"
+                                        {...props}
+                                      />
+                                    ),
+                                    tbody: ({ ...props }) => (
+                                      <tbody
+                                        className="bg-white divide-y divide-gray-200"
+                                        {...props}
+                                      />
+                                    ),
+                                    tr: ({ ...props }) => (
+                                      <tr
+                                        className="hover:bg-gray-50"
+                                        {...props}
+                                      />
+                                    ),
+                                    th: ({ ...props }) => (
+                                      <th className="px-4 py-3 text-left text-sm font-medium text-black uppercase tracking-wider border-b" {...props} />
+                                    ),
+                                    td: ({ ...props }) => (
+                                      <td className="px-4 py-3 text-sm text-gray-700 border-b border-black/20 whitespace-pre-wrap" {...props} />
+                                    ),
+                                    code({
+                                      inline,
+                                      className,
+                                      children,
+                                      ...props
+                                    }: {
+                                      inline?: boolean;
+                                      className?: string;
+                                      children?: ReactNode;
+                                    } & HTMLAttributes<HTMLElement>) {
+                                      const match = /language-(\w+)/.exec(className || '');
+
+                                      if (!inline && match) {
+                                        // Extract only the props that SyntaxHighlighter accepts
+                                        const { style: _, ...syntaxProps } = props;
+
+                                        return (
+                                          <SyntaxHighlighter
+                                            style={dracula as { [key: string]: CSSProperties }}
+                                            language={match[1]}
+                                            PreTag="div"
+                                            className="rounded-md shadow-sm my-4"
+                                            {...syntaxProps}
+                                          >
+                                            {String(children).replace(/\n$/, "")}
+                                          </SyntaxHighlighter>
+                                        );
+                                      } else {
+                                        return (
+                                          <code
+                                            className="bg-gray-100 text-red-500 px-1.5 py-0.5 rounded text-sm font-mono"
+                                            {...props}
+                                          >
+                                            {children}
+                                          </code>
+                                        );
+                                      }
+                                    },
+                                  }}
+                                >
+                                  {preprocessContent(ai_msg.content)}
+                                </ReactMarkdown>
+                              </div>
+                              {/* Place it here, inside the div */}
+                              {streamingMessageIndex != record_index &&
+                                reportedMessageIDs &&
+                                !reportedMessageIDs.includes(
+                                  ai_msg?.message_id
+                                ) && (
+                                  <div>
+                                    <PromptExtraOptions
+                                      message_id={ai_msg?.message_id}
+                                      reply_to_message_id={
+                                        ai_msg?.reply_to_message_id
+                                      }
+                                      parent_index={record_index}
+                                      assistant_index={ai_msg_idx}
+                                      messageType={"assistant"}
+                                    />
+                                  </div>
+                                )}
+
+                              {ai_msg.has_verse_audio && ai_msg.verse_audio_data.length > 0 && streamingMessageIndex != record_index && (
+                                <QuranDialogBox
+                                  type="audio"
+                                  surahs={ai_msg?.verse_audio_data}
+                                />
+                              )}
+                              <br />
+                              {ai_msg.has_verse_image && ai_msg.verse_images.length > 0 && streamingMessageIndex != record_index && (
+                                <QuranDialogBox
+                                  type="read"
+                                  surahs={ai_msg?.verse_images}
+                                />
+                              )}
+                            </div>
+                          ) : reportedMessageIDs &&
+                            reportedMessageIDs.includes(ai_msg?.message_id) ? (
+                            // reportedmessage component here
+                            <div
+                              key={ai_msg_idx}
+                              className="flex flex-col gap-y-1.5 w-[90%] max-w-120 "
+                            >
+                              <div className="h-max rounded-md shadow-md min-h-25 border border-red-200/10 px-2 pt-2 pb-3">
+                                <div className="mb-0.5 w-full flex justify-between">
+                                  <p
+                                    id="report-title"
+                                    className="text-red-800 switzer-500 text-[1.1rem] tracking-[-0.04rem]"
+                                  >
+                                    This response is reported
+                                  </p>
+                                  <DisclaimerIcon className="w-5 h-5 fill-current text-red-700/90" />
+                                </div>
+
+                                <p
+                                  id="report-description"
+                                  className="switzer-500 text-black/60 tracking-tight"
+                                >
+                                  This response promotes violence or self-harm
+                                  and goes against our community policies.
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-x-2 px-1">
+                                <div id="learn-more-box" className="ml-auto">
+                                  <p className="inter-500 text-[0.9rem] text-red-700/80 cursor-pointer hover:text-red-700 tracking-tight">
+                                    Learn More about guidelines
+                                  </p>
+                                </div>
+                                <div className="ml-1 w-[0.5px] h-3.5 bg-black/40"></div>
+                                <div
+                                  onClick={() => {
+                                    wsRef?.current?.send(
+                                      JSON.stringify({
+                                        type: "undo-report",
+                                        message_id: ai_msg.message_id,
+                                      }),
+                                    );
+                                  }}
+                                  id="undo-report-box"
+                                  className="undo-report-box flex justify-center items-center gap-x-2 flex-row-reverse px-2 py-1 hover:bg-black/5 rounded-md cursor-pointer"
+                                >
+                                  <p className="switzer-500 text-[0.9rem]">
+                                    Undo
+                                  </p>
+                                  <UndoArrow className="w-3.5 h-3.5" />
+                                </div>
+                              </div>
+                            </div>
+                          ) : null;
+                        })}
+                      </div>
+                    );
+                  })}
+                </AnimatePresence>
+
+                <div ref={messagesEndRef}></div>
               </div>
+            </div>
 
-              <ReportContentDialogueBox
-                hideReportContentDialogueBox={hideReportContentDialogueBox}
-                setHideReportContentDialogueBox={setHideReportContentDialogueBox}
-              />
+            <AnimatePresence>
+              {isRecording && (
+                <div className="px-4 w-full lg:w-2/3">
+                  <WaveForm />
+                </div>
+              )}
+              {/* NEW: Transcribing Loading State in place of Waveform */}
+              {!isRecording && isTranscribing && (
+                <motion.div
+                  key="transcribing"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="w-full px-4 lg:w-2/3 flex"
+                >
+                  <div className="bg-white/90 backdrop-blur-sm border ml-auto border-black/5 shadow-lg rounded-full px-4 py-3 flex items-center gap-x-3">
+                    <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin"></div>
+                    <p className="switzer-500 text-sm text-black/80">Transcribing audio...</p>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-              <audio className="hidden" controls ref={audioRef} />
-            </ChatProvider>
-          </div>
-        )}
-      </ProtectedRoute>
-    </Suspense>
+            <div className="mr-1.5 py-4 mt-4 px-4 rounded-md w-full lg:w-2/3 input-box">
+              <motion.div
+                animate={{ height: attachedFile ? 200 : 160 }}
+                transition={{ duration: 0.2, ease: easeInOut }}
+                className={`flex flex-col relative border border-black/10 px-3 py-2 rounded-lg shadow-md bg-white`}
+              >
+                {attachedFile && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative w-max bg-white border border-black/10 px-3 py-2 rounded-md text-xs flex items-center gap-x-2 z-10">
+                    {attachedFile?.type === "text/plain" ? (
+                      <div className="p-1 border border-[#FFA800]/10 shadow-[0.1rem] rounded-md bg-[#FFA800]/10">
+                        <TextFileIcon className="fill-current text-blue-400 w-6 h-6" />
+                      </div>
+                    ) : attachedFile?.type === "application/pdf" ? (
+                      <PdfFileIcon className="fill-current text-blue-400 w-6 h-6" />
+                    ) : (null)}
+                    <div className="flex flex-col gap-y-0.5">
+                      <p className="roboto-600 tracking-wide">{attachedFile.name}</p>
+                      <p className="subpixel-antialiased text-black/70" style={{ fontStyle: "italic" }}>{attachedFile?.type ? attachedFile.type : "File"} File</p>
+                    </div>
+
+                    <div className="absolute -right-2 -top-1.5 bg-red-400 hover:bg-red-500 p-0.3 rounded-full" onClick={() => {
+                      setAttachedFile(null);
+                      setIsUploading(false);
+                    }}>
+                      <CrossIcon className="w-4 h-4 cursor-pointer" />
+                    </div>
+                  </motion.div>
+                )}
+                <div
+                  ref={inputRef}
+                  onInput={(e) => {
+                    const target = e.target as HTMLDivElement;
+                    const text = target.textContent.trim() ?? "";
+                    setShowPlaceholder(text === "");
+                  }}
+                  onKeyDown={(e) => {
+                    handleInput(e);
+                  }}
+                  contentEditable
+                  className={`h-2/3 switzer-500 ${attachedFile ? "pt-[0.3rem]" : ""} focus:outline-none overflow-y-auto`}
+                ></div>
+
+                {showPlaceholder && (
+                  <span
+                    className={`absolute ${attachedFile ? "top-16" : "top-2"} pointer-events-none placeholder-input-box switzer-500 text-black`}
+                  >
+                    {placeholder}
+                  </span>
+                )}
+
+                <BottomOptions />
+                <ExtraOptions />
+                <ModelBox modelList={ModelList} />
+              </motion.div>
+            </div>
+
+            <ReportContentDialogueBox
+              hideReportContentDialogueBox={hideReportContentDialogueBox}
+              setHideReportContentDialogueBox={setHideReportContentDialogueBox}
+            />
+
+            <audio className="hidden" controls ref={audioRef} />
+          </ChatProvider>
+        </div>
+      )}
+    </ProtectedRoute>
   )
+}
+
+
+
+
+
+export default function ChatPage() {
+
+  return (
+    <Suspense>
+      <ChatContent />
+    </Suspense>)
 }
