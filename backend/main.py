@@ -240,6 +240,10 @@ def clean_text(text: str) -> str:
     return text.replace("\x00", "")
 
 
+@app.get("/")
+def read_root():
+    return {"message": "Hello brothers"}
+
 @app.post("/api/upload")
 async def upload_file(
     file: UploadFile = File(...), 
