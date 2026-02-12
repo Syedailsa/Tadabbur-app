@@ -1452,7 +1452,6 @@ function ChatContent() {
 
 
 export default function ChatPage() {
-
   return (
     <Suspense>
       <ChatContent />
