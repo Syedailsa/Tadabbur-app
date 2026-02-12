@@ -3,13 +3,12 @@ import { ChatContext, ChatRecord } from "@/app/context/chatbot/ChatContext";
 import { useContext, useEffect, useRef, useState } from "react";
 import ChatHistory from "../../../../icons/history_icon.svg";
 import { X } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { wsSendAsync } from "@/app/utils/retryOpernation";
 
 const formatDateToDMY = (dateString: string | null): string => {
   const date = new Date(dateString || new Date());
   const day = date.getDate().toString().padStart(2, "0");
-  const month = (date.getMonth() + 1).toString().padStart(2, "0"); 
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
   const year = date.getFullYear();
 
   return `${day}-${month}-${year}`;
@@ -135,7 +134,7 @@ const ChatHisoryDialogueBox = () => {
                             console.error("Error parsing user data:", e);
                           }
                         }
-                         wsSendAsync(wsRef.current, {
+                        wsSendAsync(wsRef.current, {
                           type: "delete_all_sessions",
                           user_id: user_id,
                         });
@@ -157,7 +156,6 @@ const ChatHisoryDialogueBox = () => {
                         wsSendAsync(wsRef.current, {
                           type: "get_chat",
                           session_id: chat.session_id,
-                          user_id: userId,
                         });
                       }}
                       whileHover={{ scale: 1.01 }}

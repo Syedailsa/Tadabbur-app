@@ -24,9 +24,9 @@ export async function retryOperation<T>(
   throw lastError!;
 }
 
-export const wsSendAsync = (
+export const wsSendAsync = <T extends { type?: string }>(
   ws: WebSocket | null,
-  payload: any,
+  payload: T,
   maxRetries: number = 8,
   retryDelay: number = 500
 ): Promise<void> => {
@@ -48,7 +48,6 @@ export const wsSendAsync = (
         }
       } else if (ws.readyState === WebSocket.CONNECTING) {
         console.log("⏳ WebSocket connecting, waiting...");
-        
         const timeout = setTimeout(() => {
           ws.removeEventListener('open', onOpen);
           ws.removeEventListener('error', onError);
@@ -75,7 +74,6 @@ export const wsSendAsync = (
 
         ws.addEventListener('open', onOpen, { once: true });
         ws.addEventListener('error', onError, { once: true });
-        
       } else {
         reject(new Error(`WebSocket not ready (state: ${ws.readyState})`));
       }
