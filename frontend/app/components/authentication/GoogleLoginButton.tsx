@@ -22,7 +22,7 @@ export default function GoogleLoginButton({
       const res = await axios.post<GoogleSignInResponse>(`${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/google-signin`, request);
       onSuccess(res.data);
     } catch (error) {
-      onError("Google authentication failed. Please try again.");
+      onError(`Google authentication failed. Please try again: ${error}`);
     }
   };
 

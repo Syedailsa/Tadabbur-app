@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useRef, useState } from "react";
+import React, { useContext, useEffect, useRef } from "react";
 import ReadAloud from "../../../../icons/read_aloud.svg";
 import Flag from "../../../../icons/flag.svg";
 import Pause from "../../../../icons/pause.svg";
@@ -10,7 +10,7 @@ import hidePromptExtraOptionsModelBoxArray from "../interfaces/hidePromptExtraOp
 import { wsSendAsync } from "@/app/utils/retryOpernation";
 
 type PromptExtraOptionsModelBoxProps = {
-  message_id: string;
+  message_id: string | null;
   reply_to_message_id: string | null;
   parent_index: number;
   assistant_index: number | null;
@@ -23,11 +23,10 @@ const PromptExtraOptionsModelBox = ({
   assistant_index,
 }: PromptExtraOptionsModelBoxProps) => {
 
-  const { wsRef, sessionID, messages, setMessages, setReportedMessageID, audioRef, currentPlayableAudio, hidePromptExtraOptionsModelBoxArray,
-    setHidePromptExtraOptionsModelBoxArray, setHideReportContentDialogueBox, } = useContext(ChatContext)
+  const { wsRef, sessionID, messages, setMessages, setReportedMessageID, audioRef, currentPlayableAudio, setHidePromptExtraOptionsModelBoxArray, setHideReportContentDialogueBox, } = useContext(ChatContext)!
   const overlayRef = useRef<HTMLDivElement | null>(null);
 
-  const audio_state = messages.find((m: ChatMessage) => m.message_id === reply_to_message_id)?.responses.find((r: AssistantMessage) => r.message_id === message_id)?.audio_state
+  const audio_state = messages?.find((m: ChatMessage) => m.message_id === reply_to_message_id)?.responses.find((r: AssistantMessage) => r.message_id === message_id)?.audio_state
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -44,7 +43,7 @@ const PromptExtraOptionsModelBox = ({
     return () => {
       document.removeEventListener("click", handleOutsideClick);
     };
-  }, []);
+  }, [message_id, setHidePromptExtraOptionsModelBoxArray]);
 
   type OptionType = "read_aloud" | "report";
   const handleOptionClick = ({ type }: { type: OptionType }) => {
@@ -52,12 +51,11 @@ const PromptExtraOptionsModelBox = ({
     switch (type) {
       case "read_aloud":
         if (wsRef?.current?.readyState === WebSocket.OPEN) {
-
           const currentAudioInfo: { user_message_id: string | null, response_message_id: string | null, state: "loading" | "playing" | "paused" | "ended" | null } | null = { user_message_id: reply_to_message_id, response_message_id: message_id, state: "loading" }
 
           currentPlayableAudio.current = currentAudioInfo
           // first check if audio already exists
-          const audio_link = messages.find((m: ChatMessage) => m.message_id === reply_to_message_id)?.responses.find((r: AssistantMessage) => r.message_id === message_id)?.audio_link
+          const audio_link = messages?.find((m: ChatMessage) => m.message_id === reply_to_message_id)?.responses.find((r: AssistantMessage) => r.message_id === message_id)?.audio_link
 
           if (audio_link && audioRef.current) {
             audioRef.current.src = ""
@@ -75,7 +73,24 @@ const PromptExtraOptionsModelBox = ({
             session_id: sessionID,
           });
 
-          setMessages((prev: ChatMessage[]) => prev.map((m) => m.message_id === reply_to_message_id ? { ...m, responses: m.responses.map((n) => n.message_id === message_id ? { ...n, audio_state: "loading" } : { ...n, audio_state: null }) } : { ...m, responses: m.responses.map(o => ({ ...o, audio_state: null })) }))
+          setMessages((prev: ChatMessage[]) =>
+            prev.map((m) =>
+              m.message_id === reply_to_message_id
+                ? {
+                  ...m,
+                  responses: m.responses.map((n) =>
+                    n.message_id === message_id
+                      ? { ...n, audio_state: "loading" }
+                      : { ...n, audio_state: null }
+                  )
+                }
+                : {
+                  ...m,
+                  responses: m.responses.map(o => ({ ...o, audio_state: null }))
+                }
+            )
+
+          );
 
         }
         break;

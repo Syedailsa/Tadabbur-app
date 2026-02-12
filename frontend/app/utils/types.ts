@@ -3,7 +3,7 @@
 // ============================================
 
 import { z } from 'zod';
-
+import { Attachment } from '../components/chatbot/interfaces/ChatMessage';
 // ============================================
 // MESSAGE TYPES
 // ============================================
@@ -221,7 +221,7 @@ export interface UserMessageOutgoing extends BaseOutgoingMessage {
   content: string;
   resend_flag?: boolean;
   resend_message_id?: string;
-  attached_files?: any[];
+  attached_files: Attachment[];
 }
 
 // Request chat history

@@ -16,7 +16,7 @@ const ReportContentDialogueBox: React.FC<ReportContenDialogueBoxProps> = ({
   hideReportContentDialogueBox,
   setHideReportContentDialogueBox,
 }) => {
-  const { wsRef, reportedMessageID } = useContext(ChatContext);
+  const { wsRef, reportedMessageID } = useContext(ChatContext)!;
   const [hidePlaceholder, setHidePlaceholder] = useState<boolean>(true);
   const [selectedReason, setSelectedReason] = useState<string | null>("");
   const [customFeedback, setCustomFeedback] = useState<string | null>("");

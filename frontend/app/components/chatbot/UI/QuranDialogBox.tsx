@@ -45,7 +45,7 @@ export default function QuranDialogBox(props: AudioDialogProps) {
       repeat: Infinity,
     });
     return () => controls.stop();
-  }, []);
+  }, [x]);
 
   return (
     <div className="">
@@ -203,9 +203,6 @@ const SelectBox = ({
     return "englishName" in item;
   }
 
-  if (!openDropdown || dropdownArray.length <= 1) {
-    return null
-  }
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -217,7 +214,11 @@ const SelectBox = ({
     return () => {
       document.removeEventListener('click', handleOutsideClick)
     }
-  }, [])
+  }, [setOpenDropdown])
+
+  if (!openDropdown || dropdownArray.length <= 1) {
+    return null
+  }
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ top }} ref={overlayRef} className={`absolute p-1 z-10 h-max max-h-30 overflow-y-auto w-1/2 bg-gray-50 shadow-md rounded-md flex flex-col gap-y-2`}>

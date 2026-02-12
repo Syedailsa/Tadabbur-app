@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import PromptExtraOptionsModelBox from "./PromptExtraOptionsModelBox";
 import ThumbsUp from "../../../../icons/thumbs-up.svg";
@@ -32,7 +32,8 @@ const PromptExtraOptions = ({
   const { sessionID, wsRef, messages, setMessages, hidePromptExtraOptionsModelBoxArray,
     setHidePromptExtraOptionsModelBoxArray,
 
-  } = useContext(ChatContext)
+  } = useContext(ChatContext)!
+
   const [overlayTranslateAmount, setOverlayTranslateAmount] = useState<
     number | null
   >(0);
@@ -48,12 +49,15 @@ const PromptExtraOptions = ({
       : messages?.[parent_index]?.responses?.[assistant_index]?.feedback ?? null;
 
   const hasMultipleResponses =
-    messages?.[parent_index]?.number_of_responses > 1;
+    (messages?.[parent_index]?.number_of_responses ?? 0) > 1;
 
 
   useEffect(() => {
     setHidePromptExtraOptionsModelBoxArray((prev: hidePromptExtraOptionsModelBoxArray[]) => prev.map(m => m.assistant_message_id == message_id ? { ...m, hidePromptExtraOptionsModelBox: true } : m))
-  }, [])
+  }, [message_id, setHidePromptExtraOptionsModelBoxArray])
+
+
+
   const hidePromptExtraOptionsModelBox = hidePromptExtraOptionsModelBoxArray.find((m: hidePromptExtraOptionsModelBoxArray) => m.assistant_message_id == message_id)?.hidePromptExtraOptionsModelBox
 
   type OptionType = "copy" | "resend" | "like" | "dislike";
@@ -64,10 +68,10 @@ const PromptExtraOptions = ({
         let content: string | null = null;
         if (messageType === "assistant") {
           if (assistant_index === null) { break }
-          content = messages[parent_index].responses[assistant_index].content ?? null;
+          content = messages?.[parent_index].responses[assistant_index].content ?? null;
 
         } else if (messageType === "user") {
-          content = messages[parent_index].content
+          content = messages?.[parent_index]?.content ?? null
         }
         navigator.clipboard
           .writeText(content ? content : "")
@@ -78,7 +82,7 @@ const PromptExtraOptions = ({
           .catch((err) => console.error("Failed to copy", err));
         break;
       case "like":
-        if (feedback === "like") {
+        if (feedback === "liked") {
           break
         }
         if (assistant_index != null) {
@@ -103,7 +107,7 @@ const PromptExtraOptions = ({
                   ...m,
                   responses: m.responses.map((r, j) =>
                     j === assistant_index
-                      ? { ...r, feedback: "like" }
+                      ? { ...r, feedback: "liked" }
                       : r
                   )
                 }
@@ -115,7 +119,7 @@ const PromptExtraOptions = ({
 
         break;
       case "dislike":
-        if (feedback === "dislike") {
+        if (feedback === "disliked") {
           break
         }
         if (assistant_index != null) {
@@ -140,7 +144,7 @@ const PromptExtraOptions = ({
                   ...m,
                   responses: m.responses.map((r, j) =>
                     j === assistant_index
-                      ? { ...r, feedback: "dislike" }
+                      ? { ...r, feedback: "disliked" }
                       : r
                   )
                 }
@@ -161,7 +165,7 @@ const PromptExtraOptions = ({
     <div>
       {messageType === "assistant" ? (
         <div className="flex gap-x-1.5 px-2 py-2 relative">
-          {messages?.[parent_index]?.number_of_responses > 1 && (
+          {(messages[parent_index]?.number_of_responses ?? 0) > 1 && (
             <div className="flex gap-x-1 items-center">
               <motion.div
                 onClick={() => {
@@ -169,7 +173,7 @@ const PromptExtraOptions = ({
                     messages?.[parent_index]?.active_message_index;
 
                   // check if activeIndex is below zero
-                  if (activeIndex <= 0) {
+                  if (activeIndex && activeIndex <= 0) {
                     return;
                   }
 
@@ -257,7 +261,7 @@ const PromptExtraOptions = ({
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
           >
             <ThumbsUp
-              className={`w-4 h-4 ${feedback === "like" ? "fill-blue-400" : ""
+              className={`w-4 h-4 ${feedback === "liked" ? "fill-blue-400" : ""
                 }`}
             />
           </div>
@@ -277,7 +281,7 @@ const PromptExtraOptions = ({
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
           >
             <ThumbsDown
-              className={`w-4 h-4 ${feedback === "dislike" ? "fill-red-400" : ""
+              className={`w-4 h-4 ${feedback === "disliked" ? "fill-red-400" : ""
                 }`}
             />
           </div>
@@ -320,7 +324,7 @@ const PromptExtraOptions = ({
           )}
           {!hidePromptExtraOptionsModelBox && (<PromptExtraOptionsModelBox message_id={message_id} reply_to_message_id={reply_to_message_id} parent_index={parent_index} assistant_index={assistant_index} />)}
 
-          {!hideResendPromptDialogue && <ResendPromptDialogueBox message_id={message_id} reply_to_message_id={reply_to_message_id} parent_index={parent_index} hideResendPromptDialogue={hideResendPromptDialogue} setHideResendPromptDialogue={setHideResendPromptDialogue} />}
+          {!hideResendPromptDialogue && <ResendPromptDialogueBox message_id={message_id} reply_to_message_id={reply_to_message_id} parent_index={parent_index} setHideResendPromptDialogue={setHideResendPromptDialogue} />}
         </div>
       ) : messageType === "user" ? (
         <div className="flex gap-x-1.5 pr-1 pl-2 pb-2 pt-1 relative">

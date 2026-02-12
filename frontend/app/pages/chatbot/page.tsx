@@ -56,26 +56,8 @@ import {
   ChatRecordType,
 } from "../../utils/types";
 import { retryOperation, wsSendAsync } from "@/app/utils/retryOpernation";
-import AlertDialogueBox from "../../components/chatbot/UI/AlertDialogueBox";
 
 export default function ChatPage() {
-  // Alert Dialog State
-  const [alertDialog, setAlertDialog] = useState<{
-    isOpen: boolean;
-    type: "error" | "loading" | "success" | "warning";
-    title: string;
-    message: string;
-    showRetryButton?: boolean;
-    onRetry?: () => void;
-    currentAttempt?: number;
-    maxAttempts?: number;
-    duration?: number;
-  }>({
-    isOpen: false,
-    type: "loading",
-    title: "",
-    message: "",
-  });
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const inputRef = useRef<HTMLDivElement | null>(null);
   const [showPlaceholder, setShowPlaceholder] = useState<boolean | null>(true);
@@ -884,64 +866,22 @@ export default function ChatPage() {
 
     currentMessageIDRef.current = messageID;
     
-    // Show loading dialog
-    setAlertDialog({
-      isOpen: true,
-      type: "loading",
-      title: "Sending Message",
-      message: "Please wait while we send your message...",
-      currentAttempt: 1,
-      maxAttempts: 8,
+    await wsSendAsync(wsRef.current, {
+      type: "user_message",
+      message_id: messageID,
+      role: "user",
+      system_instructions: guidelines || "",
+      content: input,
+      file_name: attachedFile?.name,
+      file_type: attachedFile?.type,
+      resend_flag: resend_flag,
+      resend_message_id: resend_message_id || "",
+      new_file_context: fileContext,
     });
-    
-    try {
-      await wsSendAsync(wsRef.current, {
-        type: "user_message",
-        message_id: messageID,
-        role: "user",
-        system_instructions: guidelines || "",
-        content: input,
-        file_name: attachedFile?.name,
-        file_type: attachedFile?.type,
-        resend_flag: resend_flag,
-        resend_message_id: resend_message_id || "",
-        new_file_context: fileContext,
-      });
-      
-      // Success - hide loading
-      setAlertDialog({ ...alertDialog, isOpen: false });
-      setFileContext(null);
-      if (inputRef.current) {
-        inputRef.current.innerText = "";
-        setShowPlaceholder(true);
-      }
-    } catch (error) {
-      // All retries failed - show error
-      console.error("Failed to send message after all retries:", error);
-      
-      // Update the loading message
-      setMessages((prev) => {
-        if (!prev) return prev;
-        const updated = [...prev];
-        const lastMsg = updated[updated.length - 1];
-        if (lastMsg && lastMsg.message_id === messageID) {
-          lastMsg.responses[0].content = "Connection lost. Your message has been saved and will be sent when connection is restored.";
-        }
-        return updated;
-      });
-      
-      // error alert
-      setAlertDialog({
-        isOpen: true,
-        type: "error",
-        title: "Connection Failed",
-        message: "Unable to send your message after 8 attempts. Please check your internet connection.",
-        showRetryButton: true,
-        onRetry: () => {
-          setAlertDialog({ ...alertDialog, isOpen: false });
-          ask(input, guidelines, resend_flag, resend_message_id, old_responses_attachments);
-        },
-      });
+    setFileContext(null);
+    if (inputRef.current) {
+      inputRef.current.innerText = "";
+      setShowPlaceholder(true);
     }
   };
 
@@ -952,13 +892,7 @@ export default function ChatPage() {
       e.preventDefault();
 
       if (attachedFile && isUploading) {
-        setAlertDialog({
-          isOpen: true,
-          type: "warning",
-          title: "Uploading...",
-          message: "File is still uploading, please wait a moment...",
-          duration: 3000,
-        });
+        alert("File is still uploading, please wait a moment...");
         return;
 
       }
@@ -1545,20 +1479,6 @@ export default function ChatPage() {
 
             <audio className="hidden" controls ref={audioRef} />
           </ChatProvider>
-
-          {/* Alert Dialog */}
-          <AlertDialogueBox
-            isOpen={alertDialog.isOpen}
-            onClose={() => setAlertDialog({ ...alertDialog, isOpen: false })}
-            type={alertDialog.type}
-            title={alertDialog.title}
-            message={alertDialog.message}
-            showRetryButton={alertDialog.showRetryButton}
-            onRetry={alertDialog.onRetry}
-            currentAttempt={alertDialog.currentAttempt}
-            maxAttempts={alertDialog.maxAttempts}
-            duration={alertDialog.duration}
-          />
         </div>
       )}
     </ProtectedRoute>
