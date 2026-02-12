@@ -11,7 +11,6 @@ import MicIcon from "../../../../icons/mic_icon.svg";
 const BottomOptions = () => {
   const {
     wsRef,
-    wsRef,
     hideExtraOptions,
     setHideExtraOptions,
     selectedModel,
@@ -162,154 +161,106 @@ const BottomOptions = () => {
         style={{ display: "none" }}
         accept=".pdf,.txt"
       />
-      <div className="w-full flex gap-x-1 mt-auto items-center">
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={handleFileChange}
-          style={{ display: "none" }}
-          accept=".pdf,.txt"
-        />
+      <motion.div
+        whileTap={{ backgroundColor: "#0000003D" }}
+        whileHover={{ backgroundColor: "#0000000D" }}
+        animate={{ backgroundColor: active[0] ? "#0000000D" : "#00000000" }}
+        id="choose-model-box"
+        onClick={(e) => {
+          e.stopPropagation();
+          setHideModelBox((prev: boolean | null) => !prev);
+          setActive((prev: boolean[]) => {
+            const current = [...prev];
+            current[0] = !current[0];
+            return current;
+          });
+        }}
+        className="relative flex-row-reverse gap-x-1 py-1 pr-3 pl-4 rounded-full cursor-pointer items-center hidden sm:flex"
+      >
+        <motion.div className="mt-0.2">
+          <DownArrow className="w-5 h-5" />
+        </motion.div>
+        <p className="switzer-500 text-[0.91rem] sm:text-[0.96rem]">
+          {selectedModel}
+        </p>
+      </motion.div>
+      <motion.div className={`ml-auto flex gap-x-1`}>
         <motion.div
-          whileTap={{ backgroundColor: "#0000003D" }}
-          whileHover={{ backgroundColor: "#0000000D" }}
-          animate={{ backgroundColor: active[0] ? "#0000000D" : "#00000000" }}
-          animate={{ backgroundColor: active[0] ? "#0000000D" : "#00000000" }}
-          id="choose-model-box"
           onClick={(e) => {
             e.stopPropagation();
-            setHideModelBox((prev: boolean | null) => !prev);
+            setHideExtraOptions((prev: boolean) => !prev);
+          }}
+          animate={{
+            backgroundColor: hideExtraOptions ? "#00000000" : "#0000000D",
+          }}
+          whileTap={{ backgroundColor: "#0000003D" }}
+          whileHover={{ backgroundColor: "#0000000D" }}
+          className={`w-9 h-9 rounded-full flex items-center justify-center cursor-pointer
+          }`}
+        >
+          <PlusIcon className="fill-current w-5 h-5 text-black" />
+        </motion.div>
+        <motion.div
+          id="story-telling-box"
+          onClick={() => {
             setActive((prev: boolean[]) => {
               const current = [...prev];
-              current[0] = !current[0];
-              return current;
-            });
-            setActive((prev: boolean[]) => {
-              const current = [...prev];
-              current[0] = !current[0];
+              if (current[1]) {
+                wsRef.current?.send(
+                  JSON.stringify({ type: "agent", agent: "normal" })
+                );
+              } else {
+                wsRef.current?.send(
+                  JSON.stringify({ type: "agent", agent: "story-telling" })
+                );
+              }
+              current[1] = !current[1];
               return current;
             });
           }}
-          className="relative flex-row-reverse gap-x-1 py-1 pr-3 pl-4 rounded-full cursor-pointer items-center hidden sm:flex"
-          className="relative flex-row-reverse gap-x-1 py-1 pr-3 pl-4 rounded-full cursor-pointer items-center hidden sm:flex"
+          animate={{ backgroundColor: active[1] ? "#0000000D" : "#00000000" }}
+          whileTap={{ backgroundColor: "#0000003D" }}
+          whileHover={{ backgroundColor: "#0000000D" }}
+          className="flex gap-x-1 px-3 py-1 rounded-full cursor-pointer items-center"
         >
-          <motion.div className="mt-0.2">
-            <DownArrow className="w-5 h-5" />
-          </motion.div>
-          <p className="switzer-500 text-[0.91rem] sm:text-[0.96rem]">
-            {selectedModel}
-          </p>
-          <p className="switzer-500 text-[0.91rem] sm:text-[0.96rem]">
-            {selectedModel}
-          </p>
+          <StoryIcon className="fill-current w-5 h-5 text-black" />
+          <span className="w-max switzer-500 text-[0.96rem]">
+            Story telling
+          </span>
         </motion.div>
-        <motion.div className={`ml-auto flex gap-x-1`}>
-          <motion.div
-            onClick={(e) => {
-              e.stopPropagation();
-              setHideExtraOptions((prev: boolean) => !prev);
-            }}
-            animate={{
-              backgroundColor: hideExtraOptions ? "#00000000" : "#0000000D",
-            }}
-            whileTap={{ backgroundColor: "#0000003D" }}
-            whileHover={{ backgroundColor: "#0000000D" }}
-            className={`w-9 h-9 rounded-full flex items-center justify-center cursor-pointer
-          }`}
-          >
-            <PlusIcon className="fill-current w-5 h-5 text-black" />
-          </motion.div>
-          <motion.div
-            id="story-telling-box"
-            onClick={() => {
-              setActive((prev: boolean[]) => {
-                const current = [...prev];
-                if (current[1]) {
-                  wsRef.current?.send(
-                    JSON.stringify({ type: "agent", agent: "normal" })
-                  );
-                } else {
-                  wsRef.current?.send(
-                    JSON.stringify({ type: "agent", agent: "story-telling" })
-                  );
-                }
-                current[1] = !current[1];
-                return current;
-              });
-            }}
-            animate={{ backgroundColor: active[1] ? "#0000000D" : "#00000000" }}
-            onClick={() => {
-              setActive((prev: boolean[]) => {
-                const current = [...prev];
-                if (current[1]) {
-                  wsRef.current?.send(
-                    JSON.stringify({ type: "agent", agent: "normal" })
-                  );
-                } else {
-                  wsRef.current?.send(
-                    JSON.stringify({ type: "agent", agent: "story-telling" })
-                  );
-                }
-                current[1] = !current[1];
-                return current;
-              });
-            }}
-            animate={{ backgroundColor: active[1] ? "#0000000D" : "#00000000" }}
-            whileTap={{ backgroundColor: "#0000003D" }}
-            whileHover={{ backgroundColor: "#0000000D" }}
-            className="flex gap-x-1 px-3 py-1 rounded-full cursor-pointer items-center"
-          >
-            <StoryIcon className="fill-current w-5 h-5 text-black" />
-            <span className="w-max switzer-500 text-[0.96rem]">
-              Story telling
-            </span>
-          </motion.div>
 
-          <motion.div
-            id="mic-icon-box"
-            whileTap={{ backgroundColor: "#0000003D" }}
-            whileHover={{ backgroundColor: "#0000000D" }}
-            onClick={() => {
-              setActive((prev: boolean[]) => {
-                const current = [...prev];
-                current[2] = !current[2];
-                return current;
-              });
-            }}
-            animate={{ backgroundColor: active[2] ? "#ff000020" : "#00000000" }}
-            onClick={() => {
-              setActive((prev: boolean[]) => {
-                const current = [...prev];
-                current[2] = !current[2];
-                return current;
-              });
-            }}
-            animate={{ backgroundColor: active[2] ? "#ff000020" : "#00000000" }}
-            className="w-9 h-9 rounded-full flex items-center justify-center cursor-pointer"
-          >
-            <MicIcon
-              className={`w-5 h-5 fill-current ${active[2] ? "text-red-600" : "text-black"
-                }`}
-            />
-            <MicIcon
-              className={`w-5 h-5 fill-current ${active[2] ? "text-red-600" : "text-black"
-                }`}
-            />
-          </motion.div>
-
-          <motion.div
-            whileTap={{ backgroundColor: "#0000003D" }}
-            whileHover={{ backgroundColor: "#0000000D" }}
-            className="rounded-full w-9 h-9 cursor-pointer flex justify-center items-center"
-            id="attach-files-box"
-            onClick={() => fileInputRef.current?.click()}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <AttachIcon className="fill-current text-black w-5 h-5" />
-          </motion.div>
+        <motion.div
+          id="mic-icon-box"
+          whileTap={{ backgroundColor: "#0000003D" }}
+          whileHover={{ backgroundColor: "#0000000D" }}
+          onClick={() => {
+            setActive((prev: boolean[]) => {
+              const current = [...prev];
+              current[2] = !current[2];
+              return current;
+            });
+          }}
+          animate={{ backgroundColor: active[2] ? "#ff000020" : "#00000000" }}
+          className="w-9 h-9 rounded-full flex items-center justify-center cursor-pointer"
+        >
+          <MicIcon
+            className={`w-5 h-5 fill-current ${active[2] ? "text-red-600" : "text-black"
+              }`}
+          />
         </motion.div>
-      </div>
-      );
+
+        <motion.div
+          whileTap={{ backgroundColor: "#0000003D" }}
+          whileHover={{ backgroundColor: "#0000000D" }}
+          className="rounded-full w-9 h-9 cursor-pointer flex justify-center items-center"
+          id="attach-files-box"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <AttachIcon className="fill-current text-black w-5 h-5" />
+        </motion.div>
+      </motion.div>
+    </div>
+  );
 };
 
-      export default BottomOptions;
+export default BottomOptions;
