@@ -5,6 +5,7 @@ import SettingIcon from "../../../../icons/settings_icon.svg";
 import HistoryIcon from "../../../../icons/history_icon.svg";
 import NewChatIcon from "../../../../icons/new_chat_icon.svg";
 import { ControlProps } from "../interfaces/ControlProps";
+import { wsSendAsync } from "@/app/utils/retryOpernation";
 
 const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
   const [active, setActive] = useState<boolean | null>(false);
@@ -43,15 +44,15 @@ const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
         console.error("Error parsing user data:", e);
       }
     }
-
-    wsRef.current?.send(
-      JSON.stringify({
+    wsSendAsync(
+    wsRef.current,
+    {
         type: "session-init",
         session_id: "",
         user_id: user_id,
         model: "kimi-k2-instruct-0905",
-      })
-    );
+      }).catch(() => {})
+    
   };
   return (
     <div className="w-full flex justify-center-safe">
@@ -91,7 +92,9 @@ const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
                     console.error("Error parsing user data:", e);
                   }
                 }
-                wsRef.current?.send(JSON.stringify({ type: "chat_history", user_id: user_id }));
+                wsSendAsync
+                (wsRef.current,{ type: "chat_history", user_id: user_id }).catch(() => {});
+                
                 setOpenChatHistoryDialogueBox(true);
               }}
               onMouseOver={() => {

@@ -341,6 +341,7 @@ async def chat(req: ChatRequest, authorization: str | None = Header(None)):
 
 
     except Exception as e:
+        logger.error(f"Transcription endpoint error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     
 stt_engine = SpeechToTextEngine()

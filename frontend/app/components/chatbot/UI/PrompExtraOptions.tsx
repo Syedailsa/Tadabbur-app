@@ -11,7 +11,7 @@ import { ChatMessage } from "../interfaces/ChatMessage";
 import ArrowLeft from "../../../../icons/arrow-left-bold.svg";
 import hidePromptExtraOptionsModelBoxArray from "../interfaces/hidePromptExtraOptionsModelBoxArray";
 import { ChatContext } from "@/app/context/chatbot/ChatContext";
-
+import { wsSendAsync } from "@/app/utils/retryOpernation";
 
 type PromptExtraOptionsProps = {
   message_id: string;
@@ -86,15 +86,16 @@ const PromptExtraOptions = ({
           break
         }
         if (assistant_index != null) {
-          wsRef?.current?.send(
-            JSON.stringify({
+          wsSendAsync(
+          wsRef?.current,
+          {
               type: "like",
               message:
                 messages?.[parent_index]?.responses?.[assistant_index].content,
               message_id: message_id,
               session_id: sessionID,
-            })
-          );
+            }).catch(() => {})
+          
         }
 
         setHidePromptExtraOptionsModelBoxArray((prev: hidePromptExtraOptionsModelBoxArray[]) => prev.map(m => m.assistant_message_id === message_id ? { ...m, hidePromptExtraOptionsModelBox: true } : m))
@@ -122,15 +123,16 @@ const PromptExtraOptions = ({
           break
         }
         if (assistant_index != null) {
-          wsRef?.current?.send(
-            JSON.stringify({
+          wsSendAsync(
+          wsRef?.current,
+          {
               type: "dislike",
               message:
                 messages?.[parent_index]?.responses?.[assistant_index]?.content,
               message_id: message_id,
               session_id: sessionID,
-            })
-          );
+            }).catch(() => {})
+          
         }
 
         setHidePromptExtraOptionsModelBoxArray((prev: hidePromptExtraOptionsModelBoxArray[]) => prev.map(m => m.assistant_message_id === message_id ? { ...m, hidePromptExtraOptionsModelBox: true } : m))
