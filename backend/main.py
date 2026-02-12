@@ -240,6 +240,10 @@ def clean_text(text: str) -> str:
     return text.replace("\x00", "")
 
 
+@app.get("/")
+def read_root():
+    return {"message": "Hello brothers"}
+
 @app.post("/api/upload")
 async def upload_file(
     file: UploadFile = File(...), 
@@ -337,6 +341,7 @@ async def chat(req: ChatRequest, authorization: str | None = Header(None)):
 
 
     except Exception as e:
+        logger.error(f"Transcription endpoint error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     
 stt_engine = SpeechToTextEngine()
