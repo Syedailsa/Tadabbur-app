@@ -4,7 +4,7 @@ import type React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
-import { ReactNode, useEffect, useRef, useState } from "react";
+import { ReactNode, useEffect, useRef, useState, CSSProperties, HTMLAttributes, Suspense } from "react";
 import ChatProvider from "@/app/providers/chatbot/ChatProvider";
 import DisclaimerIcon from "../../../icons/disclaimer.svg";
 import CrossIcon from "../../../icons/cross_icon.svg"
@@ -57,7 +57,7 @@ import {
 } from "../../utils/types";
 import { retryOperation, wsSendAsync } from "@/app/utils/retryOpernation";
 
-export default function ChatPage() {
+function ChatContent() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const inputRef = useRef<HTMLDivElement | null>(null);
   const [showPlaceholder, setShowPlaceholder] = useState<boolean | null>(true);
@@ -306,21 +306,21 @@ export default function ChatPage() {
           return;
         }
         const data = await retryOperation(async () => {
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/personalization/status`,
-          {
-            headers: {
-              'Authorization': `Bearer ${token}`
+          const response = await fetch(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/personalization/status`,
+            {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
             }
+          );
+          if (!response.ok) {
+            console.error("❌ Failed to fetch personalization status:", response.status);
+            setShowPersonalizationForm(true);
+            setIsCheckingPersonalization(false);
+            return;
           }
-        );
-        if (!response.ok) {
-          console.error("❌ Failed to fetch personalization status:", response.status);
-          setShowPersonalizationForm(true);
-          setIsCheckingPersonalization(false);
-          return;
-        }
-        return await response.json();
+          return await response.json();
         }, 5, 1000);
         // console.log("📊 Personalization data received:", data);
 
@@ -387,26 +387,26 @@ export default function ChatPage() {
         model: "kimi-k2-instruct-0905",
       };
 
-      try {   
-      await wsSendAsync(
-        websocket,
-        sessionInit,  
-        8,
-        500
-      );
+      try {
+        await wsSendAsync(
+          websocket,
+          sessionInit,
+          8,
+          500
+        );
         if (urlSessionId) {
           await wsSendAsync(
-            websocket,  {
+            websocket, {
             type: "get_chat",
             session_id: urlSessionId,
             user_id: user_id,
-            }, 8, 500
+          }, 8, 500
           )
         }
-      } 
+      }
       catch (error) {
-      console.error("❌ Failed to initialize WebSocket session:", error);
-  }
+        console.error("❌ Failed to initialize WebSocket session:", error);
+      }
       setReportedMessageIDs([]);
     };
 
@@ -740,12 +740,12 @@ export default function ChatPage() {
 
         try {
           const data = await retryOperation(async () => {
-          const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/upload`, {
-            method: "POST",
-            body: formData,
-          });
-          if (!response.ok) throw new Error("Upload failed");
-          return await response.json();
+            const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/upload`, {
+              method: "POST",
+              body: formData,
+            });
+            if (!response.ok) throw new Error("Upload failed");
+            return await response.json();
           }, 8, 1000)
 
           if (!isCancelled && data.extracted_text) {
@@ -778,7 +778,7 @@ export default function ChatPage() {
     guidelines: string | null = null,
     resend_flag: boolean = false,
     resend_message_id: string | null = null,
-    old_responses_attachments: { responses: [], attachments: [] } | null = null
+    old_responses_attachments: { responses: AssistantMessage[], attachments: Attachment[] } | null = null
   ) => {
     if (streamingMessageIndex !== null || (!input.trim() && !fileContext)) return;
 
@@ -791,7 +791,7 @@ export default function ChatPage() {
         // remove the message object only with the user's message id
         setMessages((prev: ChatMessage[]) =>
           prev.filter(
-            (m: any) => m.message_id !== resend_message_id
+            (m) => m.message_id !== resend_message_id
           )
         );
       }
@@ -820,7 +820,7 @@ export default function ChatPage() {
     }
 
 
-    let attachments_array: Attachment[] = []
+    const attachments_array: Attachment[] = []
     if (fileContext) {
       if (attachedFile?.name && attachedFile?.type) {
         attachments_array.push({ attachmentName: attachedFile.name, attachmentType: attachedFile?.type })
@@ -865,7 +865,7 @@ export default function ChatPage() {
     });
 
     currentMessageIDRef.current = messageID;
-    
+
     await wsSendAsync(wsRef.current, {
       type: "user_message",
       message_id: messageID,
@@ -1257,30 +1257,32 @@ export default function ChatPage() {
                                     td: ({ node, ...props }) => (
                                       <td className="px-4 py-3 text-sm text-gray-700 border-b border-black/20 whitespace-pre-wrap" {...props} />
                                     ),
-
                                     code({
-                                      node,
                                       inline,
                                       className,
                                       children,
                                       ...props
-                                    }: any) {
-                                      const match = /language-(\w+)/.exec(
-                                        className || '',
-                                      );
+                                    }: {
+                                      inline?: boolean;
+                                      className?: string;
+                                      children?: ReactNode;
+                                    } & HTMLAttributes<HTMLElement>) {
+                                      const match = /language-(\w+)/.exec(className || '');
+
                                       if (!inline && match) {
+                                        // Create a clean props object without HTML attributes that conflict
+                                        const syntaxHighlighterProps = {
+                                          language: match[1],
+                                          PreTag: "div" as const,
+                                          className: "rounded-md shadow-sm my-4",
+                                          style: dracula as { [key: string]: CSSProperties }
+                                        };
+
                                         return (
                                           <SyntaxHighlighter
-                                            style={dracula}
-                                            language={match[1]}
-                                            PreTag="div"
-                                            className="rounded-md shadow-sm my-4"
-                                            {...props}
+                                            {...syntaxHighlighterProps}
                                           >
-                                            {String(children).replace(
-                                              /\n$/,
-                                              "",
-                                            )}
+                                            {String(children).replace(/\n$/, "")}
                                           </SyntaxHighlighter>
                                         );
                                       } else {
@@ -1482,5 +1484,13 @@ export default function ChatPage() {
         </div>
       )}
     </ProtectedRoute>
+  )
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense>
+      <ChatContent />
+    </Suspense>
   )
 }

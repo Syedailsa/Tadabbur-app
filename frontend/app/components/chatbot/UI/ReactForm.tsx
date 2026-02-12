@@ -50,8 +50,8 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onComplete }) => {
         throw new Error("User not authenticated");
       }
 
-      await retryOperation(async () => {
-        await axios.post(
+      const checkResponse = await retryOperation(async () => {
+        return await axios.post(
           `${process.env.NEXT_PUBLIC_BACKEND_URL}/personalization/save`,
           {
             username: data.username,
@@ -64,8 +64,7 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onComplete }) => {
           }
         );
       }, 8, 1000);
-
-      if (response.data.is_personalized) {
+      if (checkResponse.data.is_personalized) {
         localStorage.setItem("personalization", JSON.stringify(data));
         onComplete(data);
       }

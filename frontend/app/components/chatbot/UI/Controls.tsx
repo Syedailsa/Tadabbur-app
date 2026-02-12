@@ -45,14 +45,14 @@ const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
       }
     }
     wsSendAsync(
-    wsRef.current,
-    {
+      wsRef.current,
+      {
         type: "session-init",
         session_id: "",
         user_id: user_id,
         model: "kimi-k2-instruct-0905",
-      }).catch(() => {})
-    
+      }).catch(() => { })
+
   };
   return (
     <div className="w-full flex justify-center-safe">
@@ -93,8 +93,8 @@ const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
                   }
                 }
                 wsSendAsync
-                (wsRef.current,{ type: "chat_history", user_id: user_id }).catch(() => {});
-                
+                  (wsRef.current, { type: "chat_history", user_id: user_id }).catch(() => { });
+
                 setOpenChatHistoryDialogueBox(true);
               }}
               onMouseOver={() => {
