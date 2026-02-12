@@ -17,7 +17,8 @@ export default function WaveForm() {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         streamRef.current = stream;
 
-        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        // @ts-expect-error window type is uncertain
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
         const audioCtx = new AudioContext();
         audioContextRef.current = audioCtx;
 
@@ -52,7 +53,8 @@ export default function WaveForm() {
       const width = canvas.width;
       const height = canvas.height;
 
-      analyser.getByteFrequencyData(dataArray as any);
+      //@ts-expect-error data array types don't match with arg
+      analyser.getByteFrequencyData(dataArray);
 
       ctx.clearRect(0, 0, width, height);
 

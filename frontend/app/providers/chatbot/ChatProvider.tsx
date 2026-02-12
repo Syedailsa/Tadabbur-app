@@ -1,8 +1,8 @@
-import React, { useState, ReactNode, Ref } from "react";
+import React, { useState, ReactNode } from "react";
 import { ChatContext, ChatRecord } from "@/app/context/chatbot/ChatContext";
 import { Dispatch, SetStateAction } from "react";
 import hidePromptExtraOptionsModelBoxArray from "@/app/components/chatbot/interfaces/hidePromptExtraOptionsModelBoxArray";
-
+import { ChatMessage, Attachment, AssistantMessage } from "@/app/components/chatbot/interfaces/ChatMessage";
 
 type AskFn = (
   input: string,
@@ -10,18 +10,18 @@ type AskFn = (
   resend_flag?: boolean,
   resend_message_id?: string | null,
   old_responses_attachments?: {
-    responses: [];
-    attachments: [];
+    responses: AssistantMessage[];
+    attachments: Attachment[];
   } | null
 ) => Promise<void>;
 
 interface ChatProviderProps {
   ask: AskFn;
-  messages: any;
-  setMessages: any;
+  wsRef: React.RefObject<WebSocket | null>;
+  messages: ChatMessage[];
+  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   children: ReactNode;
   sessionID: string | null;
-  wsRef: React.Ref<WebSocket>;
   chatHistory: ChatRecord[] | null;
   hideReportContentDialogueBox: boolean | null;
   audioRef: React.RefObject<HTMLAudioElement | null>;
@@ -65,23 +65,7 @@ const ChatProvider: React.FC<ChatProviderProps> = ({
   const [openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox] = useState<
     boolean | null
   >(false);
-  const [reportedMessageID, setReportedMessageID] = useState<{
-    messageID: string;
-  } | null>(null);
-  const [userId, setUserId] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      const user = sessionStorage.getItem('user');
-      if (user) {
-        try {
-          const userData = JSON.parse(user);
-          return userData.id;
-        } catch {
-          return null;
-        }
-      }
-    }
-    return null;
-  });
+  const [reportedMessageID, setReportedMessageID] = useState<string | null>(null);
 
   return (
     <ChatContext.Provider

@@ -1,4 +1,7 @@
-import React, { createContext, Dispatch, SetStateAction } from "react";
+import React, { createContext, useContext, Dispatch, SetStateAction } from "react";
+import { ChatMessage, AssistantMessage, Attachment } from "@/app/components/chatbot/interfaces/ChatMessage";
+import hidePromptExtraOptionsModelBoxArray from "@/app/components/chatbot/interfaces/hidePromptExtraOptionsModelBoxArray";
+
 
 export interface ChatRecord {
   session_id: string | null;
@@ -6,27 +9,47 @@ export interface ChatRecord {
   description: string | null;
   created_at: string | null;
 }
+
+type AskFn = (
+  input: string,
+  guidelines?: string | null,
+  resend_flag?: boolean,
+  resend_message_id?: string | null,
+  old_responses_attachments?: {
+    responses: AssistantMessage[];
+    attachments: Attachment[];
+  } | null
+) => Promise<void>;
+
 export interface ChatContextType {
+  ask: AskFn;
+  wsRef: React.RefObject<WebSocket | null>;
+  audioRef: React.RefObject<HTMLAudioElement | null>;
   hideExtraOptions: boolean;
   setHideExtraOptions: React.Dispatch<React.SetStateAction<boolean>>;
-  selectedModel: string;
-  setSelectedModel: React.Dispatch<React.SetStateAction<string>>;
+  selectedModel: string | null;
+  active: boolean[];
+  setActive: React.Dispatch<React.SetStateAction<boolean[]>>
+  reportedMessageID: string | null
+  setReportedMessageID: React.Dispatch<React.SetStateAction<string | null>>
+  currentPlayableAudio: React.RefObject<{ user_message_id: string | null, response_message_id: string | null, state: "loading" | "playing" | "paused" | "ended" | null } | null>;
+  setSelectedModel: React.Dispatch<React.SetStateAction<string | null>>;
   hideModelBox: boolean;
+  hideReportContentDialogueBox: boolean | null;
+  setHideReportContentDialogueBox: React.Dispatch<React.SetStateAction<boolean | null>>
+  hidePromptExtraOptionsModelBoxArray: hidePromptExtraOptionsModelBoxArray[]
+  setHidePromptExtraOptionsModelBoxArray: React.Dispatch<React.SetStateAction<hidePromptExtraOptionsModelBoxArray[]>>
   setHideModelBox: React.Dispatch<React.SetStateAction<boolean>>;
-  chatHistory: ChatRecord[];
-  setChatHistory: React.Dispatch<React.SetStateAction<ChatRecord[]>>;
-  selectedSessionID: string;
-  setSelectedSessionID: React.Dispatch<React.SetStateAction<string>>;
-  openChatHistoryDialogueBox: boolean;
-  setOpenChatHistoryDialogueBox: React.Dispatch<React.SetStateAction<boolean>>;
+  chatHistory: ChatRecord[] | null;
+  setChatHistory: React.Dispatch<React.SetStateAction<ChatRecord[] | null>>;
+  selectedSessionID: string | null;
+  setSelectedSessionID: React.Dispatch<React.SetStateAction<string | null>>;
+  openChatHistoryDialogueBox: boolean | null;
+  setOpenChatHistoryDialogueBox: React.Dispatch<React.SetStateAction<boolean | null>>;
   sessionID: string | null;
-  messages: any;
-  setMessages: Dispatch<SetStateAction<any>>;
+  messages: ChatMessage[];
+  setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
   attachedFile: File | null;
   setAttachedFile: Dispatch<SetStateAction<File | null>>;
-  userId: string | null;
-  setUserId: React.Dispatch<React.SetStateAction<string | null>>;
 }
-const ChatContext = createContext<ChatContextType | any>(null);
-
-export { ChatContext };
+export const ChatContext = createContext<ChatContextType | null>(null);

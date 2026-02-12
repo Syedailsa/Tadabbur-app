@@ -11,7 +11,7 @@ const ModelBox: FC<ModelBoxProps> = ({
   const [filteredModels, setFilteredModels] =
     useState<ModelBoxProps["modelList"]>(modelList);
   const { hideModelBox, setHideModelBox, setSelectedModel, setActive, wsRef } =
-    useContext(ChatContext);
+    useContext(ChatContext)!;
   const overlayRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -35,7 +35,7 @@ const ModelBox: FC<ModelBoxProps> = ({
     return () => {
       document.removeEventListener("click", handleOutsideClick);
     };
-  }, [hideModelBox, setHideModelBox]);
+  }, [hideModelBox, setHideModelBox, modelList, setActive]);
 
   if (hideModelBox) return null;
 

@@ -15,7 +15,7 @@ const ReportContentDialogueBox: React.FC<ReportContenDialogueBoxProps> = ({
   hideReportContentDialogueBox,
   setHideReportContentDialogueBox,
 }) => {
-  const { wsRef, reportedMessageID } = useContext(ChatContext);
+  const { wsRef, reportedMessageID } = useContext(ChatContext)!;
   const [hidePlaceholder, setHidePlaceholder] = useState<boolean>(true);
   const [selectedReason, setSelectedReason] = useState<string | null>("");
   const [customFeedback, setCustomFeedback] = useState<string | null>("");
@@ -29,7 +29,7 @@ const ReportContentDialogueBox: React.FC<ReportContenDialogueBoxProps> = ({
 
     if (selectedReason === "other") {
       if (!customFeedback) return;
-      wsRef?.current.send(
+      wsRef?.current?.send(
         JSON.stringify({
           type: "report",
           message_id: reportedMessageID,
@@ -37,7 +37,7 @@ const ReportContentDialogueBox: React.FC<ReportContenDialogueBoxProps> = ({
         })
       );
     } else {
-      wsRef?.current.send(
+      wsRef?.current?.send(
         JSON.stringify({
           type: "report",
           message_id: reportedMessageID,

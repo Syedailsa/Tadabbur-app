@@ -770,7 +770,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     if reported_assistant_message:
                         try: 
                             # insert hard rule in a different thread for optimization
-                            print("Reported assistant message",reported_assistant_message['content'] )
+                            print("Reported assistant message", reported_assistant_message['content'] )
                             response = await asyncio.to_thread(insert_report_rule, supabase_client, message_id, feedback, user_id)
 
                             print("Report response", response)
@@ -806,7 +806,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     })
                 continue
 
-            if data.get("type") in ["like", "dislike"]:
+            if data.get("type") in ["liked", "disliked"]:
                 type = data.get("type")
                 session_id = data.get('session_id')
                 message_id = data.get('message_id')
@@ -994,7 +994,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 except WebSocketDisconnect:
                     logger.info("Client disconnected")
                     print("Closing websocket...")
-                    websocket.close()
+                    await websocket.close()
                     break
 
 

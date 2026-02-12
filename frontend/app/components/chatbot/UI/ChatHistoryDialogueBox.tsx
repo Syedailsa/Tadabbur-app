@@ -1,9 +1,8 @@
-import { easeIn, easeInOut, motion } from "framer-motion";
+import { easeInOut, motion } from "framer-motion";
 import { ChatContext, ChatRecord } from "@/app/context/chatbot/ChatContext";
 import { useContext, useEffect, useRef, useState } from "react";
 import ChatHistory from "../../../../icons/history_icon.svg";
 import { X } from "lucide-react";
-import { useRouter } from "next/navigation";
 
 const formatDateToDMY = (dateString: string | null): string => {
   const date = new Date(dateString || new Date());
@@ -21,11 +20,9 @@ const ChatHisoryDialogueBox = () => {
     openChatHistoryDialogueBox,
     setOpenChatHistoryDialogueBox,
     wsRef,
-    userId,
-  } = useContext(ChatContext);
+  } = useContext(ChatContext)!;
   const [translatePic, setTranslatePic] = useState<boolean | null>(null);
   const dialogueRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
 
   useEffect(() => {
     if (!openChatHistoryDialogueBox) return;
@@ -153,7 +150,7 @@ const ChatHisoryDialogueBox = () => {
                 )}
               </div>
               <motion.div className="grid grid-cols-1 gap-2 px-1 overflow-y-auto h-45">
-                {chatHistory?.length > 0 ? (
+                {chatHistory && chatHistory?.length > 0 ? (
                   chatHistory?.map((chat: ChatRecord, index: number) => (
                     <motion.div
                       onClick={() => {
@@ -163,7 +160,6 @@ const ChatHisoryDialogueBox = () => {
                           JSON.stringify({
                             type: "get_chat",
                             session_id: chat.session_id,
-                            user_id: userId,
                           })
                         );
                       }}

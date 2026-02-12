@@ -1,4 +1,4 @@
-import { useState, useContext, useEffect, useRef } from "react";
+import { useCallback, useContext, useEffect, useRef } from "react";
 import { ChatContext } from "@/app/context/chatbot/ChatContext";
 import { motion } from "framer-motion";
 import DownArrow from "../../../../icons/arrow-down-head.svg";
@@ -6,6 +6,7 @@ import AttachIcon from "../../../../icons/attach_icon.svg";
 import PlusIcon from "../../../../icons/plus-icon.svg";
 import StoryIcon from "../../../../icons/story_telling_icon.svg";
 import MicIcon from "../../../../icons/mic_icon.svg";
+
 
 const BottomOptions = () => {
   const {
@@ -17,32 +18,16 @@ const BottomOptions = () => {
     active,
     setActive,
     setAttachedFile,
-  } = useContext(ChatContext);
+  } = useContext(ChatContext)!;
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]); // Store audio chunks locally
   const fileInputRef = useRef<HTMLInputElement>(null);
   const micActive = useRef<boolean>(false);
 
-  useEffect(() => {
-    const isMicActive = active[2];
-    if (isMicActive) {
-      console.log("Starting mic");
-      startRecording();
-      micActive.current = true;
-    } else if (!isMicActive && micActive.current) {
-      console.log("Stopping mic");
-      stopRecording();
-      micActive.current = false;
-    }
-    return () => {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-        mediaRecorderRef.current.stop();
-      }
-    };
-  }, [active[2]]);
+  const isMicActive = active[2];
 
-  const startRecording = async () => {
+  const startRecording = useCallback(async () => {
     try {
       console.log("🎤 Mic Request (Batch Mode)...");
 
@@ -83,9 +68,9 @@ const BottomOptions = () => {
         return c;
       });
     }
-  };
+  }, [setActive]);
 
-  const stopRecording = () => {
+  const stopRecording = useCallback(() => {
     if (
       mediaRecorderRef.current &&
       mediaRecorderRef.current.state !== "inactive"
@@ -95,7 +80,7 @@ const BottomOptions = () => {
 
     // Signal UI to stop WaveForm
     window.dispatchEvent(new Event("tadabbur-mic-stop"));
-  };
+  }, []);
 
   const uploadAudioForTranscription = async (audioBlob: Blob) => {
     const formData = new FormData();
@@ -131,6 +116,24 @@ const BottomOptions = () => {
       alert("Failed to transcribe audio.");
     }
   };
+
+
+  useEffect(() => {
+    if (isMicActive) {
+      console.log("Starting mic");
+      startRecording();
+      micActive.current = true;
+    } else if (!isMicActive && micActive.current) {
+      console.log("Stopping mic");
+      stopRecording();
+      micActive.current = false;
+    }
+    return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+    };
+  }, [isMicActive, startRecording, stopRecording]);
 
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {

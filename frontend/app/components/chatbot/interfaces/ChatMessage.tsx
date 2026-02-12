@@ -5,8 +5,8 @@ interface ChatMessage {
   content: string;
   attachments: Attachment[];
   responses: AssistantMessage[];
-  number_of_responses: number | null;
-  active_message_index: number | null;
+  number_of_responses: number;
+  active_message_index: number;
 }
 
 interface Attachment {
