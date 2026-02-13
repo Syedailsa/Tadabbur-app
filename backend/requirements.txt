@@ -1,3 +1,6 @@
+pip>=24.1
+setuptools>=70
+wheel
 fastapi
 pydantic
 openai-agents
