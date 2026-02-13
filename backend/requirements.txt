@@ -10,7 +10,7 @@ python-multipart
 python-jose
 openai
 openai-agents
-
+rapidfuzz
 langchain
 langchain-core
 langchain-community
