@@ -7,7 +7,6 @@ from pydantic import BaseModel
 from jose import jwt, JWTError
 from typing import List, Optional
 import asyncio 
-from agents import InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered
 from dotenv import load_dotenv
 from collections import defaultdict
 import agent as agent_module
@@ -321,27 +320,6 @@ async def delete_session_file(session_id: str, file_id: str):
 
     except Exception as e:
         logger.error(f"Error deleting file: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/chat")
-async def chat(req: ChatRequest, authorization: str | None = Header(None)):
-    conversation = "\n".join([f"{m.role}: {m.content}" for m in req.messages])
-    try:
-        logger.info("hey")
-
-    except InputGuardrailTripwireTriggered as e:
-        msg = getattr(e.guardrail_result, "output_info", "Sorry, your question seems unrelated to the Quranic context.")
-        return {"reply": msg}
-
-
-    except OutputGuardrailTripwireTriggered as e:
-        msg = getattr(e.guardrail_result, "output_info",
-                      "Sorry, I can only respond within Quranic context.")
-        return {"reply": msg}
-
-
-    except Exception as e:
-        logger.error(f"Transcription endpoint error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     
 stt_engine = SpeechToTextEngine()
