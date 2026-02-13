@@ -273,8 +273,6 @@ py_rust_stemmers==0.1.5
 pyarrow==21.0.0
 pyasn1==0.6.1
 pyasn1_modules==0.4.2
-PyAudio==0.2.13
-PyAutoGUI==0.9.54
 pycadf==4.0.1
 pycares==4.10.0
 pycodestyle==2.12.1
