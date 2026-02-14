@@ -1,3 +1,4 @@
+onxruntime==1.17.3
 annotated-doc
 annotated-types
 async-timeout
@@ -11,7 +12,6 @@ dotenv
 email-validator
 fastapi
 fastavro
-fastembed
 fasteners
 fastjsonschema
 fireworks-ai
@@ -25,7 +25,6 @@ griffe
 groq
 grpcio
 grpclib
-gymnasium
 h11
 h2
 hpack
@@ -62,7 +61,6 @@ langchain-core
 langchain-experimental
 langchain-fireworks
 langchain-groq
-langchain-ollama
 langchain-openai
 langchain-tavily
 langchain-text-splitters
@@ -114,7 +112,6 @@ tiktoken
 tokenizers
 toml
 tomlkit
-torch
 urllib3
 uuid6
 uuid_utils
