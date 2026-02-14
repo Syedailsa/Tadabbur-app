@@ -1,3 +1,4 @@
+import sys
 import os
 import json
 import asyncio
@@ -10,6 +11,7 @@ import asyncio
 from dotenv import load_dotenv
 from collections import defaultdict
 import agent as agent_module
+from contextlib import asynccontextmanager
 from story_agent import story_agent
 from utils.handle_feedback import handle_feedback
 from utils.generate_title_description import generate_title_description
@@ -52,13 +54,12 @@ from speech_to_text import SpeechToTextEngine
 from text_to_speech import TextToSpeechEngine
 from config.db import get_supabase_client
 from data.data import comprehensive_surah_metadata
-import sys
+from data.data import comprehensive_surah_metadata
 
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 
-from data.data import comprehensive_surah_metadata
 
 # Production logging setup
 logging.basicConfig(
@@ -70,6 +71,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # --- Startup Logic ---
+    """Initialize database pool on startup"""
+    db_pool_instance = await init_db_pool()
+    app.state.db_pool = db_pool_instance
+    yield  # app stays active here while receiving requests
+    
+    # --- Shutdown Logic ---
+    """Close database pool on shutdown"""
+    await close_db_pool()
+    
+# ------------------- APP CONFIG -------------------
+app = FastAPI(title="Tadabbur Agent API", lifespan=lifespan)
 # ------------------- APP CONFIG -------------------
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-this")
 ALGORITHM = "HS256"
@@ -95,20 +110,6 @@ def custom_openapi():
     return app.openapi_schema
 app.openapi = custom_openapi
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # --- Startup Logic ---
-    """Initialize database pool on startup"""
-    db_pool_instance = await init_db_pool()
-    app.state.db_pool = db_pool_instance
-    yield  # app stays active here while receiving requests
-    
-    # --- Shutdown Logic ---
-    """Close database pool on shutdown"""
-    await close_db_pool()
-    
-# ------------------- APP CONFIG -------------------
-app = FastAPI(title="Tadabbur Agent API", lifespan=lifespan)
 
 app.include_router(auth_router)
 app.include_router(password_reset_router)
