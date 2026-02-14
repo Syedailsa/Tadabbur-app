@@ -71,7 +71,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ------------------- APP CONFIG -------------------
-app = FastAPI(title="Tadabbur Agent API")
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-this")
 ALGORITHM = "HS256"
 
@@ -96,16 +95,20 @@ def custom_openapi():
     return app.openapi_schema
 app.openapi = custom_openapi
 
-
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # --- Startup Logic ---
     """Initialize database pool on startup"""
-    await init_db_pool()
-
-@app.on_event("shutdown")
-async def shutdown_event():
+    db_pool_instance = await init_db_pool()
+    app.state.db_pool = db_pool_instance
+    yield  # app stays active here while receiving requests
+    
+    # --- Shutdown Logic ---
     """Close database pool on shutdown"""
     await close_db_pool()
+    
+# ------------------- APP CONFIG -------------------
+app = FastAPI(title="Tadabbur Agent API", lifespan=lifespan)
 
 app.include_router(auth_router)
 app.include_router(password_reset_router)
