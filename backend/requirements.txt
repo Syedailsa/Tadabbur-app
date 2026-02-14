@@ -121,4 +121,5 @@ uvicorn
 watchdog
 watchfiles
 websocket-client
+
 websockets
