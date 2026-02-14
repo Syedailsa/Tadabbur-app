@@ -86,6 +86,7 @@ pyparsing
 pypdf
 PyPDF2
 pytest
+python-multipart
 pytest-asyncio
 pytest-cov
 python-docx
