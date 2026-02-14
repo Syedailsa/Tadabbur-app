@@ -75,6 +75,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # --- Startup Logic ---
     """Initialize database pool on startup"""
+    print("Instantiating db pool")
     db_pool_instance = await init_db_pool()
     app.state.db_pool = db_pool_instance
     yield  # app stays active here while receiving requests
