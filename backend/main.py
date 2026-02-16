@@ -4,8 +4,7 @@ import asyncio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, UploadFile, File, Form, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from jose import jwt, JWTError
-from typing import List, Optional
+from typing import List
 import asyncio 
 from dotenv import load_dotenv
 from collections import defaultdict
@@ -19,13 +18,7 @@ from utils.refresh_instructions import refresh_system_instructions
 from utils.authentication import generate_session_id, get_user_from_token
 from Clean_text import clean_text_with_groq
 import logging
-import secrets
-from fastapi import UploadFile, File, Form
-from file_service import process_uploaded_file
-import shutil
-import tempfile
 from speech_to_text import SpeechToTextEngine
-from text_to_speech import TextToSpeechEngine
 from murf import Murf
 from database import init_db_pool, close_db_pool
 from quran_api import quran_router , parah_router, story_router
@@ -45,15 +38,12 @@ from reset_password_api import password_reset_router
 from quran_api import quran_router , parah_router, story_router
 from reset_password_api import password_reset_router
 from reflection_api import reflection_router
-from database import init_db_pool, close_db_pool, create_tables, delete_all_user_sessions, delete_user_session
+from database import init_db_pool, close_db_pool, delete_all_user_sessions, delete_user_session
 from fastapi.openapi.utils import get_openapi
-import secrets
 from speech_to_text import SpeechToTextEngine
-from text_to_speech import TextToSpeechEngine
 from config.db import get_supabase_client
 import sys
 from contextlib import asynccontextmanager
-from multiprocessing import pool
 
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -270,12 +260,15 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         )
                         if res.audio_file:
                             print("Audio url", res.audio_file)
-
-                            asyncio.create_task(asyncio.to_thread(
-                                lambda: supabase_client.table('chat_messages').update({
-                                    'audio_url': res.audio_file
-                                }).eq('message_id', message_id_ref).execute()
-                            ))
+                            try:
+                                asyncio.create_task(asyncio.to_thread(
+                                    lambda: supabase_client.table('chat_messages').update({
+                                        'audio_url': res.audio_file
+                                    }).eq('message_id', message_id_ref).execute()
+                                ))
+                                print(f"✅ Updated message {message_id_ref} with TTS audio URL in DB")
+                            except Exception as e:
+                                print("Some error occured while updating message with audio url", e)
 
                             await websocket.send_json({
                                 "type": "tts_audio_url",
