@@ -7,7 +7,6 @@ from pydantic import BaseModel
 from jose import jwt, JWTError
 from typing import List, Optional
 import asyncio 
-from agents import InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered
 from dotenv import load_dotenv
 from collections import defaultdict
 import agent as agent_module
@@ -17,6 +16,7 @@ from utils.generate_title_description import generate_title_description
 from utils.generate_uuid import generate_uuid
 from utils.report_rule import insert_report_rule, delete_report_rule
 from utils.refresh_instructions import refresh_system_instructions
+from utils.authentication import generate_session_id, get_user_from_token
 from Clean_text import clean_text_with_groq
 import logging
 import secrets
@@ -28,7 +28,6 @@ from speech_to_text import SpeechToTextEngine
 from text_to_speech import TextToSpeechEngine
 from murf import Murf
 from database import init_db_pool, close_db_pool
-from file_service import process_uploaded_file
 from quran_api import quran_router , parah_router, story_router
 from reset_password_api import password_reset_router
 from reflection_api import reflection_router
@@ -38,29 +37,26 @@ from api import (
     bookmark_router,
     profile_router,
     feedback_router,
-    personalization_router
-    
+    personalization_router,
+    file_router,
+    transcribe_audio_router
 )
 from reset_password_api import password_reset_router
 from quran_api import quran_router , parah_router, story_router
 from reset_password_api import password_reset_router
 from reflection_api import reflection_router
 from database import init_db_pool, close_db_pool, create_tables, delete_all_user_sessions, delete_user_session
-from fastapi.security import HTTPBearer
 from fastapi.openapi.utils import get_openapi
 import secrets
 from speech_to_text import SpeechToTextEngine
 from text_to_speech import TextToSpeechEngine
 from config.db import get_supabase_client
-from agents import ItemHelpers  # used to extract message text from items (STREAMING)
-from data.data import comprehensive_surah_metadata
 import sys
+from contextlib import asynccontextmanager
+from multiprocessing import pool
 
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-
-
-from data.data import comprehensive_surah_metadata
 
 # Production logging setup
 logging.basicConfig(
@@ -72,9 +68,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # --- Startup Logic ---
+    """Initialize database pool on startup"""
+    db_pool_instance = await init_db_pool()
+    app.state.db_pool = db_pool_instance
+    yield  # app stays active here while receiving requests
+    
+    # --- Shutdown Logic ---
+    """Close database pool on shutdown"""
+    await close_db_pool()
+    
 # ------------------- APP CONFIG -------------------
-app = FastAPI(title="Tadabbur Agent API")
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-this")
+app = FastAPI(title="Tadabbur Agent API", lifespan=lifespan)
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "Tadabbur-app-default-secret")
 ALGORITHM = "HS256"
 
 def custom_openapi():
@@ -97,18 +105,6 @@ def custom_openapi():
     app.openapi_schema = openapi_schema
     return app.openapi_schema
 app.openapi = custom_openapi
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database pool on startup"""
-    await init_db_pool()
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Close database pool on shutdown"""
-    await close_db_pool()
-
 app.include_router(auth_router)
 app.include_router(password_reset_router)
 app.include_router(notif_router)
@@ -120,6 +116,8 @@ app.include_router(parah_router)
 app.include_router(story_router)
 app.include_router(reflection_router)
 app.include_router(personalization_router)
+app.include_router(file_router)
+app.include_router(transcribe_audio_router)
 
 FRONTEND_URL = os.getenv("FRONTEND_URL")  
 
@@ -132,48 +130,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-session_file_context = {}
-API_KEY = os.getenv("CHAT_API_KEY")
-# ------------------- OPTIONAL HTTP ENDPOINT -------------------
 # === SESSION CODE START ===
-DB_PATH = "chat.db"
+
+session_file_context = {}
 supabase_client = None
 TADABBUR_PROJECT_URL = os.getenv("TADABBUR_PROJECT_URL") 
 TADABBUR_API_KEY = os.getenv("TADABBUR_API_KEY")
-
-def generate_session_id() -> str:
-    """Generate unique session ID: sess_ + 12 hex chars"""
-    return f"sess_{secrets.token_hex(6)}"
-
-
-def get_user_from_token(token: str):
-    """
-    Decodes the JWT token to get user_id.
-    """
-    if not SECRET_KEY:
-        logger.error(" CRITICAL: SECRET_KEY is missing in main.py")
-        return None
-
-    try:
-        if token.startswith("Bearer "):
-            token = token.split(" ")[1]
-
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-         
-        user_id: str = payload.get("user_id")
-        
-        if user_id is None:
-            logger.error(f" Token Valid but 'user_id' missing. Payload: {payload}")
-            return None
-        return user_id
-
-    except JWTError as e:
-        logger.error(f" JWT Validation Failed: {str(e)}")
-        return None
-    except Exception as e:
-        logger.error(f" Unexpected Token Error: {str(e)}")
-        return None
-
 
 def get_chat_messages(session_id: str, user_id: str, supabase_client) -> List[str]:
     """Get all messages of a specific session"""
@@ -235,154 +197,7 @@ class Message(BaseModel):
 class ChatRequest(BaseModel):
     messages: List[Message]
 
-
-def clean_text(text: str) -> str:
-    return text.replace("\x00", "")
-
-
-@app.get("/")
-def read_root():
-    return {"message": "Hello brothers"}
-
-@app.post("/api/upload")
-async def upload_file(
-    file: UploadFile = File(...), 
-    session_id: str = Form(...)
-):
-    try:
-        extracted_text = await process_uploaded_file(file)
-        logger.info(f"File processed for session {session_id}. Text length: {len(extracted_text)}")
-        return {"status": "success", "message": "File processed successfully.", "extracted_text": clean_text(extracted_text)}
-    except Exception as e:
-        logger.error(f"Upload failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/session/{session_id}/files")
-async def get_session_files(session_id: str):
-    """Get all uploaded files for a session"""
-    try:
-        supabase_client = get_supabase_client()
-
-        files = supabase_client.table('session_files')\
-            .select('file_id, file_name, file_type, file_size, created_at')\
-            .eq('session_id', session_id)\
-            .order('created_at', desc=True)\
-            .execute()
-
-        return {
-            "status": "success",
-            "session_id": session_id,
-            "files": files.data or []
-        }
-
-    except Exception as e:
-        logger.error(f"Error fetching files: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.delete("/api/session/{session_id}/files/{file_id}")
-async def delete_session_file(session_id: str, file_id: str):
-    """Delete a specific file from session"""
-    try:
-        supabase_client = get_supabase_client()
-
-        # Delete from session_files
-        supabase_client.table('session_files')\
-            .delete()\
-            .eq('file_id', file_id)\
-            .eq('session_id', session_id)\
-            .execute()
-
-        # Rebuild file_context from remaining files
-        remaining_files = supabase_client.table('session_files')\
-            .select('file_content')\
-            .eq('session_id', session_id)\
-            .order('created_at')\
-            .execute()
-
-        # Filter out None values
-        valid_contents = [
-            f['file_content'] for f in remaining_files.data
-            if f['file_content'] is not None and f['file_content'].strip()
-        ]
-        new_context = "\n\n--- FILE SEPARATOR ---\n\n".join(valid_contents) if valid_contents else ""
-
-        # Update chat_sessions
-        supabase_client.table('chat_sessions').update({
-            'file_context': new_context or None
-        }).eq('session_id', session_id).execute()
-
-        # Update cache
-        if new_context:
-            session_file_context[session_id] = new_context
-        else:
-            session_file_context.pop(session_id, None)
-
-        return {"status": "success", "message": "File deleted"}
-
-    except Exception as e:
-        logger.error(f"Error deleting file: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/chat")
-async def chat(req: ChatRequest, authorization: str | None = Header(None)):
-    conversation = "\n".join([f"{m.role}: {m.content}" for m in req.messages])
-    try:
-        logger.info("hey")
-
-    except InputGuardrailTripwireTriggered as e:
-        msg = getattr(e.guardrail_result, "output_info", "Sorry, your question seems unrelated to the Quranic context.")
-        return {"reply": msg}
-
-
-    except OutputGuardrailTripwireTriggered as e:
-        msg = getattr(e.guardrail_result, "output_info",
-                      "Sorry, I can only respond within Quranic context.")
-        return {"reply": msg}
-
-
-    except Exception as e:
-        logger.error(f"Transcription endpoint error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    
 stt_engine = SpeechToTextEngine()
-
-@app.post("/api/transcribe")
-async def transcribe_audio(file: UploadFile = File(...)):
-    """
-    Receives an audio file (Blob) from frontend, saves it temporarily,
-    and sends it to Fireworks for transcription.
-    """
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_audio:
-            shutil.copyfileobj(file.file, temp_audio)
-            temp_path = temp_audio.name
-
-        text = await stt_engine.transcribe(temp_path)
-
-        os.remove(temp_path)
-
-        return {"text": text}
-
-    except Exception as e:
-        logger.error(f"Transcription endpoint error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# Utility: normalize agent names to avoid minor mismatches (STREAMING)
-def _normalize_name(name: Optional[str]) -> Optional[str]:
-    if not name:
-        return None
-    return "".join(c for c in name.lower() if c.isalnum())
-
-
-async def stream_tts_audio(tts_engine, clean_text, websocket, message_id_ref):
-    async for audio_chunk in tts_engine.stream_audio(clean_text):
-        await websocket.send_json({
-            "type": "tts_audio_url",
-            "message_id": message_id_ref,
-            "audio": audio_chunk
-        })
-
 
 @app.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
@@ -396,12 +211,12 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
     await websocket.accept()
     logger.info(f"WebSocket connected successfully for User ID: {user_id}")
-    
+
     
     dynamic_system_instruction = {"text":""}
     asyncio.create_task(refresh_system_instructions(dynamic_system_instruction, user_id))
+    
     try: 
-
         supabase_client = get_supabase_client()
     except Exception as e:
         print("Some error occured initiating supabase connection", e)
@@ -410,12 +225,9 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
     # initialize the conversation history and message_IDs set
     conversation_history = []
     unique_message_ids = []
-    tts_engine = TextToSpeechEngine()
 
     # ====== SESSION CODE START ======
-    current_session = None
     session_id = None
-    # ========== SESSION END  ======
     session_model_key: str = "gpt-oss-20b"
     active_agent = agent_module.main_agent
     current_agent_name = active_agent.name
@@ -445,7 +257,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     
                     logger.info(f"≡ƒÄñ Stream audio for: {clean_text[:50]}...")
                     client = Murf(
-                        api_key=os.getenv("MURF_AI_API_KEY") # Not required if you have set the MURF_API_KEY environment variable
+                        api_key=os.getenv("MURF_AI_API_KEY") 
                     )
                     try:
                         res = client.text_to_speech.generate(
@@ -459,20 +271,19 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         if res.audio_file:
                             print("Audio url", res.audio_file)
 
-                            supabase_client.table('chat_messages').update({
-                                'audio_url': res.audio_file
-                            }).eq('message_id', message_id_ref).execute()
-                            
-                            print(f"✅ Audio URL saved to database for message {message_id_ref}")
+                            asyncio.create_task(asyncio.to_thread(
+                                lambda: supabase_client.table('chat_messages').update({
+                                    'audio_url': res.audio_file
+                                }).eq('message_id', message_id_ref).execute()
+                            ))
 
-                            
                             await websocket.send_json({
                                 "type": "tts_audio_url",
                                 "message_id": message_id_ref,
                                 "user_id": user_message_id,
                                 "audio_url": res.audio_file
                             })
-                            
+
                     except Exception as e:
                         print("Some error occured while generating audio for text", e)
                         continue
@@ -519,7 +330,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                 continue
                         else:
                             logger.info(f"🆕 Generated ID for potential new session: {session_id}")
-                            
+
                             conversation_history = []
                             unique_message_ids = []
                             
@@ -562,47 +373,40 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
             if data.get("type") == "get_chat":
                 requested_session_id = data.get("session_id", "")
                 try:
-                    chat_history = get_chat_messages(requested_session_id, user_id, supabase_client)
-
-                    try:
-                        combined_file_content = ''
-                        files_response = supabase_client.table('session_files')\
-                            .select('file_id, file_name, file_type, message_id')\
-                            .eq("user_id", user_id).eq('session_id', requested_session_id)\
-                            .order('created_at')\
-                            .execute().data
-                        
-                        files_by_message = defaultdict(list)
-                        
-                        if files_response:
-                            for f in files_response or []:
-                                file_content = f.get("file_content", "")
-                                file_name = f.get("file_name", "")
-                                if file_content and file_name:
-                                    combined_file_content += (f"\n\n --- File Name: {file_name} ---\n\n File Content: {file_content}")
-                                files_by_message[f["message_id"]].append({
-                                    "attachmentType": f.get("file_type", ""),
-                                    "attachmentName": f.get("file_name", "")
-                                })
-                    except Exception as e:
-                        logger.error(f"Error fetching or processing files: {e}")
+                    msg_task = asyncio.to_thread(get_chat_messages, requested_session_id, user_id, supabase_client)
+                    file_task = asyncio.to_thread(
+                        lambda: supabase_client.table('session_files')
+                        .select('file_id, file_name, file_type, message_id, file_content')
+                        .eq("user_id", user_id).eq('session_id', requested_session_id)
+                        .order('created_at').execute()
+                    )
                     
-                    if combined_file_content:
-                        session_file_context[requested_session_id] = combined_file_content
+                    chat_history, files_res = await asyncio.gather(msg_task, file_task)
+                    files_response = files_res.data
+                    
+                    combined_file_content = ""
+                    files_by_message = defaultdict(list)
+                    for f in (files_response or []):
+                        f_name = f.get("file_name")
+                        f_content = f.get("file_content")
+                        if f_name and f_content:
+                            combined_file_content += f"\n\n --- File Name: {f_name} ---\n Content: {f_content}"
+                        files_by_message[f["message_id"]].append({
+                            "attachmentType": f.get("file_type", ""),
+                            "attachmentName": f_name
+                        })
+
+                    session_file_context[requested_session_id] = combined_file_content
                     for msg in chat_history:
-                        msg["attachments"] = files_by_message.get(msg["message_id"], [])                    
-                    # Update local state
+                        msg["attachments"] = files_by_message.get(msg["message_id"], [])
+
                     session_id = requested_session_id
-                    conversation_history = chat_history or []
+                    conversation_history = chat_history
                     unique_message_ids = [msg['message_id'] for msg in conversation_history]
 
                     await websocket.send_json({
-                        "type": "get_chat",
-                        "status": "acknowledged",
-                        "session_id": session_id,
-                        "user_id": user_id,
-                        "chat_history": chat_history,
-                        "unique_message_ids": unique_message_ids,
+                        "type": "get_chat", "status": "acknowledged",
+                        "session_id": session_id, "chat_history": chat_history
                     })
                 except Exception as e:
                     logger.error(f"Error loading chat: {e}")

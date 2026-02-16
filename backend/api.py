@@ -22,6 +22,13 @@ from utils.authentication import (
 )
 from utils.generate_uuid import generate_uuid
 from database import get_db_connection
+from file_service import process_uploaded_file
+from tools.utils import clean_text
+import shutil
+import tempfile
+from speech_to_text import SpeechToTextEngine
+
+stt_engine = SpeechToTextEngine()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -834,3 +841,54 @@ async def submit_feedback(req: FeedbackCreate, user: dict = Depends(get_current_
         status="received",
         createdAt=created_time
     )
+
+# ==================== FILE ROUTER ====================
+
+file_router = APIRouter(prefix="/upload", tags=["Files"])
+
+@file_router.post("", response_model=FileUploadResponse)
+async def upload_file(
+    file: UploadFile = File(...), 
+    session_id: str = Form(...)
+):
+    """Processes uploaded PDF or TXT files and returns extracted text"""
+    try:
+        extracted_text = await process_uploaded_file(file)
+        logger.info(f"File processed for session {session_id}. Text length: {len(extracted_text)}")
+        return {
+            "status": "success", 
+            "message": "File processed successfully.", 
+            "extracted_text": clean_text(extracted_text)
+        }
+    except Exception as e:
+        logger.error(f"Upload failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== TRANSCRIBE AUDIO ROUTER ====================
+
+transcribe_audio_router = APIRouter(prefix="/transcribe", tags=["audio"])
+
+@transcribe_audio_router.post("", response_model=TranscriptionResponse)
+async def transcribe_audio(file: UploadFile = File(...)):
+    """
+    Receives an audio file (Blob) from frontend, saves it temporarily,
+    and sends it to Fireworks for transcription.
+    """
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_audio:
+            shutil.copyfileobj(file.file, temp_audio)
+            temp_path = temp_audio.name
+
+        text = await stt_engine.transcribe(temp_path)
+
+        os.remove(temp_path)
+
+        return {
+            "status": "success",
+            "text": text
+        }
+
+    except Exception as e:
+        logger.error(f"Transcription endpoint error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    

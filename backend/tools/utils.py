@@ -4,6 +4,9 @@ import re
 
 from typing import Optional
 
+def clean_text(text: str) -> str:
+    return text.replace("\x00", "")
+
 def normalize_surah(name:str, array:list) -> str | None:
     """
     Converts user-provided surah name → canonical surah name using fuzzy match.

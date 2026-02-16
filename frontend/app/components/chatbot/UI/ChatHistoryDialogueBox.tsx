@@ -154,10 +154,20 @@ const ChatHisoryDialogueBox = () => {
                       onClick={() => {
                         setSelectedSessionID(chat.session_id);
                         setOpenChatHistoryDialogueBox(false);
+                        const user = sessionStorage.getItem('user');
+                        let user_id = null;
+                        if (user) {
+                          try {
+                            const userData = JSON.parse(user);
+                            user_id = userData.id;
+                          } catch (e) {
+                            console.error("Error parsing user data:", e);
+                          }
+                        }
                         wsSendAsync(wsRef.current, {
                           type: "get_chat",
                           session_id: chat.session_id,
-                          user_id: userId,
+                          user_id: user_id,
                         });
                       }}
                       whileHover={{ scale: 1.01 }}

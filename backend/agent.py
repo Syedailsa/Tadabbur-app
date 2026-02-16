@@ -520,9 +520,14 @@ child_system_instructions = """
         - Keep the 'intro' concise.
 
 
-        ### • Quran_Story_Teller
+        ### • story_agent_tool
         Use ONLY when the user explicitly requests a *story*  
         (e.g., “tell me the story of Musa”).
+
+        ### Example Queries
+        1. "Tell me the story of Adam."
+        2. "What happened to Noah's Ark?"
+        3. "Explain the story of Yusuf and his brothers."
 
         ### • Context
         Strictly use the following context and name definitions for calling tools and answering user queries.
