@@ -1,8 +1,9 @@
 import os
 import json
 import asyncio
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, UploadFile, File, Form, Query, status
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.websockets import WebSocketState
 from pydantic import BaseModel
 from typing import List
 import asyncio 
@@ -204,7 +205,10 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
     
     dynamic_system_instruction = {"text":""}
-    asyncio.create_task(refresh_system_instructions(dynamic_system_instruction, user_id))
+    try:
+        await asyncio.wait_for(refresh_system_instructions(dynamic_system_instruction, user_id), timeout=3.0)
+    except Exception as e:
+        logger.error(f"Failed to load instructions: {e}")
     
     try: 
         supabase_client = get_supabase_client()
@@ -365,6 +369,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
             if data.get("type") == "get_chat":
                 requested_session_id = data.get("session_id", "")
+                logger.info(f"📥 get_chat request for session: {requested_session_id}")
                 try:
                     msg_task = asyncio.to_thread(get_chat_messages, requested_session_id, user_id, supabase_client)
                     file_task = asyncio.to_thread(
@@ -766,6 +771,18 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     except Exception as e:
                         print("Some error occured while inserting assistant messages", e)
 
+                    if websocket.client_state == WebSocketState.CONNECTED and structured_output:
+                        await websocket.send_json({
+                            "type": "assistance_response",
+                            "message_id": response_message_id,
+                            "content": structured_output.model_dump() or "",
+                            "resend_flag": resend_flag,
+                            "reply_to_message_id": user_message_id,
+                            "final": True
+                        })
+
+                    # logic of content update in assistant message for  case
+
                     # generate title and description for the current chat history if there are 2 user/assistant messages each
                     # run the below logic in a seperate thread
                     asyncio.create_task(
@@ -777,17 +794,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         )
                     )
 
-                    if structured_output:
-                        await websocket.send_json({
-                            "type": "assistance_response",
-                            "message_id": response_message_id,
-                            "content": structured_output.model_dump() or "",
-                            "resend_flag": resend_flag,
-                            "reply_to_message_id": user_message_id,
-                            "final": True
-                        })
-
-                    # # tool logic
+                    # tool logic
 
                     await websocket.send_json({"type": "streaming_end"})
                     await websocket.send_json({"type": "run_complete"})
