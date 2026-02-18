@@ -119,6 +119,15 @@ function ChatContent() {
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
   const lastPongRef = useRef<number>(Date.now());
   const reconnectAttemptRef = useRef(0);
+
+  const [isGenerating, setIsGenerating] = useState(false);
+  const currentStreamingMsgRef = useRef<{
+    message_id: string;
+    reply_to_message_id: string;
+  } | null>(null);
+  const streamingContentRef = useRef<string>("");
+  const stopStreamRef = useRef<(() => void) | null>(null);
+  
   const urlSessionId = searchParams.get("session_id");
   const totalReconnectAttempts = useRef(0);
   const MAX_RECONNECT_TRIES = 5;
@@ -751,13 +760,28 @@ function ChatContent() {
 
             setLoading(false);
             setLoadingMessage(null);
+
+            setIsGenerating(true);
+            streamingContentRef.current = "";
+            currentStreamingMsgRef.current = {
+              message_id: message_id,
+              reply_to_message_id: reply_to_message_id || ""
+            };
             const tokens = reply.split(/(\s+)/);
+
+            
+            let stopFlag = false;
+            stopStreamRef.current = () => { stopFlag = true; };
 
             (async () => {
               for (let i = 0; i < tokens.length; i += 4) {
-                const chunk = tokens.slice(i, i + 4).join("");
+                //stop flag is true, if yes then break the loop
+                if (stopFlag) break; 
 
+                const chunk = tokens.slice(i, i + 4).join("");
                 await new Promise((resolve) => setTimeout(resolve, 2));
+
+                if (stopFlag) break;
 
                 setMessages((prev) => {
                   if (!prev || prev.length === 0) return prev;
@@ -771,13 +795,28 @@ function ChatContent() {
                     updated[streamIndex].responses[lastResIdx].content =
                       (updated[streamIndex].responses[lastResIdx].content || "") +
                       chunk;
+                      streamingContentRef.current = updated[streamIndex].responses[lastResIdx].content;
                   }
                   return updated;
                 });
               }
             })().then(() => {
+              stopStreamRef.current = null;
               setStreamingMessageIndex(null);
+              setIsGenerating(false);
+              currentStreamingMsgRef.current = null;
+              streamingContentRef.current = "";
+              
             });
+            break;
+
+            case "stop_acknowledged":
+            // reset states related to streaming
+            setIsGenerating(false);
+            setStreamingMessageIndex(null);
+            setLoading(false);
+            currentStreamingMsgRef.current = null;
+            streamingContentRef.current = "";
             break;
 
           case "agent":
@@ -803,6 +842,7 @@ function ChatContent() {
                 break;
             }
             break;
+
           case "loading_message":
             const message = data.content ?? "Thinking to enhance response";
             // setLoadingMessage(message);
@@ -903,6 +943,31 @@ function ChatContent() {
       isCancelled = true;
     };
   }, [attachedFile, sessionID]);
+
+  const stopGeneration = () => {
+    if (!currentStreamingMsgRef.current || !wsRef.current) return;
+
+    if (stopStreamRef.current) {
+      stopStreamRef.current();
+      stopStreamRef.current = null;
+    }
+
+    const partialContent = streamingContentRef.current;
+    const msgId = currentStreamingMsgRef.current.message_id;
+
+    setIsGenerating(false);
+    setStreamingMessageIndex(null);
+    setLoading(false);
+
+    wsSendAsync(wsRef.current, {
+      type: "stop_generation",
+      message_id: msgId,
+      partial_content: partialContent,
+    });
+
+    currentStreamingMsgRef.current = null;
+    streamingContentRef.current = "";
+  };
 
   const ask = async (
     input: string,
@@ -1658,6 +1723,18 @@ function ChatContent() {
                   >
                     {placeholder}
                   </span>
+                )}
+
+                {isGenerating && (
+                  <div className="flex justify-end mb-1">
+                    <button
+                      onClick={stopGeneration}
+                      className="flex items-center gap-x-2 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs rounded-md switzer-500 transition-colors shadow-sm"
+                    >
+                    <div className="w-2 h-2 bg-white rounded-sm"></div>
+                      Stop
+                    </button>
+                  </div>
                 )}
 
                 <BottomOptions />

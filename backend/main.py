@@ -295,6 +295,28 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
                 continue
 
+            if data.get("type") == "stop_generation":
+                partial_content = data.get("partial_content", "")
+                msg_id_to_stop = data.get("message_id", "")
+
+                if msg_id_to_stop and partial_content:
+                    try:
+                        await asyncio.to_thread(
+                            lambda: supabase_client.table('chat_messages')
+                            .update({"content": partial_content})
+                            .eq("message_id", msg_id_to_stop)
+                            .execute()
+                        )
+                        logger.info(f"✅ DB updated with partial content for {msg_id_to_stop}")
+                    except Exception as e:
+                        logger.error(f"Error updating partial response: {e}")
+
+                await websocket.send_json({
+                    "type": "stop_acknowledged",
+                    "message_id": msg_id_to_stop
+                })
+                continue
+
             # ========== SESsION CODE START ==========
             # SESSION INIT
             if data.get("type") == "session-init":
