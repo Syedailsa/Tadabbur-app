@@ -939,7 +939,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                     response_object.has_verse_audio = True
                                     response_object.audio_data = [SurahForAudio.model_validate(v) for v in audio_data]
                                 data_flag[1] = True
-                    print("response object", response_object)
 
                     # generate a message id for response message
                     response_message_id = generate_uuid()
