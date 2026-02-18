@@ -81,7 +81,7 @@ def get_Quran_data():
                 if not QURAN_DATA_CACHE:
                     response_data = {
                         "success": False,
-                        "images": [],
+                        "verse_images": [],
                         "error": "Quran data is empty"
                     }
                     return response_data
@@ -208,7 +208,7 @@ def get_verse_image(args: List[Filters] = None) -> dict:
     if not args:
         response_data = {
             "success": False,
-            "surah_array": [],
+            "verse_images": [],
             "error": "No filters are provided for retrieving verse images"
         }
         return response_data
@@ -220,7 +220,7 @@ def get_verse_image(args: List[Filters] = None) -> dict:
     except Exception as e:
         response_data = {
             "success": False,
-            "surah_array": [],
+            "verse_images": [],
             "error": "Data not available from Quran Cloud"
         }
         logger.error("Couldn't get data from the Quran Cloud: %s", e)
@@ -357,7 +357,7 @@ def get_verse_image(args: List[Filters] = None) -> dict:
     if surah_array:
         response_data = {
             "success": True,
-            "surah_array": surah_array,
+            "verse_images": surah_array,
             "error": None
         }
 
@@ -365,44 +365,10 @@ def get_verse_image(args: List[Filters] = None) -> dict:
     else:
         response_data = {
             "success": False,
-            "surah_array": [],
+            "verse_images": [],
             "error": "No verse images found for the provided filters"
 
         }
 
         return response_data
     
-
-# response = get_Verse_Image(args=[Filters(
-#     surah_args=SurahFilter(number=2),
-#     verse_args = VerseFilter( numberInSurah_min = 1,numberInSurah_max = 10 ,limit=10)
-# ),
-# Filters(
-#     surah_args=SurahFilter(number=5),
-#     verse_args = VerseFilter( numberInSurah_min = 5,numberInSurah_max = 9 ,limit=5)
-# )])
-
-
-# if "number" in clean_args_surah and "numberInSurah" in clean_args_verse:
-#     surah_number = clean_args_surah["number"]
-#     verse_number = clean_args_verse["numberInSurah"]
-#     # surah number and verse number present
-#     if surah_number <= 0 or surah_number > 114:
-#         results.append(f"{surah_number} is an invalid surah number, Surah number ranges from 1 to 114")
-#         continue
-
-#     surah_obj = next((s for s in filtered_array if s["number"] == surah_number), None)
-
-#     if not surah_obj:
-#         results.append(f"{surah_number} is an invalid surah number")
-#         continue
-#     max_ayah = len(surah_obj["ayahs"])
-#     if verse_number<=0 or verse_number > max_ayah:
-#         results.append(f"{surah_number}:{verse_number} is an invalid reference number, verse numbers for surah_number {surah_number} ranges from 1 to {max_ayah}")
-#         continue
-
-#     # construct the url
-#     image_url = f"{QURAN_IMAGE_BASE_API}/{surah_number}_{verse_number}.png"
-
-#     results.append(image_url)
-#     continue

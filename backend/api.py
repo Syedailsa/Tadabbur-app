@@ -143,7 +143,6 @@ async def google_signin(req: GoogleSignInRequest):
                     "UPDATE users SET google_id = $1, profile_image_url = COALESCE(profile_image_url, $2) WHERE email = $3",
                     google_id, google_data.get('picture'), email
                 )
-            
             user_id = user['user_id']
             firstname = user['firstname']
         

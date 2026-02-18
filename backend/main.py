@@ -8,7 +8,8 @@ from pydantic import BaseModel
 from jose import jwt, JWTError
 from typing import List, Optional
 import asyncio 
-from dotenv import load_dotenv
+from models import OutputSchema, SurahForAudio, SurahForImage
+from langchain.messages import ToolMessage
 from collections import defaultdict
 import agent as agent_module
 from contextlib import asynccontextmanager
@@ -53,13 +54,9 @@ import secrets
 from speech_to_text import SpeechToTextEngine
 from text_to_speech import TextToSpeechEngine
 from config.db import get_supabase_client
-from data.data import comprehensive_surah_metadata
-from data.data import comprehensive_surah_metadata
 
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-
-
 
 # Production logging setup
 logging.basicConfig(
@@ -75,7 +72,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # --- Startup Logic ---
     """Initialize database pool on startup"""
-    print("Instantiaiting db pool")
+    print("Instantiating db pool")
     db_pool_instance = await init_db_pool()
     app.state.db_pool = db_pool_instance
     yield  # app stays active here while receiving requests
@@ -126,7 +123,6 @@ app.include_router(personalization_router)
 
 FRONTEND_URL = os.getenv("FRONTEND_URL")  
 
-print("FRONTEND_URL =", FRONTEND_URL)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[FRONTEND_URL],
@@ -912,9 +908,39 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     agent_response = active_agent.invoke(
                         {"messages": messages},
                     )
+                    messages_array = agent_response['messages']
+                    # Create a new instance of OutputSchema
+                    response_object = OutputSchema(
+                        response=messages_array[-1].content or "",
+                        has_verse_audio=False,
+                        has_verse_image=False,
+                        # by default audio_data and verse_images are an empty list
+                    )
 
-                    structured_output = agent_response['structured_response']
-                    
+                    # initialize a data array for flags
+                    data_flag = [False, False]
+                    for message in reversed(messages_array):
+                        if data_flag == [True, True]:
+                            break
+                        if isinstance(message, ToolMessage):
+                            if message.name == "get_verse_image" and not data_flag[0]:
+                                data = json.loads(message.content)
+                                verse_images = data.get("verse_images",[]) 
+                                if verse_images:
+                                    response_object.has_verse_image = True
+                                    response_object.verse_images = [
+                                       SurahForImage.model_validate(v) for v in verse_images
+                                    ]
+                                data_flag[0] = True
+                            elif message.name == "get_Quran_Audio" and not data_flag[1]:
+                                data = json.loads(message.content)
+                                audio_data = data.get("audio_data", [])
+                                if audio_data:
+                                    response_object.has_verse_audio = True
+                                    response_object.audio_data = [SurahForAudio.model_validate(v) for v in audio_data]
+                                data_flag[1] = True
+                    print("response object", response_object)
+
                     # generate a message id for response message
                     response_message_id = generate_uuid()
                     while response_message_id in unique_message_ids:
@@ -922,34 +948,27 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     unique_message_ids.append(response_message_id)
 
                     user_message_id = user_message_id if not resend_flag else resend_message_id
-
-                    response = structured_output.response or ""
-                    has_verse_audio = structured_output.has_verse_audio or False
-                    has_verse_image = structured_output.has_verse_image or False
-
-
-                    audio_data = [a.model_dump() for a in (structured_output.audio_data or [])]
-                    verse_images = [v.model_dump() for v in (structured_output.verse_images or [])]
-
+                    ai_response = response_object.response
                     # append assistant message to conversation history
-                    conversation_history.append({"role": "assistant", "content": response , "id": response_message_id, "reply_to_message_id": user_message_id})
-                    
+                    conversation_history.append({"role": "assistant", "content": ai_response , "id": response_message_id, "reply_to_message_id": user_message_id})
+
                     try:
                         supabase_client.table('chat_messages').insert({
                             "message_id": response_message_id,
                             "session_id": session_id,
                             "user_id": user_id,
                             "role": "assistant",
-                            "content": response,
+                            "content": ai_response,
                             "reply_to_message_id": user_message_id,
-                            "has_verse_audio": has_verse_audio,
-                            "audio_data": audio_data,
-                            "has_verse_image": has_verse_image,
-                            "verse_images": verse_images 
+                            "has_verse_audio": response_object.has_verse_audio,
+                            "audio_data": [surah.model_dump() for surah in response_object.audio_data],
+                            "has_verse_image": response_object.has_verse_image,
+                            "verse_images": [surah.model_dump() for surah in response_object.verse_images]
                         }).execute()
                         print("✅ Assistant message saved successfully!")
                     except Exception as e:
                         print("Some error occured while inserting assistant messages", e)
+                        raise
 
                     # generate title and description for the current chat history if there are 2 user/assistant messages each
                     # run the below logic in a seperate thread
@@ -962,11 +981,11 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         )
                     )
 
-                    if structured_output:
+                    if response_object:
                         await websocket.send_json({
                             "type": "assistance_response",
                             "message_id": response_message_id,
-                            "content": structured_output.model_dump() or "",
+                            "content": response_object.model_dump(mode = "json"),
                             "resend_flag": resend_flag,
                             "reply_to_message_id": user_message_id,
                             "final": True
