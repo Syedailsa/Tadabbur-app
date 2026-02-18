@@ -38,21 +38,15 @@ class SajdaVerse(BaseModel):
     obligatory: Optional[bool] = Field(None, description="Sajda obligatory or not")
 
 class VerseForAudio(BaseModel):
-    number: Optional[int] = None
     audio: Optional[str] = None
-    audioSecondary: Optional[List[str]] = None
-    text: Optional[str] = None
     numberInSurah: Optional[int] = None
     juz: Optional[int] = None
     manzil: Optional[int] = None
     ruku: Optional[int] = None
-    hizbQuarter: Optional[int] = None
     sajda: Optional[Union[bool, SajdaVerse]] = None
-    verse_image_url: Optional[str] = None
 
 
 class SurahForAudio(BaseModel):
-    number: Optional[int] = Field(..., description="The number of the Surah")
     name: Optional[str] = Field(..., description="The name of the Surah")
     englishName: Optional[str] = Field(None, description="The english name of the surah")
     englishNameTranslation: Optional[str] = Field(
@@ -79,9 +73,9 @@ class SurahForImage(BaseModel):
 class OutputSchema(BaseModel):
     response: str = Field(..., description="The final response to the user")
     has_verse_audio: bool = Field(..., description = "Determines whether the response contains Verse audio links or not")
-    audio_data: Optional[List[SurahForAudio]] = Field(None, description="Audio data for the required verses")
+    audio_data: List[SurahForAudio] = Field(default_factory=list, description="Audio data for the required verses")
     has_verse_image: bool = Field(..., description = "Determines whether the response contains verse image links or not")
-    verse_images: Optional[List[SurahForImage]] = Field(None, description = "Verse image data containing verse-image links, surah names, verse numbers")
+    verse_images: List[SurahForImage] = Field(default_factory=list, description = "Verse image data containing verse-image links, surah names, verse numbers")
 
 class CleanText(BaseModel):
     response: str = Field(..., description="The clean response for tts")

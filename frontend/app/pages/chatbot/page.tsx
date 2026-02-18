@@ -32,7 +32,6 @@ import Controls from "../../components/chatbot/UI/Controls";
 import PromptExtraOptions from "../../components/chatbot/UI/PrompExtraOptions";
 import generateUUID from "@/utils/generateShortId";
 import { ChatHisoryDialogueBox } from "../../components/chatbot/UI/ChatHistoryDialogueBox";
-import { ChatRecord } from "@/app/context/chatbot/ChatContext";
 import { SurahForAudios, SurahForVerseImages } from "@/app/components/chatbot/interfaces/Surah";
 import ReportContentDialogueBox from "../../components/chatbot/UI/ReportContentDialogueBox";
 import { ChatMessage } from "../../components/chatbot/interfaces/ChatMessage";
@@ -62,7 +61,7 @@ function ChatContent() {
   const [placeholder, setPlaceholder] = useState<string | null>(
     "Let's learn about the Quran",
   );
-  const [error, setError] = useState<string | null>(null);
+  const [setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const [sessionID, setSessionID] = useState<string | null>(null);
   const [streamingMessageIndex, setStreamingMessageIndex] = useState<
@@ -81,7 +80,6 @@ function ChatContent() {
   const [hideReportContentDialogueBox, setHideReportContentDialogueBox] =
     useState<boolean | null>(true);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
-  const [isCancelled, setIsCancelled] = useState<boolean>(false)
   const [fileContext, setFileContext] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false);
   const currentMessageIDRef = useRef<string | null>(null);
@@ -93,7 +91,7 @@ function ChatContent() {
   const controls = useAnimationControls();
   const [hidePromptExtraOptionsModelBoxArray, setHidePromptExtraOptionsModelBoxArray] =
     useState<hidePromptExtraOptionsModelBoxArray[]>([]);
-  const [uploadedFiles, setUploadedFiles] = useState<
+  const [setUploadedFiles] = useState<
     Array<{
       file_id: string;
       file_name: string;
@@ -101,7 +99,7 @@ function ChatContent() {
       created_at: string;
     }>
   >([]);
-  const [sessionFiles, setSessionFiles] = useState<Array<{
+  const [setSessionFiles] = useState<Array<{
     file_id: string;
     file_name: string;
     file_type: string;
@@ -127,7 +125,7 @@ function ChatContent() {
   } | null>(null);
   const streamingContentRef = useRef<string>("");
   const stopStreamRef = useRef<(() => void) | null>(null);
-  
+
   const urlSessionId = searchParams.get("session_id");
   const totalReconnectAttempts = useRef(0);
   const MAX_RECONNECT_TRIES = 5;
@@ -281,7 +279,7 @@ function ChatContent() {
         )
       );
     };
-  }, [audioRef.current]);
+  }, []);
 
   useEffect(() => {
     const handleMicStart = () => {
@@ -556,7 +554,7 @@ function ChatContent() {
             const session_id = data.session_id;
             const session_status = data.status;
             const message_ids = data.message_ids;
-            const uploaded_files = data.uploaded_files;
+            
             if (session_status === "acknowledged") {
               setSessionID(session_id);
               const currentUrlId = searchParams.get("session_id");
@@ -564,8 +562,7 @@ function ChatContent() {
                 router.push(`/pages/chatbot?session_id=${session_id}`, { scroll: false });
               }
               setMessages([]);
-              setUploadedFiles([]);
-              setSessionFiles([]);
+              
               setMessages((prevMessages) => {
                 if (prevMessages && prevMessages.length > 0) {
                   return [];
@@ -574,11 +571,6 @@ function ChatContent() {
               });
               setHidePromptExtraOptionsModelBoxArray([])
               setMessageIDs(message_ids);
-
-              if (uploaded_files && uploaded_files.length > 0) {
-                setSessionFiles(uploaded_files);
-                setUploadedFiles([]);
-              }
             }
             break;
 
@@ -1442,7 +1434,7 @@ function ChatContent() {
                                     // LINKS
                                     a: ({ node, ...props }) => (
                                       <a
-                                        className="text-blue-600 underline"
+                                        className="text-blue-600 underline wrap-break-word"
                                         target="_blank"
                                         rel="noreferrer"
                                         {...props}
@@ -1558,6 +1550,26 @@ function ChatContent() {
                                   {preprocessContent(ai_msg.content)}
                                 </ReactMarkdown>
                               </div>
+
+                              {ai_msg.has_verse_audio && ai_msg.verse_audio_data.length > 0 && streamingMessageIndex != record_index && (
+                                <>
+                                  <br />
+                                  <QuranDialogBox
+                                    type="audio"
+                                    surahs={ai_msg?.verse_audio_data}
+                                  />
+                                </>
+                              )}
+
+                              {ai_msg.has_verse_image && ai_msg.verse_images.length > 0 && streamingMessageIndex != record_index && (
+                                <>
+                                  <br />
+                                  <QuranDialogBox
+                                    type="read"
+                                    surahs={ai_msg?.verse_images}
+                                  />
+                                </>
+                              )}
                               {/* Place it here, inside the div */}
                               {streamingMessageIndex != record_index &&
                                 reportedMessageIDs &&
@@ -1577,19 +1589,6 @@ function ChatContent() {
                                   </div>
                                 )}
 
-                              {ai_msg.has_verse_audio && ai_msg.verse_audio_data.length > 0 && streamingMessageIndex != record_index && (
-                                <QuranDialogBox
-                                  type="audio"
-                                  surahs={ai_msg?.verse_audio_data}
-                                />
-                              )}
-                              <br />
-                              {ai_msg.has_verse_image && ai_msg.verse_images.length > 0 && streamingMessageIndex != record_index && (
-                                <QuranDialogBox
-                                  type="read"
-                                  surahs={ai_msg?.verse_images}
-                                />
-                              )}
                             </div>
                           ) : reportedMessageIDs &&
                             reportedMessageIDs.includes(ai_msg?.message_id) ? (

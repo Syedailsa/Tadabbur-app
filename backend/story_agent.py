@@ -1,9 +1,5 @@
 import json
 import os
-from typing import Optional
-# from tafseer_agent import Tafsir_Agent
-from openai import max_retries
-import pandas as pd
 from dotenv import load_dotenv
 from tools.search_Quran_By_Filters import Search_Quran_By_filters
 from tools.searchAsbabNuzul import searchAsbabNuzul
@@ -12,9 +8,7 @@ from langchain.agents import create_agent
 from tools.audio_playback import get_Quran_Audio
 from tools.verse_reader import get_verse_image
 from data.data import QuranMetaData,surah_name_english_array, surah_name_english_translation_array
-from pydantic import BaseModel, Field
 from models import OutputSchema
-from typing import List
 
 load_dotenv()
 

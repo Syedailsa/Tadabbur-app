@@ -34,6 +34,8 @@ export default function QuranDialogBox(props: AudioDialogProps) {
   const [activeVerseIndex, setActiveVerseIndex] = useState<number>(0)
   const [openVerseDropdown, setOpenVerseDropdown] = useState<boolean>(false)
   const x = useMotionValue("0%");
+  const startAudioSequence = useRef<boolean>(false)  //true when user plays any audio
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
   useEffect(() => {
     setActiveVerseIndex(0)
@@ -46,6 +48,31 @@ export default function QuranDialogBox(props: AudioDialogProps) {
     });
     return () => controls.stop();
   }, [x]);
+
+  // Handle sequential playback
+  useEffect(() => {
+    const audio = audioRef.current
+    const activeVerse = surahs[activeSurahIndex].ayahs[activeVerseIndex]
+    const audio_link = (activeVerse as VerseForAudios).audio
+
+    if (!audio || type != "audio" || !audio_link) return
+
+    audio.src = audio_link
+    if (startAudioSequence.current && activeVerseIndex < surahs[activeSurahIndex].ayahs.length) {
+      audio.play()
+    }
+
+    const handleEnded = () => {
+      setActiveVerseIndex(prev => {
+        startAudioSequence.current = true
+        if (prev + 1 < surahs[activeSurahIndex].ayahs.length) return prev + 1
+        return prev // stop at last verse
+      })
+    }
+
+    audio.addEventListener('ended', handleEnded)
+    return () => audio.removeEventListener('ended', handleEnded)
+  }, [activeSurahIndex, activeVerseIndex])
 
   return (
     <div className="">
@@ -64,7 +91,7 @@ export default function QuranDialogBox(props: AudioDialogProps) {
                 </motion.div>
 
                 {openSurahDropdown && (<SelectBox top={40} dropdownArray={surahs} openDropdown={openSurahDropdown} setOpenDropdown={setOpenSurahDropdown} activeIndex={activeSurahIndex}
-                  setActiveIndex={setActiveSurahIndex} />)}
+                  setActiveIndex={setActiveSurahIndex} startAudioSequence={startAudioSequence} />)}
 
                 <p lang="ar" dir="rtl" className={`${noto_kufi_arabic.className} w-max`}>{surah?.name}</p>
               </div>
@@ -125,6 +152,7 @@ export default function QuranDialogBox(props: AudioDialogProps) {
                             setActiveIndex={setActiveVerseIndex}
                             openDropdown={openVerseDropdown}
                             setOpenDropdown={setOpenVerseDropdown}
+                            startAudioSequence={startAudioSequence}
                           />
                         )}
                         {type === "audio" ? (
@@ -139,7 +167,7 @@ export default function QuranDialogBox(props: AudioDialogProps) {
                       {/* audio */}
                       <div>
                         {(ayah as VerseForAudios).audio ? (
-                          <audio className="w-full" controls src={(ayah as VerseForAudios).audio} />
+                          <audio ref={audioRef} className="w-full" controls />
                         ) : null}
                       </div>
 
@@ -184,7 +212,8 @@ type SelectBoxProps = {
   openDropdown: boolean;
   setOpenDropdown: React.Dispatch<React.SetStateAction<boolean>>
   activeIndex: number;
-  setActiveIndex: React.Dispatch<React.SetStateAction<number>>
+  setActiveIndex: React.Dispatch<React.SetStateAction<number>>;
+  startAudioSequence: React.RefObject<boolean>;
   top: number
 }
 
@@ -195,6 +224,7 @@ const SelectBox = ({
   setOpenDropdown,
   activeIndex,
   setActiveIndex,
+  startAudioSequence,
   top
 }: SelectBoxProps) => {
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -202,8 +232,6 @@ const SelectBox = ({
   const isSurah = (item: SurahType | VerseType): item is SurahType => {
     return "englishName" in item;
   }
-
-
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
       if (overlayRef.current && !overlayRef.current.contains(e.target as Node)) {
@@ -226,6 +254,9 @@ const SelectBox = ({
         <motion.div onClick={() => {
           setActiveIndex(element_index)
           setOpenDropdown(false)
+          if (startAudioSequence && startAudioSequence.current) {
+            startAudioSequence.current = false
+          }
         }} whileTap={{ backgroundColor: "rgba(0,0,0,0.09)" }} whileHover={{ backgroundColor: "rgba(0,0,0,0.05)" }} key={element_index} className="switzer-600 tracking-tighter px-2 py-1 rounded-md cursor-pointer">
           {isSurah(element) ? (
             <div className="flex items-center justify-between text-black/70">

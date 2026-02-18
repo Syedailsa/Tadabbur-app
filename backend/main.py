@@ -1,3 +1,4 @@
+import sys
 import os
 import json
 import asyncio
@@ -7,9 +8,11 @@ from fastapi.websockets import WebSocketState
 from pydantic import BaseModel
 from typing import List
 import asyncio 
-from dotenv import load_dotenv
+from models import OutputSchema, SurahForAudio, SurahForImage
+from langchain.messages import ToolMessage
 from collections import defaultdict
 import agent as agent_module
+from contextlib import asynccontextmanager
 from story_agent import story_agent
 from utils.handle_feedback import handle_feedback
 from utils.generate_title_description import generate_title_description
@@ -43,8 +46,6 @@ from database import init_db_pool, close_db_pool, delete_all_user_sessions, dele
 from fastapi.openapi.utils import get_openapi
 from speech_to_text import SpeechToTextEngine
 from config.db import get_supabase_client
-import sys
-from contextlib import asynccontextmanager
 
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -63,6 +64,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # --- Startup Logic ---
     """Initialize database pool on startup"""
+    print("Instantiating db pool")
     db_pool_instance = await init_db_pool()
     app.state.db_pool = db_pool_instance
     yield  # app stays active here while receiving requests
@@ -73,7 +75,8 @@ async def lifespan(app: FastAPI):
     
 # ------------------- APP CONFIG -------------------
 app = FastAPI(title="Tadabbur Agent API", lifespan=lifespan)
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "Tadabbur-app-default-secret")
+# ------------------- APP CONFIG -------------------
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-this")
 ALGORITHM = "HS256"
 
 def custom_openapi():
@@ -96,6 +99,8 @@ def custom_openapi():
     app.openapi_schema = openapi_schema
     return app.openapi_schema
 app.openapi = custom_openapi
+
+
 app.include_router(auth_router)
 app.include_router(password_reset_router)
 app.include_router(notif_router)
@@ -112,7 +117,6 @@ app.include_router(transcribe_audio_router)
 
 FRONTEND_URL = os.getenv("FRONTEND_URL")  
 
-print("FRONTEND_URL =", FRONTEND_URL)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[FRONTEND_URL],
@@ -194,6 +198,94 @@ class Message(BaseModel):
 class ChatRequest(BaseModel):
     messages: List[Message]
 
+
+def clean_text(text: str) -> str:
+    return text.replace("\x00", "")
+
+
+@app.get("/")
+def read_root():
+    return {"message": "Hello brothers"}
+
+@app.post("/api/upload")
+async def upload_file(
+    file: UploadFile = File(...), 
+    session_id: str = Form(...)
+):
+    try:
+        extracted_text = await process_uploaded_file(file)
+        logger.info(f"File processed for session {session_id}. Text length: {len(extracted_text)}")
+        return {"status": "success", "message": "File processed successfully.", "extracted_text": clean_text(extracted_text)}
+    except Exception as e:
+        logger.error(f"Upload failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/session/{session_id}/files")
+async def get_session_files(session_id: str):
+    """Get all uploaded files for a session"""
+    try:
+        supabase_client = get_supabase_client()
+
+        files = supabase_client.table('session_files')\
+            .select('file_id, file_name, file_type, file_size, created_at')\
+            .eq('session_id', session_id)\
+            .order('created_at', desc=True)\
+            .execute()
+
+        return {
+            "status": "success",
+            "session_id": session_id,
+            "files": files.data or []
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching files: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/session/{session_id}/files/{file_id}")
+async def delete_session_file(session_id: str, file_id: str):
+    """Delete a specific file from session"""
+    try:
+        supabase_client = get_supabase_client()
+
+        # Delete from session_files
+        supabase_client.table('session_files')\
+            .delete()\
+            .eq('file_id', file_id)\
+            .eq('session_id', session_id)\
+            .execute()
+
+        # Rebuild file_context from remaining files
+        remaining_files = supabase_client.table('session_files')\
+            .select('file_content')\
+            .eq('session_id', session_id)\
+            .order('created_at')\
+            .execute()
+
+        # Filter out None values
+        valid_contents = [
+            f['file_content'] for f in remaining_files.data
+            if f['file_content'] is not None and f['file_content'].strip()
+        ]
+        new_context = "\n\n--- FILE SEPARATOR ---\n\n".join(valid_contents) if valid_contents else ""
+
+        # Update chat_sessions
+        supabase_client.table('chat_sessions').update({
+            'file_context': new_context or None
+        }).eq('session_id', session_id).execute()
+
+        # Update cache
+        if new_context:
+            session_file_context[session_id] = new_context
+        else:
+            session_file_context.pop(session_id, None)
+
+        return {"status": "success", "message": "File deleted"}
+
+    except Exception as e:
+        logger.error(f"Error deleting file: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
 stt_engine = SpeechToTextEngine()
 
 @app.websocket("/ws/chat")
@@ -305,6 +397,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             lambda: supabase_client.table('chat_messages')
                             .update({"content": partial_content})
                             .eq("message_id", msg_id_to_stop)
+                            
                             .execute()
                         )
                         logger.info(f"✅ DB updated with partial content for {msg_id_to_stop}")
@@ -775,9 +868,38 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     agent_response = active_agent.invoke(
                         {"messages": messages},
                     )
+                    messages_array = agent_response['messages']
+                    # Create a new instance of OutputSchema
+                    response_object = OutputSchema(
+                        response=messages_array[-1].content or "",
+                        has_verse_audio=False,
+                        has_verse_image=False,
+                        # by default audio_data and verse_images are an empty list
+                    )
 
-                    structured_output = agent_response['structured_response']
-                    
+                    # initialize a data array for flags
+                    data_flag = [False, False]
+                    for message in reversed(messages_array):
+                        if data_flag == [True, True]:
+                            break
+                        if isinstance(message, ToolMessage):
+                            if message.name == "get_verse_image" and not data_flag[0]:
+                                data = json.loads(message.content)
+                                verse_images = data.get("verse_images",[]) 
+                                if verse_images:
+                                    response_object.has_verse_image = True
+                                    response_object.verse_images = [
+                                       SurahForImage.model_validate(v) for v in verse_images
+                                    ]
+                                data_flag[0] = True
+                            elif message.name == "get_Quran_Audio" and not data_flag[1]:
+                                data = json.loads(message.content)
+                                audio_data = data.get("audio_data", [])
+                                if audio_data:
+                                    response_object.has_verse_audio = True
+                                    response_object.audio_data = [SurahForAudio.model_validate(v) for v in audio_data]
+                                data_flag[1] = True
+
                     # generate a message id for response message
                     response_message_id = generate_uuid()
                     while response_message_id in unique_message_ids:
@@ -785,46 +907,27 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     unique_message_ids.append(response_message_id)
 
                     user_message_id = user_message_id if not resend_flag else resend_message_id
-
-                    response = structured_output.response or ""
-                    has_verse_audio = structured_output.has_verse_audio or False
-                    has_verse_image = structured_output.has_verse_image or False
-
-
-                    audio_data = [a.model_dump() for a in (structured_output.audio_data or [])]
-                    verse_images = [v.model_dump() for v in (structured_output.verse_images or [])]
-
+                    ai_response = response_object.response
                     # append assistant message to conversation history
-                    conversation_history.append({"role": "assistant", "content": response , "id": response_message_id, "reply_to_message_id": user_message_id})
-                    
+                    conversation_history.append({"role": "assistant", "content": ai_response , "id": response_message_id, "reply_to_message_id": user_message_id})
+
                     try:
                         supabase_client.table('chat_messages').insert({
                             "message_id": response_message_id,
                             "session_id": session_id,
                             "user_id": user_id,
                             "role": "assistant",
-                            "content": response,
+                            "content": ai_response,
                             "reply_to_message_id": user_message_id,
-                            "has_verse_audio": has_verse_audio,
-                            "audio_data": audio_data,
-                            "has_verse_image": has_verse_image,
-                            "verse_images": verse_images 
+                            "has_verse_audio": response_object.has_verse_audio,
+                            "audio_data": [surah.model_dump() for surah in response_object.audio_data],
+                            "has_verse_image": response_object.has_verse_image,
+                            "verse_images": [surah.model_dump() for surah in response_object.verse_images]
                         }).execute()
                         print("✅ Assistant message saved successfully!")
                     except Exception as e:
                         print("Some error occured while inserting assistant messages", e)
-
-                    if websocket.client_state == WebSocketState.CONNECTED and structured_output:
-                        await websocket.send_json({
-                            "type": "assistance_response",
-                            "message_id": response_message_id,
-                            "content": structured_output.model_dump() or "",
-                            "resend_flag": resend_flag,
-                            "reply_to_message_id": user_message_id,
-                            "final": True
-                        })
-
-                    # logic of content update in assistant message for  case
+                        raise
 
                     # generate title and description for the current chat history if there are 2 user/assistant messages each
                     # run the below logic in a seperate thread
@@ -837,7 +940,17 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         )
                     )
 
-                    # tool logic
+                    if response_object:
+                        await websocket.send_json({
+                            "type": "assistance_response",
+                            "message_id": response_message_id,
+                            "content": response_object.model_dump(mode = "json"),
+                            "resend_flag": resend_flag,
+                            "reply_to_message_id": user_message_id,
+                            "final": True
+                        })
+
+                    # # tool logic
 
                     await websocket.send_json({"type": "streaming_end"})
                     await websocket.send_json({"type": "run_complete"})

@@ -61,8 +61,6 @@ class Filters(BaseModel):
 
 QURAN_API_BASE = "http://api.alquran.cloud/v1/quran"
 
-
-
 class QuranAudioInput(BaseModel):
     args: Optional[List[Filters]] = None
     reciter: str = "ar.alafasy"
@@ -179,22 +177,32 @@ def get_Quran_Audio(args: List[Filters] = None, reciter:str = "ar.alafasy") -> L
     7. I want to listen to verses 1-10 of surah Baqarah, Quraysh and Bani Israeel.
     """
 
-    print("Get Quran Audio tool called!")
     if not args:
         print("No filters provided")
-        return "No filters provided"
+        response_data = {
+            "success": False,
+            "audio_data": [],
+            "error": "No filters provided"
+
+        }
+        return response_data
     # initialize a results array to concatenate results
     surah_array = []    
     # fetch the data
-    print("Reciter", reciter)
     reciter_identifier = normalize_reciter_name(reciter, reciters_name_array)
-    print("Normalized reciter", reciter_identifier)
+    
     request_url = f'{QURAN_API_BASE}/{reciter_identifier}'
     response = requests.get(request_url)
 
     if not response.ok:
         print("Couldn't get data from the Quran Cloud")
-        return "Couldn't get data from the Quran Cloud"
+        response_data = {
+            "success": False,
+            "audio_data": [],
+            "error": "Network error while fetching Quran Data from Cloud"
+
+        }
+        return response_data
     
     Quran_data = response.json()['data']['surahs']
 
@@ -253,8 +261,6 @@ def get_Quran_Audio(args: List[Filters] = None, reciter:str = "ar.alafasy") -> L
         clean_args_surah = {k:v for k,v in surah_arguments.items() if v is not None}
         clean_args_verse = {k:v for k,v in verse_arguments.items() if v is not None}
 
-        print("Clean Surah arguments", clean_args_surah)
-        print("Clean Verse arguments", clean_args_verse)
         # Initialize filter conditions array for surah filtering    
         surah_filter_conditions = []    
         # build the filter
@@ -323,11 +329,24 @@ def get_Quran_Audio(args: List[Filters] = None, reciter:str = "ar.alafasy") -> L
             surah_array.append({
                 "name": surah.get("name", ""),
                 "englishName": surah.get("englishName", ""),
-                "englishNameTranslation": surah.get("revelationType", ""),
+                "englishNameTranslation": surah.get("englishNameTranslation", ""),
+                "revelationType": surah.get("revelationType"),
                 "ayahs": new_verses,
             })
-        print("Surah array", surah_array)
+        
     if surah_array:
-        return surah_array
+        response_data = {
+            "success": True,
+            "audio_data": surah_array,
+            "error": None
+
+        }
+        return response_data
     else:
-        return "No results found for the user query"
+        response_data = {
+            "success": False,
+            "audio_data": [],
+            "error": "No audio data found for the provided filters"
+
+        }
+        return response_data
