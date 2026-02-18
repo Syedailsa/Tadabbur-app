@@ -60,7 +60,7 @@ const PromptExtraOptions = ({
 
   const hidePromptExtraOptionsModelBox = hidePromptExtraOptionsModelBoxArray.find((m: hidePromptExtraOptionsModelBoxArray) => m.assistant_message_id == message_id)?.hidePromptExtraOptionsModelBox
 
-  type OptionType = "copy" | "resend" | "like" | "dislike";
+  type OptionType = "copy" | "resend" | "liked" | "disliked";
   const handleOptionClick = ({ type }: { type: OptionType }) => {
     if (parent_index === null) return
     switch (type) {
@@ -81,21 +81,21 @@ const PromptExtraOptions = ({
           })
           .catch((err) => console.error("Failed to copy", err));
         break;
-      case "like":
+      case "liked":
         if (feedback === "liked") {
           break
         }
         if (assistant_index != null) {
           wsSendAsync(
-          wsRef?.current,
-          {
-              type: "like",
+            wsRef?.current,
+            {
+              type: "liked",
               message:
                 messages?.[parent_index]?.responses?.[assistant_index].content,
               message_id: message_id,
               session_id: sessionID,
-            }).catch(() => {})
-          
+            }).catch(() => { })
+
         }
 
         setHidePromptExtraOptionsModelBoxArray((prev: hidePromptExtraOptionsModelBoxArray[]) => prev.map(m => m.assistant_message_id === message_id ? { ...m, hidePromptExtraOptionsModelBox: true } : m))
@@ -118,21 +118,21 @@ const PromptExtraOptions = ({
         }
 
         break;
-      case "dislike":
+      case "disliked":
         if (feedback === "disliked") {
           break
         }
         if (assistant_index != null) {
           wsSendAsync(
-          wsRef?.current,
-          {
-              type: "dislike",
+            wsRef?.current,
+            {
+              type: "disliked",
               message:
                 messages?.[parent_index]?.responses?.[assistant_index]?.content,
               message_id: message_id,
               session_id: sessionID,
-            }).catch(() => {})
-          
+            }).catch(() => { })
+
         }
 
         setHidePromptExtraOptionsModelBoxArray((prev: hidePromptExtraOptionsModelBoxArray[]) => prev.map(m => m.assistant_message_id === message_id ? { ...m, hidePromptExtraOptionsModelBox: true } : m))
@@ -256,7 +256,7 @@ const PromptExtraOptions = ({
               setActive(false);
             }}
             onClick={() => {
-              handleOptionClick({ type: "like" });
+              handleOptionClick({ type: "liked" });
             }}
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
           >
@@ -276,7 +276,7 @@ const PromptExtraOptions = ({
               setActive(false);
             }}
             onClick={() => {
-              handleOptionClick({ type: "dislike" });
+              handleOptionClick({ type: "disliked" });
             }}
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
           >

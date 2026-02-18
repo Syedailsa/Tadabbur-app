@@ -1175,7 +1175,7 @@ function ChatContent() {
                                     // LINKS
                                     a: ({ node, ...props }) => (
                                       <a
-                                        className="text-blue-600 underline"
+                                        className="text-blue-600 underline wrap-break-word"
                                         target="_blank"
                                         rel="noreferrer"
                                         {...props}
@@ -1291,6 +1291,26 @@ function ChatContent() {
                                   {preprocessContent(ai_msg.content)}
                                 </ReactMarkdown>
                               </div>
+
+                              {ai_msg.has_verse_audio && ai_msg.verse_audio_data.length > 0 && streamingMessageIndex != record_index && (
+                                <>
+                                  <br />
+                                  <QuranDialogBox
+                                    type="audio"
+                                    surahs={ai_msg?.verse_audio_data}
+                                  />
+                                </>
+                              )}
+
+                              {ai_msg.has_verse_image && ai_msg.verse_images.length > 0 && streamingMessageIndex != record_index && (
+                                <>
+                                  <br />
+                                  <QuranDialogBox
+                                    type="read"
+                                    surahs={ai_msg?.verse_images}
+                                  />
+                                </>
+                              )}
                               {/* Place it here, inside the div */}
                               {streamingMessageIndex != record_index &&
                                 reportedMessageIDs &&
@@ -1310,19 +1330,6 @@ function ChatContent() {
                                   </div>
                                 )}
 
-                              {ai_msg.has_verse_audio && ai_msg.verse_audio_data.length > 0 && streamingMessageIndex != record_index && (
-                                <QuranDialogBox
-                                  type="audio"
-                                  surahs={ai_msg?.verse_audio_data}
-                                />
-                              )}
-                              <br />
-                              {ai_msg.has_verse_image && ai_msg.verse_images.length > 0 && streamingMessageIndex != record_index && (
-                                <QuranDialogBox
-                                  type="read"
-                                  surahs={ai_msg?.verse_images}
-                                />
-                              )}
                             </div>
                           ) : reportedMessageIDs &&
                             reportedMessageIDs.includes(ai_msg?.message_id) ? (
