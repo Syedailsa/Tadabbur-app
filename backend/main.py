@@ -128,6 +128,12 @@ supabase_client = None
 TADABBUR_PROJECT_URL = os.getenv("TADABBUR_PROJECT_URL") 
 TADABBUR_API_KEY = os.getenv("TADABBUR_API_KEY")
 
+try: 
+    supabase_client = get_supabase_client()
+except Exception as e:
+    print("Some error occured initiating supabase connection", e)
+    raise
+
 def get_chat_messages(session_id: str, user_id: str, supabase_client) -> List[str]:
     """Get all messages of a specific session"""
     if not session_id or not supabase_client:
@@ -205,20 +211,13 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
     
     dynamic_system_instruction = {"text":""}
-    try:
-        await asyncio.wait_for(refresh_system_instructions(dynamic_system_instruction, user_id), timeout=3.0)
-    except Exception as e:
-        logger.error(f"Failed to load instructions: {e}")
-    
-    try: 
-        supabase_client = get_supabase_client()
-    except Exception as e:
-        print("Some error occured initiating supabase connection", e)
-        raise
+    asyncio.create_task(refresh_system_instructions(dynamic_system_instruction, user_id))
 
     # initialize the conversation history and message_IDs set
     conversation_history = []
     unique_message_ids = []
+    current_session_id = None
+    initialized = False
 
     # ====== SESSION CODE START ======
     session_id = None
@@ -227,13 +226,22 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
     current_agent_name = active_agent.name
     try:
         while True:
+            if websocket.client_state == WebSocketState.DISCONNECTED:
+               break
             message = await websocket.receive()
             if "text" in message:
                 try:
                     data = json.loads(message["text"])
                 except json.JSONDecodeError:
                     continue
-
+            
+            if data.get("type") == "ping":
+                if websocket.client_state == WebSocketState.CONNECTED:
+                    try:
+                        await websocket.send_json({"type": "pong"})
+                    except Exception:
+                        pass # Socket might have closed just now
+                continue
 
             if data.get("type") == "tts_request":
                 print("Got tts request, data", data)
@@ -291,57 +299,64 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
             # SESSION INIT
             if data.get("type") == "session-init":
                     requested_session_id = data.get("session_id", "").strip()
-                    
-                    if requested_session_id:
-                        session_id = requested_session_id
-                    else:
-                        session_id = generate_session_id()
 
-                    logger.info(f"Processing session: {session_id}")
+                    if not initialized or requested_session_id != current_session_id:
+                        current_session_id = requested_session_id
+                        initialized = True
+                        conversation_history.clear()
+                        unique_message_ids.clear()
 
-                    # 2. Check DB securely
-                    try:
-                        response = supabase_client.table('chat_sessions')\
-                            .select('user_id', 'file_context')\
-                            .eq('session_id', session_id)\
-                            .execute()
-                        
-                        existing_session = response.data[0] if response.data and len(response.data) > 0 else None
+                        if requested_session_id:
+                            session_id = requested_session_id
+                        else:
+                            session_id = generate_session_id()
+                            current_session_id = session_id
 
-                        if existing_session:
-                            # Session Exists: Check Ownership
-                            if existing_session.get('user_id') == user_id:
-                                if existing_session.get('file_context'):
-                                    session_file_context[session_id] = existing_session['file_context']
-                                
-                                # Load Messages
-                                msgs = supabase_client.table('chat_messages').select('message_id').eq('session_id', session_id).execute()
-                                unique_message_ids = [m['message_id'] for m in msgs.data] if msgs.data else []
+                        logger.info(f"Processing session: {session_id}")
+
+                        # 2. Check DB securely
+                        try:
+                            response = supabase_client.table('chat_sessions')\
+                                .select('user_id', 'file_context')\
+                                .eq('session_id', session_id)\
+                                .execute()
+                            
+                            existing_session = response.data[0] if response.data and len(response.data) > 0 else None
+
+                            if existing_session:
+                                # Session Exists: Check Ownership
+                                if existing_session.get('user_id') == user_id:
+                                    if existing_session.get('file_context'):
+                                        session_file_context[session_id] = existing_session['file_context']
+                                    
+                                    # Load Messages
+                                    msgs = supabase_client.table('chat_messages').select('message_id').eq('session_id', session_id).execute()
+                                    unique_message_ids = [m['message_id'] for m in msgs.data] if msgs.data else []
+                                    
+                                    await websocket.send_json({
+                                        "type": "session_id", "status": "acknowledged", 
+                                        "session_id": session_id, "message_ids": unique_message_ids
+                                    })
+                                else:
+                                    await websocket.send_json({"type": "session_id", "status": "error", "error": "Unauthorized"})
+                                    continue
+                            else:
+                                logger.info(f"🆕 Generated ID for potential new session: {session_id}")
+
+                                conversation_history = []
+                                unique_message_ids = []
                                 
                                 await websocket.send_json({
-                                    "type": "session_id", "status": "acknowledged", 
-                                    "session_id": session_id, "message_ids": unique_message_ids
+                                    "type": "session_id", "status": "acknowledged",
+                                    "session_id": session_id, "current_agent": current_agent_name,
+                                    "message_ids": []
                                 })
-                            else:
-                                await websocket.send_json({"type": "session_id", "status": "error", "error": "Unauthorized"})
-                                continue
-                        else:
-                            logger.info(f"🆕 Generated ID for potential new session: {session_id}")
 
-                            conversation_history = []
-                            unique_message_ids = []
-                            
-                            await websocket.send_json({
-                                "type": "session_id", "status": "acknowledged",
-                                "session_id": session_id, "current_agent": current_agent_name,
-                                "message_ids": []
-                            })
-
-                    except Exception as e:
-                        logger.error(f"Session Init Error: {e}")
-                        await websocket.send_json({"type": "session_id", "status": "error", "error": str(e)})
-                    
-                    continue
+                        except Exception as e:
+                            logger.error(f"Session Init Error: {e}")
+                            await websocket.send_json({"type": "session_id", "status": "error", "error": str(e)})
+                        
+                        continue
             
             # Handle CHAT HISTORY request
             if data.get("type") == "chat_history":
@@ -402,10 +417,16 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     conversation_history = chat_history
                     unique_message_ids = [msg['message_id'] for msg in conversation_history]
 
-                    await websocket.send_json({
-                        "type": "get_chat", "status": "acknowledged",
-                        "session_id": session_id, "chat_history": chat_history
-                    })
+                    if websocket.client_state == WebSocketState.CONNECTED:
+                        try:
+                            await websocket.send_json({
+                                "type": "get_chat", 
+                                "status": "acknowledged",
+                                "session_id": session_id, 
+                                "chat_history": chat_history
+                            })
+                        except Exception as e:
+                            logger.error(f"Failed to send history (Socket closed?): {e}")
                 except Exception as e:
                     logger.error(f"Error loading chat: {e}")
                 continue

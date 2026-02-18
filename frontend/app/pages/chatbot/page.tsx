@@ -116,7 +116,12 @@ function ChatContent() {
     old_responses_attachments: { responses: AssistantMessage[], attachments: Attachment[] } | null;
     timestamp: number | null;
   } | null>(null);
+  const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
+  const lastPongRef = useRef<number>(Date.now());
   const reconnectAttemptRef = useRef(0);
+  const urlSessionId = searchParams.get("session_id");
+  const totalReconnectAttempts = useRef(0);
+  const MAX_RECONNECT_TRIES = 5;
   const router = useRouter()
 
   useEffect(() => {
@@ -131,6 +136,25 @@ function ChatContent() {
         localStorage.removeItem("tadabbur_pending_prompt");
       }
     }
+  }, []);
+
+  useEffect(() => {
+    const handleOffline = () => {
+      console.log("🌐 Browser report: Network is OFF");
+      setConnectionStatus("disconnected");
+    };
+
+    const handleOnline = () => {
+      console.log("🌐 Browser report: Network is ON");
+    };
+
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleOnline);
+
+    return () => {
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", handleOnline);
+    };
   }, []);
 
   function preprocessContent(content: string) {
@@ -149,6 +173,7 @@ function ChatContent() {
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    localStorage.removeItem("tadabbur_pending_prompt");
     router.push('/pages/auth');
   };
 
@@ -374,19 +399,23 @@ function ChatContent() {
   useEffect(() => {
     let reconnectTimeout: NodeJS.Timeout;
     const connect = () => {
+      if (totalReconnectAttempts.current >= MAX_RECONNECT_TRIES) {
+        console.log(" Max reconnect attempts reached. Waiting for manual user action.");
+        setConnectionStatus("disconnected"); 
+        return;
+      }
       const token = localStorage.getItem("token");
       if (!token) {
         console.error("No authentication token found. Cannot connect to chat.");
         return;
       }
 
-      const urlSessionId = searchParams.get("session_id");
-
       const websocket = new WebSocket(`${process.env.NEXT_PUBLIC_WEBSOCKET_URL}/ws/chat?token=${token}`);
       wsRef.current = websocket;
       websocket.onopen = async () => {
         setConnectionStatus("syncing");
         reconnectAttemptRef.current = 0;
+        totalReconnectAttempts.current = 0;
         const user = localStorage.getItem("user");
         let user_id = null;
         if (user) {
@@ -423,6 +452,20 @@ function ChatContent() {
             // If no history to fetch, we are ready immediately
             setConnectionStatus("connected");
           }
+          
+          if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+
+          heartbeatRef.current = setInterval(() => {
+              if (websocket.readyState === WebSocket.OPEN) {
+                  websocket.send(JSON.stringify({ type: "ping" }));
+                  const timeSinceLastMessage = Date.now() - lastPongRef.current;
+                  if (timeSinceLastMessage > 60000) { 
+                    console.warn(" Zombie connection detected. Force closing...");
+                    websocket.close(); 
+                  }
+              }
+          }, 50000);
+
           setTimeout(() => {
             setConnectionStatus((prev) => prev === "syncing" ? "connected" : prev);
           }, 5000);
@@ -435,7 +478,12 @@ function ChatContent() {
       };
 
       wsRef.current.onclose = () => {
+        if (heartbeatRef.current) {
+            clearInterval(heartbeatRef.current);
+            heartbeatRef.current = null;
+        }
         setConnectionStatus("disconnected");
+        totalReconnectAttempts.current += 1;
         const delay = Math.min(1000 * Math.pow(2, reconnectAttemptRef.current), 30000);
       
         console.log(`❌ Socket closed. Retrying in ${delay / 1000}s...`);
@@ -452,8 +500,14 @@ function ChatContent() {
       };
 
       wsRef.current.onmessage = (event) => {
+        lastPongRef.current = Date.now();
         const data = JSON.parse(event.data);
         // console.log("Data from websocket", event.data);
+
+        if (data.type === "pong") {
+          console.log("Pong received - connection alive");
+          return;
+        }
 
         const type = data.type;
         switch (type) {
@@ -781,21 +835,27 @@ function ChatContent() {
 
     return () => {
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
-      wsRef.current?.close();
+      if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+      if (wsRef.current) {
+        wsRef.current.onclose = null; 
+        wsRef.current.onmessage = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      } 
     };
 
-  }, [searchParams]);
+  }, [searchParams, urlSessionId]);
 
   useEffect(() => {
     if (connectionStatus === "connected" && pendingPromptRef.current) {
       const data = pendingPromptRef.current;
       
+      // Retry the call
+      ask(data.input, data.guidelines, data.resend_flag, data.resend_message_id, data.old_responses_attachments);
+
       // Clear 
       localStorage.removeItem("tadabbur_pending_prompt");
       pendingPromptRef.current = null;
-      
-      // Retry the call
-      ask(data.input, data.guidelines, data.resend_flag, data.resend_message_id, data.old_responses_attachments);
     }
   }, [connectionStatus]);
 
@@ -852,6 +912,22 @@ function ChatContent() {
     old_responses_attachments: { responses: AssistantMessage[], attachments: Attachment[] } | null = null
   ) => {
     if (streamingMessageIndex !== null || (!input.trim() && !fileContext)) return;
+
+    if (connectionStatus !== "connected") {
+      console.log("📡 Socket not ready. Saving prompt to pending queue.");
+      const pendingData = { 
+          input, 
+          guidelines, 
+          resend_flag, 
+          resend_message_id, 
+          old_responses_attachments,
+          timestamp: Date.now() 
+      };
+      pendingPromptRef.current = pendingData;
+      localStorage.setItem("tadabbur_pending_prompt", JSON.stringify(pendingData));
+      console.log("prompt saved to pending queue:", pendingData);
+      return; // Exit the function. Do not try to send via WebSocket.
+    }
 
     if (resend_flag) {
       if (!old_responses_attachments || old_responses_attachments.responses.length === 0) {
@@ -937,21 +1013,6 @@ function ChatContent() {
 
     currentMessageIDRef.current = messageID;
 
-    if (connectionStatus !== "connected") {
-      console.log("📡 Socket not ready. Saving prompt to pending queue.");
-      const pendingData = { 
-          input, 
-          guidelines, 
-          resend_flag, 
-          resend_message_id, 
-          old_responses_attachments,
-          timestamp: Date.now() 
-      };
-      pendingPromptRef.current = pendingData;
-      localStorage.setItem("tadabbur_pending_prompt", JSON.stringify(pendingData));
-      console.log("prompt saved to pending queue:", pendingData);
-      return; // Exit the function. Do not try to send via WebSocket.
-    }
     try {
       await wsSendAsync(wsRef.current, {
         type: "user_message",
@@ -1056,7 +1117,7 @@ function ChatContent() {
       ) : (
         <div className="relative w-screen h-screen bg-gray-50 flex flex-col items-center">
           {/* --- UI STATUS INDICATOR --- */}
-          <div className="fixed top-4 right-4 z-[9999] flex flex-col items-end gap-y-2 pointer-events-none">
+          <div className="fixed top-4 right-4 z-9999 flex flex-col items-end gap-y-2 pointer-events-none">
             <AnimatePresence mode="wait">
               {connectionStatus === "disconnected" && (
                 <motion.span 
