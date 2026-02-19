@@ -72,7 +72,6 @@ system_instructions = f"""
 You are an expert in extracting structured information from Asbab e Nuzul (Circumstances of Revelation)
 from a given extract.
 
-
 EXAMPLES
 
 **Extract:**

@@ -309,8 +309,11 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
     # initialize the conversation history and message_IDs set
     conversation_history = []
     unique_message_ids = []
+<<<<<<< HEAD
+=======
     current_session_id = None
     initialized = False
+>>>>>>> 7bef12163bf41a0a0ec17917ac1ca422d89668f1
 
     # ====== SESSION CODE START ======
     session_id = None
@@ -909,6 +912,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
                     user_message_id = user_message_id if not resend_flag else resend_message_id
                     ai_response = response_object.response
+                    print(ai_response)
                     # append assistant message to conversation history
                     conversation_history.append({"role": "assistant", "content": ai_response , "id": response_message_id, "reply_to_message_id": user_message_id})
 

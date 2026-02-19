@@ -89,12 +89,12 @@ function ChatContent() {
     [],
   );
   const [isGenerating, setIsGenerating] = useState(false);
-    const currentStreamingMsgRef = useRef<{
+  const currentStreamingMsgRef = useRef<{
     message_id: string;
     reply_to_message_id: string;
   } | null>(null);
-    const streamingContentRef = useRef<string>("");
-    const stopStreamRef = useRef<(() => void) | null>(null);
+  const streamingContentRef = useRef<string>("");
+  const stopStreamRef = useRef<(() => void) | null>(null);
 
   const searchParams = useSearchParams()
   const oldMessagesRef = useRef<AssistantMessage[]>([]);
@@ -349,7 +349,7 @@ function ChatContent() {
       return;
     }
 
-    
+
 
     const urlSessionId = searchParams.get("session_id");
 
@@ -629,11 +629,11 @@ function ChatContent() {
           setLoading(false);
           setLoadingMessage(null);
           setIsGenerating(true);
-            streamingContentRef.current = "";
-            currentStreamingMsgRef.current = {
-              message_id: message_id,
-              reply_to_message_id: reply_to_message_id || ""
-            };
+          streamingContentRef.current = "";
+          currentStreamingMsgRef.current = {
+            message_id: message_id,
+            reply_to_message_id: reply_to_message_id || ""
+          };
           const tokens = reply.split(/(\s+)/);
 
           let stopFlag = false;
@@ -647,43 +647,43 @@ function ChatContent() {
               await new Promise((resolve) => setTimeout(resolve, 2));
 
               if (stopFlag) break;
-              
+
 
               setMessages((prev) => {
-                  if (!prev || prev.length === 0) return prev;
-                  const updated = [...prev];
-                  const streamIndex = streamingMessageIndex ?? updated.length - 1;
+                if (!prev || prev.length === 0) return prev;
+                const updated = [...prev];
+                const streamIndex = streamingMessageIndex ?? updated.length - 1;
 
-                  if (streamIndex >= 0 && streamIndex < updated.length) {
-                    const lastMsg = updated[streamIndex];
-                    const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
+                if (streamIndex >= 0 && streamIndex < updated.length) {
+                  const lastMsg = updated[streamIndex];
+                  const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
 
-                    updated[streamIndex].responses[lastResIdx].content =
-                      (updated[streamIndex].responses[lastResIdx].content || "") +
-                      chunk;
-                      streamingContentRef.current = updated[streamIndex].responses[lastResIdx].content;
-                  }
-                  return updated;
-                });
+                  updated[streamIndex].responses[lastResIdx].content =
+                    (updated[streamIndex].responses[lastResIdx].content || "") +
+                    chunk;
+                  streamingContentRef.current = updated[streamIndex].responses[lastResIdx].content;
+                }
+                return updated;
+              });
             }
           })().then(() => {
             setStreamingMessageIndex(null);
             stopStreamRef.current = null;
-              setStreamingMessageIndex(null);
-              setIsGenerating(false);
-              currentStreamingMsgRef.current = null;
-              streamingContentRef.current = "";
+            setStreamingMessageIndex(null);
+            setIsGenerating(false);
+            currentStreamingMsgRef.current = null;
+            streamingContentRef.current = "";
           });
           break;
 
-          case "stop_acknowledged":
-            // reset states related to streaming
-            setIsGenerating(false);
-            setStreamingMessageIndex(null);
-            setLoading(false);
-            currentStreamingMsgRef.current = null;
-            streamingContentRef.current = "";
-            break;
+        case "stop_acknowledged":
+          // reset states related to streaming
+          setIsGenerating(false);
+          setStreamingMessageIndex(null);
+          setLoading(false);
+          currentStreamingMsgRef.current = null;
+          streamingContentRef.current = "";
+          break;
 
         case "agent":
           const agent_type = data.agent;
@@ -722,7 +722,6 @@ function ChatContent() {
           }
 
           break;
-  
         default:
           break;
       }
@@ -775,29 +774,29 @@ function ChatContent() {
   }, [attachedFile, sessionID]);
 
   const stopGeneration = () => {
-      if (!currentStreamingMsgRef.current || !wsRef.current) return;
-  
-      if (stopStreamRef.current) {
-        stopStreamRef.current();
-        stopStreamRef.current = null;
-      }
-  
-      const partialContent = streamingContentRef.current;
-      const msgId = currentStreamingMsgRef.current.message_id;
-  
-      setIsGenerating(false);
-      setStreamingMessageIndex(null);
-      setLoading(false);
-  
-      wsSendAsync(wsRef.current, {
-        type: "stop_generation",
-        message_id: msgId,
-        partial_content: partialContent,
-      });
-  
-      currentStreamingMsgRef.current = null;
-      streamingContentRef.current = "";
-    };
+    if (!currentStreamingMsgRef.current || !wsRef.current) return;
+
+    if (stopStreamRef.current) {
+      stopStreamRef.current();
+      stopStreamRef.current = null;
+    }
+
+    const partialContent = streamingContentRef.current;
+    const msgId = currentStreamingMsgRef.current.message_id;
+
+    setIsGenerating(false);
+    setStreamingMessageIndex(null);
+    setLoading(false);
+
+    wsSendAsync(wsRef.current, {
+      type: "stop_generation",
+      message_id: msgId,
+      partial_content: partialContent,
+    });
+
+    currentStreamingMsgRef.current = null;
+    streamingContentRef.current = "";
+  };
 
   const ask = async (
     input: string,
@@ -1507,7 +1506,7 @@ function ChatContent() {
                       onClick={stopGeneration}
                       className="flex items-center gap-x-2 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs rounded-md switzer-500 transition-colors shadow-sm"
                     >
-                    <div className="w-2 h-2 bg-white rounded-sm"></div>
+                      <div className="w-2 h-2 bg-white rounded-sm"></div>
                       Stop
                     </button>
                   </div>
