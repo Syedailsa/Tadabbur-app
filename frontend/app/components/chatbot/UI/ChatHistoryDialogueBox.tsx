@@ -153,6 +153,7 @@ const ChatHisoryDialogueBox = () => {
                       onClick={() => {
                         setSelectedSessionID(chat.session_id);
                         setOpenChatHistoryDialogueBox(false);
+            
                         wsSendAsync(wsRef.current, {
                           type: "get_chat",
                           session_id: chat.session_id,

@@ -392,89 +392,50 @@ async def execute_write(query: str, *args):
         return await conn.execute(query, *args)
 
 async def delete_all_user_sessions(user_id: str):
-    """Delete all chat sessions and messages for a specific user"""
+    """Delete all chat sessions and messages for a specific user using batching"""
     supabase_client = get_supabase_client()
 
     try:
-        # Get all session_ids for the user
-        sessions_with_user = supabase_client.table('chat_sessions')\
+        sessions_res = supabase_client.table('chat_sessions')\
             .select('session_id')\
-            .eq('user_id', user_id)\
+            .or_(f"user_id.eq.{user_id},user_id.is.null")\
             .execute()
 
-        # Also get sessions without user_id (backward compatibility)
-        sessions_without_user = supabase_client.table('chat_sessions')\
-            .select('session_id')\
-            .is_('user_id', None)\
+        session_ids = [s['session_id'] for s in sessions_res.data]
+
+        if not session_ids:
+            return True
+
+        supabase_client.table('session_files')\
+            .delete()\
+            .in_('session_id', session_ids)\
             .execute()
 
-        session_ids = [s['session_id'] for s in sessions_with_user.data + sessions_without_user.data]
+        messages_res = supabase_client.table('chat_messages')\
+            .select('message_id')\
+            .in_('session_id', session_ids)\
+            .execute()
 
-        if session_ids:
-            # 🆕 Delete session files first
-            for sess_id in session_ids:
-                try:
-                    supabase_client.table('session_files')\
-                        .delete()\
-                        .eq('session_id', sess_id)\
-                        .execute()
-                except Exception as e:
-                    logger.warning(f"Error deleting files for session {sess_id}: {e}")
+        message_ids = [m['message_id'] for m in messages_res.data]
 
-            # Get message IDs
-            messages = supabase_client.table('chat_messages')\
-                .select('message_id')\
-                .in_('session_id', session_ids)\
-                .execute()
+        if message_ids:
+            supabase_client.table('chat_rules').delete().in_('message_id', message_ids).execute()
 
-            message_ids = [m['message_id'] for m in messages.data]
+        supabase_client.table('content_feedback').delete().in_('session_id', session_ids).execute()
+        supabase_client.table('chat_messages').delete().in_('session_id', session_ids).execute()
+        supabase_client.table('chat_sessions').delete().in_('session_id', session_ids).execute()
 
-            if message_ids:
-                # Delete chat_rules
-                for msg_id in message_ids:
-                    try:
-                        supabase_client.table('chat_rules')\
-                            .delete()\
-                            .eq('message_id', msg_id)\
-                            .execute()
-                    except Exception:
-                        pass
-
-                # Delete content_feedback
-                for sess_id in session_ids:
-                    try:
-                        supabase_client.table('content_feedback')\
-                            .delete()\
-                            .eq('session_id', sess_id)\
-                            .execute()
-                    except Exception:
-                        pass
-
-                # Delete messages
-                supabase_client.table('chat_messages')\
-                    .delete()\
-                    .in_('session_id', session_ids)\
-                    .execute()
-
-            # Delete sessions
-            supabase_client.table('chat_sessions')\
-                .delete()\
-                .in_('session_id', session_ids)\
-                .execute()
-
-            print(f"✅ Deleted {len(session_ids)} sessions for user {user_id}")
+        print(f"✅ Fast-deleted {len(session_ids)} sessions for user {user_id}")
         return True
     except Exception as e:
-        print(f"❌ Error deleting all sessions for user {user_id}: {e}")
+        print(f"❌ Error in fast delete: {e}")
         return False
-
 
 async def delete_user_session(user_id: str, session_id: str):
     """Delete a specific chat session and its messages for a user"""
     supabase_client = get_supabase_client()
 
     try:
-        # Verify the session belongs to the user
         session_check = supabase_client.table('chat_sessions')\
             .select('session_id')\
             .eq('session_id', session_id)\
@@ -482,61 +443,25 @@ async def delete_user_session(user_id: str, session_id: str):
             .execute()
 
         if not session_check.data:
-            print(f"❌ Session {session_id} not found or doesn't belong to user {user_id}")
             return False
 
-        # 🆕 Delete session files first
-        try:
-            supabase_client.table('session_files')\
-                .delete()\
-                .eq('session_id', session_id)\
-                .execute()
-            print(f"✅ Deleted files for session {session_id}")
-        except Exception as e:
-            logger.warning(f"Error deleting files: {e}")
-
-        # Get message_ids for this session
-        messages = supabase_client.table('chat_messages')\
+        messages_res = supabase_client.table('chat_messages')\
             .select('message_id')\
             .eq('session_id', session_id)\
             .execute()
+        message_ids = [m['message_id'] for m in messages_res.data]
 
-        message_ids = [m['message_id'] for m in messages.data]
-
+        supabase_client.table('session_files').delete().eq('session_id', session_id).execute()
+        
         if message_ids:
-            # Delete chat_rules
-            for msg_id in message_ids:
-                try:
-                    supabase_client.table('chat_rules')\
-                        .delete()\
-                        .eq('message_id', msg_id)\
-                        .execute()
-                except Exception:
-                    pass
+            supabase_client.table('chat_rules').delete().in_('message_id', message_ids).execute()
 
-            # Delete content_feedback
-            try:
-                supabase_client.table('content_feedback')\
-                    .delete()\
-                    .eq('session_id', session_id)\
-                    .execute()
-            except Exception:
-                pass
+        supabase_client.table('content_feedback').delete().eq('session_id', session_id).execute()
+        supabase_client.table('chat_messages').delete().eq('session_id', session_id).execute()
+        supabase_client.table('chat_sessions').delete().eq('session_id', session_id).execute()
 
-            # Delete messages
-            supabase_client.table('chat_messages')\
-                .delete()\
-                .eq('session_id', session_id)\
-                .execute()
-
-        # Delete the session
-        supabase_client.table('chat_sessions')\
-            .delete()\
-            .eq('session_id', session_id)\
-            .execute()
-
-        print(f"✅ Deleted session {session_id} for user {user_id}")
+        print(f"✅ Successfully deleted session {session_id}")
         return True
     except Exception as e:
-        print(f"❌ Error deleting session {session_id} for user {user_id}: {e}")
+        print(f"❌ Error: {e}")
         return False

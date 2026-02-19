@@ -2,9 +2,10 @@ import os
 import secrets
 import hashlib
 import uuid
+from jose import JWTError
 import jwt
 from datetime import datetime, timedelta
-from fastapi import HTTPException, Header
+from fastapi import HTTPException, Header, logger
 from typing import Optional
 from google.oauth2 import id_token
 from google.auth.transport import requests
@@ -177,11 +178,12 @@ async def send_otp_email(email: str, otp: str, username: str = "User"):
 
 # ==================== ID GENERATORS ====================
 
-def generate_user_id() -> str:
-    return f"user_{secrets.token_hex(8)}"
-
 def generate_notification_id() -> str:
     return f"notif_{secrets.token_hex(8)}"
+
+def generate_session_id() -> str:
+    """Generate unique session ID: sess_ + 12 hex chars"""
+    return f"sess_{secrets.token_hex(6)}"
 
 def generate_bookmark_id() -> str:
     return f"bookmark_{secrets.token_hex(8)}"
@@ -206,3 +208,31 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
     payload = decode_token(token)
     
     return payload
+
+def get_user_from_token(token: str):
+    """
+    Decodes the JWT token to get user_id.
+    """
+    if not SECRET_KEY:
+        logger.error(" CRITICAL: SECRET_KEY is missing in main.py")
+        return None
+
+    try:
+        if token.startswith("Bearer "):
+            token = token.split(" ")[1]
+
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+         
+        user_id: str = payload.get("user_id")
+        
+        if user_id is None:
+            logger.error(f" Token Valid but 'user_id' missing. Payload: {payload}")
+            return None
+        return user_id
+
+    except JWTError as e:
+        logger.error(f" JWT Validation Failed: {str(e)}")
+        return None
+    except Exception as e:
+        logger.error(f" Unexpected Token Error: {str(e)}")
+        return None

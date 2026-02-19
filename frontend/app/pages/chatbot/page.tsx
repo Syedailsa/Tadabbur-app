@@ -88,6 +88,14 @@ function ChatContent() {
   const [reportedMessageIDs, setReportedMessageIDs] = useState<string[] | null>(
     [],
   );
+  const [isGenerating, setIsGenerating] = useState(false);
+  const currentStreamingMsgRef = useRef<{
+    message_id: string;
+    reply_to_message_id: string;
+  } | null>(null);
+  const streamingContentRef = useRef<string>("");
+  const stopStreamRef = useRef<(() => void) | null>(null);
+
   const searchParams = useSearchParams()
   const oldMessagesRef = useRef<AssistantMessage[]>([]);
   const controls = useAnimationControls();
@@ -340,6 +348,8 @@ function ChatContent() {
       console.error("No authentication token found. Cannot connect to chat.");
       return;
     }
+
+
 
     const urlSessionId = searchParams.get("session_id");
 
@@ -618,13 +628,26 @@ function ChatContent() {
 
           setLoading(false);
           setLoadingMessage(null);
+          setIsGenerating(true);
+          streamingContentRef.current = "";
+          currentStreamingMsgRef.current = {
+            message_id: message_id,
+            reply_to_message_id: reply_to_message_id || ""
+          };
           const tokens = reply.split(/(\s+)/);
+
+          let stopFlag = false;
+          stopStreamRef.current = () => { stopFlag = true; };
 
           (async () => {
             for (let i = 0; i < tokens.length; i += 4) {
-              const chunk = tokens.slice(i, i + 4).join("");
+              if (stopFlag) break;
 
+              const chunk = tokens.slice(i, i + 4).join("");
               await new Promise((resolve) => setTimeout(resolve, 2));
+
+              if (stopFlag) break;
+
 
               setMessages((prev) => {
                 if (!prev || prev.length === 0) return prev;
@@ -638,13 +661,28 @@ function ChatContent() {
                   updated[streamIndex].responses[lastResIdx].content =
                     (updated[streamIndex].responses[lastResIdx].content || "") +
                     chunk;
+                  streamingContentRef.current = updated[streamIndex].responses[lastResIdx].content;
                 }
                 return updated;
               });
             }
           })().then(() => {
             setStreamingMessageIndex(null);
+            stopStreamRef.current = null;
+            setStreamingMessageIndex(null);
+            setIsGenerating(false);
+            currentStreamingMsgRef.current = null;
+            streamingContentRef.current = "";
           });
+          break;
+
+        case "stop_acknowledged":
+          // reset states related to streaming
+          setIsGenerating(false);
+          setStreamingMessageIndex(null);
+          setLoading(false);
+          currentStreamingMsgRef.current = null;
+          streamingContentRef.current = "";
           break;
 
         case "agent":
@@ -684,7 +722,6 @@ function ChatContent() {
           }
 
           break;
-
         default:
           break;
       }
@@ -735,6 +772,31 @@ function ChatContent() {
       isCancelled = true;
     };
   }, [attachedFile, sessionID]);
+
+  const stopGeneration = () => {
+    if (!currentStreamingMsgRef.current || !wsRef.current) return;
+
+    if (stopStreamRef.current) {
+      stopStreamRef.current();
+      stopStreamRef.current = null;
+    }
+
+    const partialContent = streamingContentRef.current;
+    const msgId = currentStreamingMsgRef.current.message_id;
+
+    setIsGenerating(false);
+    setStreamingMessageIndex(null);
+    setLoading(false);
+
+    wsSendAsync(wsRef.current, {
+      type: "stop_generation",
+      message_id: msgId,
+      partial_content: partialContent,
+    });
+
+    currentStreamingMsgRef.current = null;
+    streamingContentRef.current = "";
+  };
 
   const ask = async (
     input: string,
@@ -1436,6 +1498,18 @@ function ChatContent() {
                   >
                     {placeholder}
                   </span>
+                )}
+
+                {isGenerating && (
+                  <div className="flex justify-end mb-1">
+                    <button
+                      onClick={stopGeneration}
+                      className="flex items-center gap-x-2 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs rounded-md switzer-500 transition-colors shadow-sm"
+                    >
+                      <div className="w-2 h-2 bg-white rounded-sm"></div>
+                      Stop
+                    </button>
+                  </div>
                 )}
 
                 <BottomOptions />
