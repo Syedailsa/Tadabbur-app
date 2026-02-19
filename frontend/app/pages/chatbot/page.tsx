@@ -101,8 +101,63 @@ function ChatContent() {
   const controls = useAnimationControls();
   const [hidePromptExtraOptionsModelBoxArray, setHidePromptExtraOptionsModelBoxArray] =
     useState<hidePromptExtraOptionsModelBoxArray[]>([]);
-
+  const [connectionStatus, setConnectionStatus] = useState<"connected" | "reconnecting" | "disconnected" >("disconnected");
+  const pendingPromptRef = useRef<{
+    input: string;
+    guidelines: string | null;
+    resend_flag: boolean;
+    resend_message_id: string | null;
+    old_responses_attachments: { responses: AssistantMessage[], attachments: Attachment[] } | null;
+    timestamp: number | null;
+  } | null>(null);
+  const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
+  const lastPongRef = useRef<number>(Date.now());
+  const reconnectAttemptRef = useRef(0);
+  const urlSessionId = searchParams.get("session_id");
+  const totalReconnectAttempts = useRef(0);
+  const [showOfflineToast, setShowOfflineToast] = useState(false);
+  const MAX_RECONNECT_TRIES = 5;
   const router = useRouter()
+
+  useEffect(() => {
+  const savedPrompt = localStorage.getItem("tadabbur_pending_prompt");
+  if (savedPrompt) {
+      try {
+        const parsed = JSON.parse(savedPrompt);
+        const isExpired = Date.now() - (parsed.timestamp || 0) > 3600000;
+      
+      if (isExpired) {
+        console.log("🗑️ Pending prompt expired, clearing from storage.");
+        localStorage.removeItem("tadabbur_pending_prompt");
+      } else {
+        // put it back to the active queue for processing
+        pendingPromptRef.current = parsed;
+        console.log("📦 Recovered a valid pending message.");
+      }
+      } catch (e) {
+        localStorage.removeItem("tadabbur_pending_prompt");
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleOffline = () => {
+      console.log("🌐 Browser report: Network is OFF");
+      setConnectionStatus("disconnected");
+    };
+
+    const handleOnline = () => {
+      console.log("🌐 Browser report: Network is ON");
+    };
+
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleOnline);
+
+    return () => {
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, []);
 
   function preprocessContent(content: string) {
     if (!content) return "";
@@ -343,391 +398,486 @@ function ChatContent() {
   }, []);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      console.error("No authentication token found. Cannot connect to chat.");
-      return;
-    }
-
-    
-
-    const urlSessionId = searchParams.get("session_id");
-
-    const websocket = new WebSocket(`${process.env.NEXT_PUBLIC_WEBSOCKET_URL}/ws/chat?token=${token}`);
-    wsRef.current = websocket;
-    websocket.onopen = async () => {
-      const user = localStorage.getItem("user");
-      let user_id = null;
-      if (user) {
-        try {
-          const userData = JSON.parse(user);
-          user_id = userData.id;
-        } catch (e) {
-          console.error("Error parsing user data:", e);
-        }
+    let reconnectTimeout: NodeJS.Timeout;
+    const connect = () => {
+      if (totalReconnectAttempts.current >= MAX_RECONNECT_TRIES) {
+        console.log(" Max reconnect attempts reached. Waiting for manual user action.");
+        setConnectionStatus("disconnected"); 
+        return;
       }
 
-      const sessionInit: SessionInitMessage = {
-        type: "session-init",
-        session_id: urlSessionId || "",
-        user_id: user_id,
-        model: "kimi-k2-instruct-0905",
+      const token = localStorage.getItem("token");
+      if (!token) {
+        console.error("No authentication token found. Cannot connect to chat.");
+        return;
+      }
+
+      const websocket = new WebSocket(`${process.env.NEXT_PUBLIC_WEBSOCKET_URL}/ws/chat?token=${token}`);
+      wsRef.current = websocket;
+      websocket.onopen = async () => {
+        reconnectAttemptRef.current = 0;
+        totalReconnectAttempts.current = 0;
+        const user = localStorage.getItem("user");
+        let user_id = null;
+        if (user) {
+          try {
+            const userData = JSON.parse(user);
+            user_id = userData.id;
+          } catch (e) {
+            console.error("Error parsing user data:", e);
+          }
+        }
+
+        const sessionInit: SessionInitMessage = {
+          type: "session-init",
+          session_id: urlSessionId || "",
+          user_id: user_id,
+          model: "kimi-k2-instruct-0905",
+        };
+
+        try {
+          await wsSendAsync(
+            websocket,
+            sessionInit,
+            8,
+            500
+          );
+          if (urlSessionId) {
+            await wsSendAsync(
+              websocket, {
+              type: "get_chat",
+              session_id: urlSessionId,
+              user_id: user_id,
+            }, 8, 500)
+          } else {
+            // If no history to fetch, we are ready immediately
+            setConnectionStatus("connected");
+          }
+          
+          if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+
+          heartbeatRef.current = setInterval(() => {
+              if (websocket.readyState === WebSocket.OPEN) {
+                  websocket.send(JSON.stringify({ type: "ping" }));
+                  const timeSinceLastMessage = Date.now() - lastPongRef.current;
+                  if (timeSinceLastMessage > 60000) { 
+                    console.warn(" Zombie connection detected. Force closing...");
+                    websocket.close(); 
+                  }
+              }
+          }, 50000);
+
+        } catch (error) {
+          console.error("❌ Failed to initialize WebSocket session:", error);
+          setConnectionStatus("disconnected");
+        }
+        setReportedMessageIDs([]);
       };
 
-      try {
-        await wsSendAsync(
-          websocket,
-          sessionInit,
-          8,
-          500
-        );
-        if (urlSessionId) {
-          await wsSendAsync(
-            websocket, {
-            type: "get_chat",
-            session_id: urlSessionId,
-            user_id: user_id,
-          }, 8, 500
-          )
+      wsRef.current.onclose = () => {
+        if (heartbeatRef.current) {
+            clearInterval(heartbeatRef.current);
+            heartbeatRef.current = null;
         }
-      }
-      catch (error) {
-        console.error("❌ Failed to initialize WebSocket session:", error);
-      }
-      setReportedMessageIDs([]);
-    };
+        setConnectionStatus("disconnected");
+        totalReconnectAttempts.current += 1;
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttemptRef.current), 30000);
+      
+        console.log(`❌ Socket closed. Retrying in ${delay / 1000}s...`);
+        
+        reconnectTimeout = setTimeout(() => {
+          reconnectAttemptRef.current += 1;
+          connect();
+        }, delay);
+      };
 
-    wsRef.current.onerror = (error) => {
-      console.error("An error occured in websocket", error);
-    };
+      wsRef.current.onerror = (error) => {
+        console.error("An error occured in websocket", error);
+        websocket.close();
+      };
 
-    wsRef.current.onclose = () => {
-      // console.log("Websocket closed!");
-    };
+      wsRef.current.onmessage = (event) => {
+        lastPongRef.current = Date.now();
+        const data = JSON.parse(event.data);
+        // console.log("Data from websocket", event.data);
 
-    wsRef.current.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      // console.log("Data from websocket", event.data);
+        if (data.type === "pong") {
+          console.log("Pong received - connection alive");
+          return;
+        }
 
-      const type = data.type;
-      switch (type) {
-        case "undo-report":
-          const id = data.message_id;
-          if (id) {
-            setReportedMessageIDs((prev) => {
-              if (!prev) return prev;
-              return prev.filter((i) => i !== id);
-            });
-          }
-          break;
-
-        case "tts_audio_url":
-          const audio_url = data.audio_url;
-          const tts_message_id = data.message_id;
-          const user_message_id = data.user_id
-          if (audio_url && tts_message_id && user_message_id) {
-            // logic here
-            try {
-              // store the audio_url for next playback
-              setMessages(prev => prev.map(m => m.message_id === user_message_id ? { ...m, responses: m.responses.map(r => r.message_id === tts_message_id ? { ...r, audio_link: audio_url } : r) } : m))
-
-              // only play if current playable audio is the one that matches response ID
-              if (audioRef.current && currentPlayableAudio.current?.response_message_id == tts_message_id) {
-                audioRef.current.src = ""
-                audioRef.current.src = audio_url
-                audioRef.current.play()
-              }
-            } catch (err) {
-              console.log("Some error occured while assigning audio url", err)
-            }
-          }
-          break;
-
-        case "session_id":
-          const session_id = data.session_id;
-          const session_status = data.status;
-          const message_ids = data.message_ids;
-          if (session_status === "acknowledged") {
-            setSessionID(session_id);
-            const currentUrlId = searchParams.get("session_id");
-            if (!currentUrlId || currentUrlId === "") {
-              router.push(`/pages/chatbot?session_id=${session_id}`, { scroll: false });
-            }
-            setMessages([]);
-            setMessages((prevMessages) => {
-              if (prevMessages && prevMessages.length > 0) {
-                return [];
-              }
-              return prevMessages; // Return unchanged if no messages
-            });
-            setHidePromptExtraOptionsModelBoxArray([])
-            setMessageIDs(message_ids);
-
-          }
-          break;
-
-        case "model-selection":
-          const model_status = data.status;
-          const model_name = data.display_name;
-          if (model_status === "acknowledged") {
-            alert(`Model is changed to ${model_name}`);
-          }
-
-          break;
-        case "chat_history":
-          const chat_history = data.chat_history;
-          const history_status = data.status;
-          // handle chat history
-          if (history_status === "acknowledged") {
-            setChatHistory(chat_history);
-          } else if (history_status === "error") {
-            alert("Error loading chat history: " + data.error);
-          }
-          break;
-
-        case "delete_session":
-          const delete_status = data.status;
-          if (delete_status === "success") {
-            // Refresh chat history
-            const user = localStorage.getItem("user");
-            let user_id = null;
-            if (user) {
-              try {
-                const userData = JSON.parse(user);
-                user_id = userData.id;
-              } catch (e) {
-                console.error("Error parsing user data:", e);
-              }
-            }
-            if (user_id) {
-              wsSendAsync(wsRef.current, {
-                type: "chat_history",
-                user_id: user_id,
+        const type = data.type;
+        switch (type) {
+          case "undo-report":
+            const id = data.message_id;
+            if (id) {
+              setReportedMessageIDs((prev) => {
+                if (!prev) return prev;
+                return prev.filter((i) => i !== id);
               });
             }
-            alert("Chat session deleted successfully");
-          } else {
-            alert("Error deleting chat session: " + data.error);
-          }
-          break;
+            break;
 
-        case "delete_all_sessions":
-          const delete_all_status = data.status;
-          if (delete_all_status === "success") {
-            setChatHistory([]);
-            alert("All chat sessions deleted successfully");
-          } else {
-            alert("Error deleting all chat sessions: " + data.error);
-          }
-          break;
+          case "tts_audio_url":
+            const audio_url = data.audio_url;
+            const tts_message_id = data.message_id;
+            const user_message_id = data.user_id
+            if (audio_url && tts_message_id && user_message_id) {
+              // logic here
+              try {
+                // store the audio_url for next playback
+                setMessages(prev => prev.map(m => m.message_id === user_message_id ? { ...m, responses: m.responses.map(r => r.message_id === tts_message_id ? { ...r, audio_link: audio_url } : r) } : m))
 
-        case "get_chat":
-          const status = data.status;
-          if (status === "acknowledged") {
-            const messageIDs = data.unique_message_ids;
-            const session_id = data.session_id
-            const chat_history = groupChatMessages(data.chat_history);
-            setMessages(chat_history);
-            setMessageIDs(messageIDs);
+                // only play if current playable audio is the one that matches response ID
+                if (audioRef.current && currentPlayableAudio.current?.response_message_id == tts_message_id) {
+                  audioRef.current.src = ""
+                  audioRef.current.src = audio_url
+                  audioRef.current.play()
+                }
+              } catch (err) {
+                console.log("Some error occured while assigning audio url", err)
+              }
+            }
+            break;
 
-            // initialize an emtpy array for hidePromptExtraOptionsModelBoxArray
-            const array: hidePromptExtraOptionsModelBoxArray[] = [];
-            if (data.chat_history.length > 0) {
-              for (const record of data.chat_history) {
-                if (record.role === "assistant") {
-                  array.push({ assistant_message_id: record.message_id, hidePromptExtraOptionsModelBox: true })
+            case "session_id":
+              const session_id = data.session_id;
+              const session_status = data.status;
+              const message_ids = data.message_ids;
+              if (session_status === "acknowledged") {
+                setSessionID(session_id);
+                const currentUrlId = searchParams.get("session_id");
+                if (!currentUrlId || currentUrlId === "") {
+                  router.push(`/pages/chatbot?session_id=${session_id}`, { scroll: false });
+                }
+                setMessages([]);
+                setMessages((prevMessages) => {
+                  if (prevMessages && prevMessages.length > 0) {
+                    return [];
+                  }
+                  return prevMessages; // Return unchanged if no messages
+                });
+                setHidePromptExtraOptionsModelBoxArray([])
+                setMessageIDs(message_ids);
+              }
+              break;
+
+          case "model-selection":
+            const model_status = data.status;
+            const model_name = data.display_name;
+            if (model_status === "acknowledged") {
+              alert(`Model is changed to ${model_name}`);
+            }
+
+            break;
+          case "chat_history":
+            const chat_history = data.chat_history;
+            const history_status = data.status;
+            // handle chat history
+            if (history_status === "acknowledged") {
+              setChatHistory(chat_history);
+            } else if (history_status === "error") {
+              alert("Error loading chat history: " + data.error);
+            }
+            break;
+
+          case "delete_session":
+            const delete_status = data.status;
+            if (delete_status === "success") {
+              // Refresh chat history
+              const user = localStorage.getItem("user");
+              let user_id = null;
+              if (user) {
+                try {
+                  const userData = JSON.parse(user);
+                  user_id = userData.id;
+                } catch (e) {
+                  console.error("Error parsing user data:", e);
                 }
               }
+              if (user_id) {
+                wsSendAsync(wsRef.current, {
+                  type: "chat_history",
+                  user_id: user_id,
+                });
+              }
+              alert("Chat session deleted successfully");
+            } else {
+              alert("Error deleting chat session: " + data.error);
             }
-            setHidePromptExtraOptionsModelBoxArray(array)
-            router.push(`/pages/chatbot?session_id=${session_id}`);
-          }
-          break;
+            break;
 
-        case "assistance_response":
-          const reply: string = data.content.response ?? "No reply from server";
-          const has_verse_audio: boolean = data.content.has_verse_audio
-          const has_verse_image: boolean = data.content.has_verse_image
-          const message_id: string = data.message_id;
-          // assign reply to message ID with order data.reply_to_message_id >> currentMessageIDRef.current >> null
-          const reply_to_message_id =
-            data.reply_to_message_id || currentMessageIDRef.current || null;
-          const resend_flag = data.resend_flag;
-          const audio_data: SurahForAudios[] = data.content.audio_data || []
-          const verse_images: SurahForVerseImages[] = data.content.verse_images || []
-
-          // check if oldMessages is present with resend flag
-          if (resend_flag) {
-            if (
-              !oldMessagesRef.current ||
-              oldMessagesRef.current.length === 0
-            ) {
-              // console.log("No old messages so returning...");
-              break;
+          case "delete_all_sessions":
+            const delete_all_status = data.status;
+            if (delete_all_status === "success") {
+              setChatHistory([]);
+              alert("All chat sessions deleted successfully");
+            } else {
+              alert("Error deleting all chat sessions: " + data.error);
             }
-          }
+            break;
 
-          messageScrollFlag.current = false;
-          setLoadingMessage(null);
+          case "get_chat":
+            const status = data.status;
+            if (status === "acknowledged") {
+              const messageIDs = data.unique_message_ids;
+              const session_id = data.session_id
+              const chat_history = groupChatMessages(data.chat_history);
+              setMessages(chat_history);
+              setMessageIDs(messageIDs);
+              setConnectionStatus("connected"); 
+              setLoading(false);
 
-          // add a new object for the upcoming assistant's message
-          setHidePromptExtraOptionsModelBoxArray((prev) => {
-            return [
-              ...(prev || []),
-              { assistant_message_id: message_id, hidePromptExtraOptionsModelBox: true }
-            ];
-          });
+              const lastMsg = chat_history[chat_history.length - 1];
 
-          // Add a new assistant message
-          setMessages((prev) => {
-            if (!prev || prev.length == 0) {
-              return prev;
-            }
-            const updated = [...(prev || [])];
-
-            // although streamingMessageIndex is already set in ask function, but setting again for safety
-            setStreamingMessageIndex(updated.length - 1);
-            const lastUserMessage = updated.findLast((m) => m.role === "user");
-
-            if (lastUserMessage) {
-              if (!lastUserMessage.number_of_responses) {
-                lastUserMessage.number_of_responses = 1;
-              } else {
-                lastUserMessage.number_of_responses += 1;
+              if (lastMsg && lastMsg.role === "user" && (!lastMsg.responses || lastMsg.responses.length === 0)) {
+                console.log("🤖 Auto-regenerating missing response for:", lastMsg.message_id);
+                
+                ask(
+                  lastMsg.content, 
+                  null, 
+                  true, 
+                  lastMsg.message_id, 
+                  { responses: [], attachments: lastMsg.attachments || [] }
+                );
               }
 
-              // initialize a new responses array if resend flag is false otherwise assign to oldMessages
-
-              lastUserMessage.responses = resend_flag
-                ? oldMessagesRef.current
-                : [];
-
-              // assign message_id and reply_to_message_id this time
-              lastUserMessage.responses.push({
-                role: "assistant",
-                message_id: message_id,
-                content: "",
-                reply_to_message_id: reply_to_message_id,
-                feedback: null,
-                audio_link: null,
-                audio_state: null,
-                has_verse_audio: has_verse_audio,
-                verse_audio_data: audio_data,
-                has_verse_image: has_verse_image,
-                verse_images: verse_images
-              });
-
-              // set the number of active message index
-              lastUserMessage.active_message_index =
-                lastUserMessage.number_of_responses - 1;
-            }
-
-            return updated;
-          });
-
-
-          setLoading(false);
-          setLoadingMessage(null);
-          setIsGenerating(true);
-            streamingContentRef.current = "";
-            currentStreamingMsgRef.current = {
-              message_id: message_id,
-              reply_to_message_id: reply_to_message_id || ""
-            };
-          const tokens = reply.split(/(\s+)/);
-
-          let stopFlag = false;
-          stopStreamRef.current = () => { stopFlag = true; };
-
-          (async () => {
-            for (let i = 0; i < tokens.length; i += 4) {
-              if (stopFlag) break;
-
-              const chunk = tokens.slice(i, i + 4).join("");
-              await new Promise((resolve) => setTimeout(resolve, 2));
-
-              if (stopFlag) break;
-              
-
-              setMessages((prev) => {
-                  if (!prev || prev.length === 0) return prev;
-                  const updated = [...prev];
-                  const streamIndex = streamingMessageIndex ?? updated.length - 1;
-
-                  if (streamIndex >= 0 && streamIndex < updated.length) {
-                    const lastMsg = updated[streamIndex];
-                    const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
-
-                    updated[streamIndex].responses[lastResIdx].content =
-                      (updated[streamIndex].responses[lastResIdx].content || "") +
-                      chunk;
-                      streamingContentRef.current = updated[streamIndex].responses[lastResIdx].content;
+              // initialize an emtpy array for hidePromptExtraOptionsModelBoxArray
+              const array: hidePromptExtraOptionsModelBoxArray[] = [];
+              if (data.chat_history.length > 0) {
+                for (const record of data.chat_history) {
+                  if (record.role === "assistant") {
+                    array.push({ assistant_message_id: record.message_id, hidePromptExtraOptionsModelBox: true })
                   }
-                  return updated;
-                });
+                }
+              }
+              setHidePromptExtraOptionsModelBoxArray(array)
+              router.push(`/pages/chatbot?session_id=${session_id}`);
             }
-          })().then(() => {
-            setStreamingMessageIndex(null);
-            stopStreamRef.current = null;
+            break;
+
+          case "assistance_response":
+            const reply: string = data.content.response ?? "No reply from server";
+            const has_verse_audio: boolean = data.content.has_verse_audio
+            const has_verse_image: boolean = data.content.has_verse_image
+            const message_id: string = data.message_id;
+            // assign reply to message ID with order data.reply_to_message_id >> currentMessageIDRef.current >> null
+            const reply_to_message_id =
+              data.reply_to_message_id || currentMessageIDRef.current || null;
+            const resend_flag = data.resend_flag;
+            const audio_data: SurahForAudios[] = data.content.audio_data || []
+            const verse_images: SurahForVerseImages[] = data.content.verse_images || []
+
+            // check if oldMessages is present with resend flag
+            if (resend_flag) {
+              if (
+                !oldMessagesRef.current ||
+                oldMessagesRef.current.length === 0
+              ) {
+                // console.log("No old messages so returning...");
+                break;
+              }
+            }
+
+            messageScrollFlag.current = false;
+            setLoadingMessage(null);
+
+            // add a new object for the upcoming assistant's message
+            setHidePromptExtraOptionsModelBoxArray((prev) => {
+              return [
+                ...(prev || []),
+                { assistant_message_id: message_id, hidePromptExtraOptionsModelBox: true }
+              ];
+            });
+
+            // Add a new assistant message
+            setMessages((prev) => {
+              if (!prev || prev.length == 0) {
+                return prev;
+              }
+              const updated = [...(prev || [])];
+
+              // although streamingMessageIndex is already set in ask function, but setting again for safety
+              setStreamingMessageIndex(updated.length - 1);
+              const lastUserMessage = updated.findLast((m) => m.role === "user");
+
+              if (lastUserMessage) {
+                if (!lastUserMessage.number_of_responses) {
+                  lastUserMessage.number_of_responses = 1;
+                } else {
+                  lastUserMessage.number_of_responses += 1;
+                }
+
+                // initialize a new responses array if resend flag is false otherwise assign to oldMessages
+
+                lastUserMessage.responses = resend_flag
+                  ? oldMessagesRef.current
+                  : [];
+
+                // assign message_id and reply_to_message_id this time
+                lastUserMessage.responses.push({
+                  role: "assistant",
+                  message_id: message_id,
+                  content: "",
+                  reply_to_message_id: reply_to_message_id,
+                  feedback: null,
+                  audio_link: null,
+                  audio_state: null,
+                  has_verse_audio: has_verse_audio,
+                  verse_audio_data: audio_data,
+                  has_verse_image: has_verse_image,
+                  verse_images: verse_images
+                });
+
+                // set the number of active message index
+                lastUserMessage.active_message_index =
+                  lastUserMessage.number_of_responses - 1;
+              }
+
+              return updated;
+            });
+
+
+            setLoading(false);
+            setLoadingMessage(null);
+            setIsGenerating(true);
+              streamingContentRef.current = "";
+              currentStreamingMsgRef.current = {
+                message_id: message_id,
+                reply_to_message_id: reply_to_message_id || ""
+              };
+            const tokens = reply.split(/(\s+)/);
+
+            let stopFlag = false;
+            stopStreamRef.current = () => { stopFlag = true; };
+
+            (async () => {
+              for (let i = 0; i < tokens.length; i += 4) {
+                if (stopFlag) break;
+
+                const chunk = tokens.slice(i, i + 4).join("");
+                await new Promise((resolve) => setTimeout(resolve, 2));
+
+                if (stopFlag) break;
+                
+
+                setMessages((prev) => {
+                    if (!prev || prev.length === 0) return prev;
+                    const updated = [...prev];
+                    const streamIndex = streamingMessageIndex ?? updated.length - 1;
+
+                    if (streamIndex >= 0 && streamIndex < updated.length) {
+                      const lastMsg = updated[streamIndex];
+                      const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
+
+                      updated[streamIndex].responses[lastResIdx].content =
+                        (updated[streamIndex].responses[lastResIdx].content || "") +
+                        chunk;
+                        streamingContentRef.current = updated[streamIndex].responses[lastResIdx].content;
+                    }
+                    return updated;
+                  });
+              }
+            })().then(() => {
               setStreamingMessageIndex(null);
+              stopStreamRef.current = null;
+                setStreamingMessageIndex(null);
+                setIsGenerating(false);
+                currentStreamingMsgRef.current = null;
+                streamingContentRef.current = "";
+            });
+            break;
+
+            case "stop_acknowledged":
+              // reset states related to streaming
               setIsGenerating(false);
+              setStreamingMessageIndex(null);
+              setLoading(false);
               currentStreamingMsgRef.current = null;
               streamingContentRef.current = "";
-          });
-          break;
-
-          case "stop_acknowledged":
-            // reset states related to streaming
-            setIsGenerating(false);
-            setStreamingMessageIndex(null);
-            setLoading(false);
-            currentStreamingMsgRef.current = null;
-            streamingContentRef.current = "";
-            break;
-
-        case "agent":
-          const agent_type = data.agent;
-          switch (agent_type) {
-            case "story-telling":
-              setPlaceholder("Generate an Islamic story");
-              setMessages([]);
-              setGreeting(
-                "Generate any Islamic story with the finest AI Models."
-              );
               break;
-            case "tafseer":
-              setPlaceholder("Let's lean about the Quran");
-              setMessages([]);
-              setGreeting(
-                "Assalam O Alaykum, I am Tadabbur, how may I help you today?"
-              );
+
+          case "agent":
+            const agent_type = data.agent;
+            switch (agent_type) {
+              case "story-telling":
+                setPlaceholder("Generate an Islamic story");
+                setMessages([]);
+                setGreeting(
+                  "Generate any Islamic story with the finest AI Models."
+                );
+                break;
+              case "tafseer":
+                setPlaceholder("Let's lean about the Quran");
+                setMessages([]);
+                setGreeting(
+                  "Assalam O Alaykum, I am Tadabbur, how may I help you today?"
+                );
+                break;
+            }
+            break;
+          case "loading_message":
+            const message = data.content ?? "Thinking to enhance response";
+            // setLoadingMessage(message);
+            break;
+          case "report":
+            const report_status = data.status;
+            if (report_status !== "acknowledged") {
+              break;
+            }
+            const reported_message_id = data.message_id;
+            if (reported_message_id) {
+              setReportedMessageIDs((prev) => [
+                ...(prev ?? []),
+                reported_message_id,
+              ]);
+            }
+
+              break;
+            // case "streaming_end":
+            //   audioScheduler.flush();
+            //   break;
+
+            default:
               break;
           }
-          break;
-        case "loading_message":
-          const message = data.content ?? "Thinking to enhance response";
-          // setLoadingMessage(message);
-          break;
-        case "report":
-          const report_status = data.status;
-          if (report_status !== "acknowledged") {
-            break;
-          }
-          const reported_message_id = data.message_id;
-          if (reported_message_id) {
-            setReportedMessageIDs((prev) => [
-              ...(prev ?? []),
-              reported_message_id,
-            ]);
-          }
-
-          break;
-  
-        default:
-          break;
-      }
+        };
     };
+
+    connect();
+
+    return () => {
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+      if (wsRef.current) {
+        wsRef.current.onclose = null; 
+        wsRef.current.onmessage = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      } 
+    };
+
   }, []);
+
+  useEffect(() => {
+  if (connectionStatus !== "connected") return;
+
+  const processPending = () => {
+    const saved = localStorage.getItem("tadabbur_pending_prompt");
+    const data = pendingPromptRef.current || (saved ? JSON.parse(saved) : null);
+
+    if (data && data.input) {
+      console.log("🚀 Reconnection Verified, Sending pending prompt...");
+      
+      ask(data.input, data.guidelines, data.resend_flag, data.resend_message_id, data.old_responses_attachments);
+      
+      localStorage.removeItem("tadabbur_pending_prompt");
+      pendingPromptRef.current = null;
+    }
+  };
+
+  processPending();
+}, [connectionStatus]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -807,6 +957,29 @@ function ChatContent() {
     old_responses_attachments: { responses: AssistantMessage[], attachments: Attachment[] } | null = null
   ) => {
     if (streamingMessageIndex !== null || (!input.trim() && !fileContext)) return;
+
+    if (connectionStatus !== "connected") {
+      console.log("📡 Socket not ready. Saving prompt to pending queue.");
+      const pendingData = { 
+          input, 
+          guidelines, 
+          resend_flag, 
+          resend_message_id, 
+          old_responses_attachments,
+          timestamp: Date.now() 
+      };
+      pendingPromptRef.current = pendingData;
+      try {
+        localStorage.setItem("tadabbur_pending_prompt", JSON.stringify(pendingData));
+        console.log("prompt saved to pending queue:", pendingData);
+      } catch (error) {
+        console.warn("⚠️ LocalStorage full, message only saved in memory:", error);
+      }
+      setShowOfflineToast(true);
+      setTimeout(() => setShowOfflineToast(false), 4000); // Hide after 4 seconds
+
+      return; 
+    }
 
     if (resend_flag) {
       if (!old_responses_attachments || old_responses_attachments.responses.length === 0) {
@@ -892,22 +1065,34 @@ function ChatContent() {
 
     currentMessageIDRef.current = messageID;
 
-    await wsSendAsync(wsRef.current, {
-      type: "user_message",
-      message_id: messageID,
-      role: "user",
-      system_instructions: guidelines || "",
-      content: input,
-      file_name: attachedFile?.name,
-      file_type: attachedFile?.type,
-      resend_flag: resend_flag,
-      resend_message_id: resend_message_id || "",
-      new_file_context: fileContext,
-    });
-    setFileContext(null);
-    if (inputRef.current) {
-      inputRef.current.innerText = "";
-      setShowPlaceholder(true);
+    try {
+      await wsSendAsync(wsRef.current, {
+        type: "user_message",
+        message_id: messageID,
+        role: "user",
+        system_instructions: guidelines || "",
+        content: input,
+        file_name: attachedFile?.name,
+        file_type: attachedFile?.type,
+        resend_flag: resend_flag,
+        resend_message_id: resend_message_id || "",
+        new_file_context: fileContext,
+      }); 
+      setFileContext(null);
+      if (inputRef.current) {
+        inputRef.current.innerText = "";
+        setShowPlaceholder(true);
+      }
+    } catch (err) {
+      console.error("Failed to send message:", err);
+      setConnectionStatus("disconnected");
+      // Also save to pending if the actual send fails
+      const pendingData = { 
+          input, guidelines, resend_flag, resend_message_id, old_responses_attachments, 
+          timestamp: Date.now() 
+      };
+      pendingPromptRef.current = pendingData;
+      localStorage.setItem("tadabbur_pending_prompt", JSON.stringify(pendingData));
     }
   };
 
@@ -983,6 +1168,35 @@ function ChatContent() {
         />
       ) : (
         <div className="relative w-screen h-screen bg-gray-50 flex flex-col items-center">
+          {/* --- UI STATUS INDICATOR --- */}
+          <div className="fixed top-4 right-4 z-9999 flex flex-col items-end gap-y-2 pointer-events-none">
+            <AnimatePresence mode="wait">
+              {connectionStatus === "disconnected" && (
+                <motion.span 
+                  key="offline"
+                  initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  className="bg-red-500 text-white px-3 py-1.5 rounded-full text-[0.7rem] switzer-600 shadow-lg animate-pulse"
+                >
+                  OFFLINE - TRYING TO RECONNECT 
+                </motion.span>
+              )}
+              {showOfflineToast && (
+                <motion.div
+                  initial={{ opacity: 0, y: 50 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 20 }}
+                  className="fixed bottom-24 z-100 bg-amber-100 border border-amber-300 text-amber-900 px-4 py-3 rounded-lg shadow-xl flex items-center gap-3"
+                >
+                  <div className="bg-amber-500 text-white rounded-full p-1">
+                    <UndoArrow className="w-4 h-4 rotate-180" />
+                  </div>
+                  <p className="switzer-500 text-sm">
+                    You're offline check your network connection ! 
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
           <ChatProvider
             chatHistory={chatHistory}
             setChatHistory={setChatHistory}

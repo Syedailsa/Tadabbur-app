@@ -75,4 +75,4 @@ async def refresh_system_instructions(state: dict, user_id:str):
         except Exception as e:
             print("Some error occured while building system instructions", e)
         
-        await asyncio.sleep(120)  # 2 minutes
+        await asyncio.sleep(120000)  # 2 minutes

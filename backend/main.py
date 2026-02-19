@@ -2,12 +2,13 @@ import sys
 import os
 import json
 import asyncio
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, status
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.websockets import WebSocketState
 from pydantic import BaseModel
 from typing import List
 import asyncio 
+from file_service import process_uploaded_file
 from models import OutputSchema, SurahForAudio, SurahForImage
 from langchain.messages import ToolMessage
 from collections import defaultdict
@@ -500,11 +501,17 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
             if data.get("type") == "get_chat":
                 requested_session_id = data.get("session_id", "")
+
+                if current_session_id == requested_session_id and len(conversation_history) > 0:
+                    logger.info(f"⚠️ get_chat already processed for {requested_session_id}, skipping duplicate.")
+                    continue
+
                 logger.info(f"📥 get_chat request for session: {requested_session_id}")
                 try:
-                    msg_task = asyncio.to_thread(get_chat_messages, requested_session_id, user_id, supabase_client)
-                    file_task = asyncio.to_thread(
-                        lambda: supabase_client.table('session_files')
+                    loop = asyncio.get_event_loop()
+                    msg_task = loop.run_in_executor( None, get_chat_messages, requested_session_id, user_id, supabase_client)
+                    file_task = loop.run_in_executor(
+                        None, lambda: supabase_client.table('session_files')
                         .select('file_id, file_name, file_type, message_id, file_content')
                         .eq("user_id", user_id).eq('session_id', requested_session_id)
                         .order('created_at').execute()
@@ -532,6 +539,8 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     session_id = requested_session_id
                     conversation_history = chat_history
                     unique_message_ids = [msg['message_id'] for msg in conversation_history]
+
+                    await asyncio.sleep(0.6)
 
                     if websocket.client_state == WebSocketState.CONNECTED:
                         try:

@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import LoginForm from '../../components/authentication/LoginForm';
 import SignupForm from '../../components/authentication/SignupForm';
 import GoogleLoginButton from '../../components/authentication/GoogleLoginButton';
 import ForgotPassword from '../../components/authentication/ForgotPassword';
 import { useRouter } from 'next/navigation';
+import Cookies from 'js-cookie';
 
 type AuthView = 'LOGIN' | 'SIGNUP' | 'FORGOT';
 
@@ -20,6 +21,13 @@ export default function AuthPage() {
     user_id: string;
     firstname: string;
   };
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      router.replace('/pages/chatbot');
+    }
+  }, [router]);
 
   const handleAuthSuccess = (data: AuthSuccessData) => {
     console.log("Auth Successful:", data);
