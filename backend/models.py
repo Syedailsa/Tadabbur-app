@@ -77,6 +77,8 @@ class OutputSchema(BaseModel):
     has_verse_image: bool = Field(..., description = "Determines whether the response contains verse image links or not")
     verse_images: List[SurahForImage] = Field(default_factory=list, description = "Verse image data containing verse-image links, surah names, verse numbers")
 
+class CleanText(BaseModel):
+    response: str = Field(..., description="The clean response for tts")
 
 
 # ==================== NOTIFICATION MODELS ====================
@@ -197,6 +199,19 @@ class FeedbackResponse(BaseModel):
     message: str
     status: str
     createdAt: datetime
+
+# # ==================== FILE MODELS ====================
+
+class FileUploadResponse(BaseModel):
+    status: str
+    message: str
+    extracted_text: str 
+
+# # ==================== TRANSCRIBE AUDIO MODELS ====================
+
+class TranscriptionResponse(BaseModel):
+    text: str
+    status: str = "success"
 
 # ==================== QURAN CONTENT MODELS ====================
 

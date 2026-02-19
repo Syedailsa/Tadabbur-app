@@ -88,25 +88,20 @@ function ChatContent() {
   const [reportedMessageIDs, setReportedMessageIDs] = useState<string[] | null>(
     [],
   );
+  const [isGenerating, setIsGenerating] = useState(false);
+    const currentStreamingMsgRef = useRef<{
+    message_id: string;
+    reply_to_message_id: string;
+  } | null>(null);
+    const streamingContentRef = useRef<string>("");
+    const stopStreamRef = useRef<(() => void) | null>(null);
+
   const searchParams = useSearchParams()
   const oldMessagesRef = useRef<AssistantMessage[]>([]);
   const controls = useAnimationControls();
   const [hidePromptExtraOptionsModelBoxArray, setHidePromptExtraOptionsModelBoxArray] =
     useState<hidePromptExtraOptionsModelBoxArray[]>([]);
-  const [uploadedFiles, setUploadedFiles] = useState<
-    Array<{
-      file_id: string;
-      file_name: string;
-      file_type: string;
-      created_at: string;
-    }>
-  >([]);
-  const [sessionFiles, setSessionFiles] = useState<Array<{
-    file_id: string;
-    file_name: string;
-    file_type: string;
-    created_at: string;
-  }>>([]);
+
   const router = useRouter()
 
   function preprocessContent(content: string) {
@@ -223,7 +218,7 @@ function ChatContent() {
         )
       );
     };
-  }, [audioRef.current]);
+  }, []);
 
   useEffect(() => {
     const handleMicStart = () => {
@@ -354,6 +349,8 @@ function ChatContent() {
       return;
     }
 
+    
+
     const urlSessionId = searchParams.get("session_id");
 
     const websocket = new WebSocket(`${process.env.NEXT_PUBLIC_WEBSOCKET_URL}/ws/chat?token=${token}`);
@@ -450,7 +447,6 @@ function ChatContent() {
           const session_id = data.session_id;
           const session_status = data.status;
           const message_ids = data.message_ids;
-          const uploaded_files = data.uploaded_files;
           if (session_status === "acknowledged") {
             setSessionID(session_id);
             const currentUrlId = searchParams.get("session_id");
@@ -458,8 +454,6 @@ function ChatContent() {
               router.push(`/pages/chatbot?session_id=${session_id}`, { scroll: false });
             }
             setMessages([]);
-            setUploadedFiles([]);
-            setSessionFiles([]);
             setMessages((prevMessages) => {
               if (prevMessages && prevMessages.length > 0) {
                 return [];
@@ -469,10 +463,6 @@ function ChatContent() {
             setHidePromptExtraOptionsModelBoxArray([])
             setMessageIDs(message_ids);
 
-            if (uploaded_files && uploaded_files.length > 0) {
-              setSessionFiles(uploaded_files);
-              setUploadedFiles([]);
-            }
           }
           break;
 
@@ -638,34 +628,62 @@ function ChatContent() {
 
           setLoading(false);
           setLoadingMessage(null);
+          setIsGenerating(true);
+            streamingContentRef.current = "";
+            currentStreamingMsgRef.current = {
+              message_id: message_id,
+              reply_to_message_id: reply_to_message_id || ""
+            };
           const tokens = reply.split(/(\s+)/);
+
+          let stopFlag = false;
+          stopStreamRef.current = () => { stopFlag = true; };
 
           (async () => {
             for (let i = 0; i < tokens.length; i += 4) {
-              const chunk = tokens.slice(i, i + 4).join("");
+              if (stopFlag) break;
 
+              const chunk = tokens.slice(i, i + 4).join("");
               await new Promise((resolve) => setTimeout(resolve, 2));
 
+              if (stopFlag) break;
+              
+
               setMessages((prev) => {
-                if (!prev || prev.length === 0) return prev;
-                const updated = [...prev];
-                const streamIndex = streamingMessageIndex ?? updated.length - 1;
+                  if (!prev || prev.length === 0) return prev;
+                  const updated = [...prev];
+                  const streamIndex = streamingMessageIndex ?? updated.length - 1;
 
-                if (streamIndex >= 0 && streamIndex < updated.length) {
-                  const lastMsg = updated[streamIndex];
-                  const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
+                  if (streamIndex >= 0 && streamIndex < updated.length) {
+                    const lastMsg = updated[streamIndex];
+                    const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
 
-                  updated[streamIndex].responses[lastResIdx].content =
-                    (updated[streamIndex].responses[lastResIdx].content || "") +
-                    chunk;
-                }
-                return updated;
-              });
+                    updated[streamIndex].responses[lastResIdx].content =
+                      (updated[streamIndex].responses[lastResIdx].content || "") +
+                      chunk;
+                      streamingContentRef.current = updated[streamIndex].responses[lastResIdx].content;
+                  }
+                  return updated;
+                });
             }
           })().then(() => {
             setStreamingMessageIndex(null);
+            stopStreamRef.current = null;
+              setStreamingMessageIndex(null);
+              setIsGenerating(false);
+              currentStreamingMsgRef.current = null;
+              streamingContentRef.current = "";
           });
           break;
+
+          case "stop_acknowledged":
+            // reset states related to streaming
+            setIsGenerating(false);
+            setStreamingMessageIndex(null);
+            setLoading(false);
+            currentStreamingMsgRef.current = null;
+            streamingContentRef.current = "";
+            break;
 
         case "agent":
           const agent_type = data.agent;
@@ -673,8 +691,6 @@ function ChatContent() {
             case "story-telling":
               setPlaceholder("Generate an Islamic story");
               setMessages([]);
-              setUploadedFiles([]);
-              setSessionFiles([]);
               setGreeting(
                 "Generate any Islamic story with the finest AI Models."
               );
@@ -682,8 +698,6 @@ function ChatContent() {
             case "tafseer":
               setPlaceholder("Let's lean about the Quran");
               setMessages([]);
-              setUploadedFiles([]);
-              setSessionFiles([]);
               setGreeting(
                 "Assalam O Alaykum, I am Tadabbur, how may I help you today?"
               );
@@ -708,10 +722,7 @@ function ChatContent() {
           }
 
           break;
-        // case "streaming_end":
-        //   audioScheduler.flush();
-        //   break;
-
+  
         default:
           break;
       }
@@ -762,6 +773,31 @@ function ChatContent() {
       isCancelled = true;
     };
   }, [attachedFile, sessionID]);
+
+  const stopGeneration = () => {
+      if (!currentStreamingMsgRef.current || !wsRef.current) return;
+  
+      if (stopStreamRef.current) {
+        stopStreamRef.current();
+        stopStreamRef.current = null;
+      }
+  
+      const partialContent = streamingContentRef.current;
+      const msgId = currentStreamingMsgRef.current.message_id;
+  
+      setIsGenerating(false);
+      setStreamingMessageIndex(null);
+      setLoading(false);
+  
+      wsSendAsync(wsRef.current, {
+        type: "stop_generation",
+        message_id: msgId,
+        partial_content: partialContent,
+      });
+  
+      currentStreamingMsgRef.current = null;
+      streamingContentRef.current = "";
+    };
 
   const ask = async (
     input: string,
@@ -1463,6 +1499,18 @@ function ChatContent() {
                   >
                     {placeholder}
                   </span>
+                )}
+
+                {isGenerating && (
+                  <div className="flex justify-end mb-1">
+                    <button
+                      onClick={stopGeneration}
+                      className="flex items-center gap-x-2 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs rounded-md switzer-500 transition-colors shadow-sm"
+                    >
+                    <div className="w-2 h-2 bg-white rounded-sm"></div>
+                      Stop
+                    </button>
+                  </div>
                 )}
 
                 <BottomOptions />

@@ -3,6 +3,7 @@ from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from dotenv import load_dotenv
+from models import CleanText
 
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_AI_API_KEY")
@@ -12,7 +13,8 @@ groq_llm = ChatGroq(
     model_name="openai/gpt-oss-120b", 
     temperature=0, 
     max_retries=2,
-)
+    response_format=CleanText
+) 
 
 system_instruction = """
 You are a Text-to-Speech Pre-processor. Your job is to convert Markdown formatted text into a clean script optimized for a TTS engine to read aloud.
