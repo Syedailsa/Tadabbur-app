@@ -309,11 +309,8 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
     # initialize the conversation history and message_IDs set
     conversation_history = []
     unique_message_ids = []
-<<<<<<< HEAD
-=======
     current_session_id = None
     initialized = False
->>>>>>> 7bef12163bf41a0a0ec17917ac1ca422d89668f1
 
     # ====== SESSION CODE START ======
     session_id = None
