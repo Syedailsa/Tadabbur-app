@@ -388,10 +388,8 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
     # initialize the conversation history and message_IDs set
     conversation_history = []
     unique_message_ids = []
-    tts_engine = TextToSpeechEngine()
 
     # ====== SESSION CODE START ======
-    current_session = None
     session_id = None
     # ========== SESSION END  ======
     session_model_key: str = "gpt-oss-20b"
@@ -948,6 +946,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
                     user_message_id = user_message_id if not resend_flag else resend_message_id
                     ai_response = response_object.response
+                    print(ai_response)
                     # append assistant message to conversation history
                     conversation_history.append({"role": "assistant", "content": ai_response , "id": response_message_id, "reply_to_message_id": user_message_id})
 

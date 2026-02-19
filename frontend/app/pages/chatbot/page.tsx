@@ -93,20 +93,7 @@ function ChatContent() {
   const controls = useAnimationControls();
   const [hidePromptExtraOptionsModelBoxArray, setHidePromptExtraOptionsModelBoxArray] =
     useState<hidePromptExtraOptionsModelBoxArray[]>([]);
-  const [uploadedFiles, setUploadedFiles] = useState<
-    Array<{
-      file_id: string;
-      file_name: string;
-      file_type: string;
-      created_at: string;
-    }>
-  >([]);
-  const [sessionFiles, setSessionFiles] = useState<Array<{
-    file_id: string;
-    file_name: string;
-    file_type: string;
-    created_at: string;
-  }>>([]);
+
   const router = useRouter()
 
   function preprocessContent(content: string) {
@@ -223,7 +210,7 @@ function ChatContent() {
         )
       );
     };
-  }, [audioRef.current]);
+  }, []);
 
   useEffect(() => {
     const handleMicStart = () => {
@@ -450,7 +437,6 @@ function ChatContent() {
           const session_id = data.session_id;
           const session_status = data.status;
           const message_ids = data.message_ids;
-          const uploaded_files = data.uploaded_files;
           if (session_status === "acknowledged") {
             setSessionID(session_id);
             const currentUrlId = searchParams.get("session_id");
@@ -458,8 +444,6 @@ function ChatContent() {
               router.push(`/pages/chatbot?session_id=${session_id}`, { scroll: false });
             }
             setMessages([]);
-            setUploadedFiles([]);
-            setSessionFiles([]);
             setMessages((prevMessages) => {
               if (prevMessages && prevMessages.length > 0) {
                 return [];
@@ -469,10 +453,6 @@ function ChatContent() {
             setHidePromptExtraOptionsModelBoxArray([])
             setMessageIDs(message_ids);
 
-            if (uploaded_files && uploaded_files.length > 0) {
-              setSessionFiles(uploaded_files);
-              setUploadedFiles([]);
-            }
           }
           break;
 
@@ -673,8 +653,6 @@ function ChatContent() {
             case "story-telling":
               setPlaceholder("Generate an Islamic story");
               setMessages([]);
-              setUploadedFiles([]);
-              setSessionFiles([]);
               setGreeting(
                 "Generate any Islamic story with the finest AI Models."
               );
@@ -682,8 +660,6 @@ function ChatContent() {
             case "tafseer":
               setPlaceholder("Let's lean about the Quran");
               setMessages([]);
-              setUploadedFiles([]);
-              setSessionFiles([]);
               setGreeting(
                 "Assalam O Alaykum, I am Tadabbur, how may I help you today?"
               );
@@ -708,9 +684,6 @@ function ChatContent() {
           }
 
           break;
-        // case "streaming_end":
-        //   audioScheduler.flush();
-        //   break;
 
         default:
           break;
