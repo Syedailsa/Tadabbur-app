@@ -11,7 +11,7 @@ import CrossIcon from "../../../icons/cross_icon.svg"
 import TextFileIcon from "../../../icons/text-file-icon.svg"
 import PdfFileIcon from "../../../icons/pdf-file-icon.svg"
 import UndoArrow from "../../../icons/refresh.svg";
-import { AssistantMessage, Attachment } from "@/app/components/chatbot/interfaces/ChatMessage";
+import { AssistantMessage, Attachment, StoryParagraph } from "@/app/components/chatbot/interfaces/ChatMessage";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { dracula } from "react-syntax-highlighter/dist/esm/styles/prism";
 import {
@@ -37,6 +37,7 @@ import { SurahForAudios, SurahForVerseImages } from "@/app/components/chatbot/in
 import ReportContentDialogueBox from "../../components/chatbot/UI/ReportContentDialogueBox";
 import { ChatMessage } from "../../components/chatbot/interfaces/ChatMessage";
 import QuranDialogBox from "@/app/components/chatbot/UI/QuranDialogBox";
+import StoryContainer from "@/app/components/chatbot/UI/StoryContainer";
 import groupChatMessages from "@/utils/groupChatMessages";
 import WaveForm from "../../components/chatbot/UI/WaveForm";
 import hidePromptExtraOptionsModelBoxArray from "@/app/components/chatbot/interfaces/hidePromptExtraOptionsModelBoxArray";
@@ -46,6 +47,7 @@ import {
   ChatRecordType,
 } from "../../utils/types";
 import { retryOperation, wsSendAsync } from "@/app/utils/retryOpernation";
+
 
 function ChatContent() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -81,7 +83,7 @@ function ChatContent() {
   const [hideReportContentDialogueBox, setHideReportContentDialogueBox] =
     useState<boolean | null>(true);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
-  const [isCancelled, setIsCancelled] = useState<boolean>(false)
+  const [openStoryContainer, setOpenStoryContainer] = useState<boolean>(false)
   const [fileContext, setFileContext] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false);
   const currentMessageIDRef = useRef<string | null>(null);
@@ -407,7 +409,7 @@ function ChatContent() {
 
     wsRef.current.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      // console.log("Data from websocket", event.data);
+      console.log("Data from websocket", event.data);
 
       const type = data.type;
       switch (type) {
@@ -555,7 +557,10 @@ function ChatContent() {
           const resend_flag = data.resend_flag;
           const audio_data: SurahForAudios[] = data.content.audio_data || []
           const verse_images: SurahForVerseImages[] = data.content.verse_images || []
-
+          const story_data: StoryParagraph[] = data.content.story_segments ?? []
+          if (story_data.length > 0) {
+            setOpenStoryContainer(true)
+          }
           // check if oldMessages is present with resend flag
           if (resend_flag) {
             if (
@@ -614,7 +619,8 @@ function ChatContent() {
                 has_verse_audio: has_verse_audio,
                 verse_audio_data: audio_data,
                 has_verse_image: has_verse_image,
-                verse_images: verse_images
+                verse_images: verse_images,
+                story_data: story_data
               });
 
               // set the number of active message index
@@ -706,7 +712,8 @@ function ChatContent() {
           break;
         case "loading_message":
           const message = data.content ?? "Thinking to enhance response";
-          // setLoadingMessage(message);
+          setLoading(false)
+          setLoadingMessage(message);
           break;
         case "report":
           const report_status = data.status;
@@ -875,7 +882,8 @@ function ChatContent() {
           has_verse_audio: false,
           verse_audio_data: [],
           has_verse_image: false,
-          verse_images: []
+          verse_images: [],
+          story_data: [],
         },
       ],
     };
@@ -1151,6 +1159,8 @@ function ChatContent() {
                               }}
                               className="w-3 h-3 rounded-full bg-black"
                             ></motion.div>
+                          ) : !loading && loadingMessage && !ai_msg.content ? (
+                            <p key={ai_msg_idx} id="loading-message" className="switzer-500 animate-pulse">{loadingMessage}</p>
                           ) : reportedMessageIDs &&
                             !reportedMessageIDs.includes(ai_msg?.message_id) &&
                             ai_msg_idx === record.active_message_index ? (
@@ -1346,7 +1356,10 @@ function ChatContent() {
                                   />
                                 </>
                               )}
-                              {/* Place it here, inside the div */}
+                              {openStoryContainer && ai_msg.story_data.length > 0 && streamingMessageIndex != record_index && (
+                                <StoryContainer story_data={ai_msg.story_data} />
+
+                              )}
                               {streamingMessageIndex != record_index &&
                                 reportedMessageIDs &&
                                 !reportedMessageIDs.includes(
