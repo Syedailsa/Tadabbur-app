@@ -8,6 +8,7 @@ cryptography
 dataclasses-json
 docstring-to-markdown
 dotenv
+huggingface_hub
 email-validator
 fastapi
 fastavro

@@ -31,6 +31,14 @@ class AuthResponse(BaseModel):
     user_id: uuid.UUID
     firstname: str
 
+class StorySchema(BaseModel):
+    story_paragraph:str = Field(..., description = "A paragraph of the story")
+    paragraph_title: str = Field(..., description = "A title of the story paragraph")
+    scene_summary: str = Field(..., description = "A short summary of the story scene in paragraph")
+    important_characters: List[str] = Field(..., description = "List of important characters to include in the image")
+    important_objects: List[str] = Field(..., description = "List of main objects to include in the image")
+    forbidden_elements: List[str] = Field(..., description = "List of items and elements that shouldn't be shown in the image")
+
 
 class SajdaVerse(BaseModel):
     id: Optional[int] = Field(None, description="The id of the sajda verse")
@@ -70,12 +78,22 @@ class SurahForImage(BaseModel):
     ayahs: Optional[List[VerseForImage]] = Field(None, description = "List of verses in the Surah")
 
 
-class OutputSchema(BaseModel):
+class NormalOutputSchema(BaseModel):
     response: str = Field(..., description="The final response to the user")
     has_verse_audio: bool = Field(..., description = "Determines whether the response contains Verse audio links or not")
     audio_data: List[SurahForAudio] = Field(default_factory=list, description="Audio data for the required verses")
     has_verse_image: bool = Field(..., description = "Determines whether the response contains verse image links or not")
     verse_images: List[SurahForImage] = Field(default_factory=list, description = "Verse image data containing verse-image links, surah names, verse numbers")
+
+
+class StoryParagraph(BaseModel):
+    story_paragraph: str = Field(..., description = "An extract representing a paragraph of story")
+    paragraph_title: str = Field(..., description = "A title of the story paragraph")
+    image: str = Field(..., description="Base 64 string of the generated image")
+
+class StoryOutputSchema(BaseModel):
+    response: str = Field(..., description = "The complete story response") 
+    story_segments: List[StoryParagraph] = Field(default_factory = list, description = "The list of story paragraphs")
 
 class CleanText(BaseModel):
     response: str = Field(..., description="The clean response for tts")

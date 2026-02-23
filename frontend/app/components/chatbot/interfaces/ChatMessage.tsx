@@ -14,6 +14,15 @@ interface Attachment {
   attachmentName: string
 }
 
+// class StoryParagraph(BaseModel):
+// story_paragraph: str = Field(..., description = "An extract representing a paragraph of story")
+// image: str = Field(..., description = "Base 64 string of the generated image")
+
+// class StoryOutputSchema(BaseModel):
+// complete_story: str = Field(..., description = "The complete story")
+// story_segments: List[StoryParagraph] = Field(default_factory = list, description = "The list of story paragraphs")
+
+
 interface AssistantMessage {
   message_id: string;
   role: "assistant";
@@ -26,7 +35,13 @@ interface AssistantMessage {
   verse_audio_data: SurahForAudios[]
   has_verse_image: boolean;
   verse_images: SurahForVerseImages[]
+  story_data: StoryParagraph[]
 }
 
+type StoryParagraph = {
+  story_paragraph: string;
+  paragraph_title: string
+  image: string;
+}
 
-export type { ChatMessage, AssistantMessage, Attachment };
+export type { ChatMessage, AssistantMessage, Attachment, StoryParagraph };

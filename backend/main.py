@@ -8,13 +8,15 @@ from fastapi.websockets import WebSocketState
 from pydantic import BaseModel
 from typing import List
 import asyncio 
-from models import OutputSchema, SurahForAudio, SurahForImage
-from langchain.messages import ToolMessage
+from models import NormalOutputSchema, SurahForAudio, SurahForImage, StoryParagraph, StoryOutputSchema
+from langchain.messages import ToolMessage, SystemMessage, HumanMessage
 from collections import defaultdict
 import agent as agent_module
+from generators.image_generator import generate_image, pil_to_base64, save_image_local
 from contextlib import asynccontextmanager
 from story_agent import story_agent
 from utils.handle_feedback import handle_feedback
+from builders.prompt_builder import prompt_builder, prompt_builder_instructions
 from utils.generate_title_description import generate_title_description
 from utils.generate_uuid import generate_uuid
 from utils.report_rule import insert_report_rule, delete_report_rule
@@ -27,7 +29,8 @@ from murf import Murf
 from database import init_db_pool, close_db_pool
 from quran_api import quran_router , parah_router, story_router
 from reset_password_api import password_reset_router
-from fastapi import UploadFile, File, Form
+from fastapi import UploadFile, File, Form, HTTPException
+from file_service import process_uploaded_file
 from reflection_api import reflection_router
 from api import (
     auth_router,
@@ -315,6 +318,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
     session_model_key: str = "gpt-oss-20b"
     active_agent = agent_module.main_agent
     current_agent_name = active_agent.name
+    initialized = False
     try:
         while True:
             if websocket.client_state == WebSocketState.DISCONNECTED:
@@ -362,7 +366,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             variation = 1
                         )
                         if res.audio_file:
-                            print("Audio url", res.audio_file)
                             try:
                                 asyncio.create_task(asyncio.to_thread(
                                     lambda: supabase_client.table('chat_messages').update({
@@ -769,6 +772,14 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 resend_message_id = data.get("resend_message_id")
                 new_file_text = data.get("new_file_context")
                 
+                # generate a message id for response message
+                response_message_id = generate_uuid()
+                while response_message_id in unique_message_ids:
+                    response_message_id = generate_uuid()
+                unique_message_ids.append(response_message_id)
+
+                user_message_id = user_message_id if not resend_flag else resend_message_id
+                    
                 if new_file_text:
                     logger.info(f"💾 Committing new file context to session {session_id}")
                     existing_context = session_file_context.get(session_id, "")
@@ -868,66 +879,143 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         {"messages": messages},
                     )
                     messages_array = agent_response['messages']
-                    # Create a new instance of OutputSchema
-                    response_object = OutputSchema(
-                        response=messages_array[-1].content or "",
-                        has_verse_audio=False,
-                        has_verse_image=False,
-                        # by default audio_data and verse_images are an empty list
-                    )
 
-                    # initialize a data array for flags
-                    data_flag = [False, False]
-                    for message in reversed(messages_array):
-                        if data_flag == [True, True]:
-                            break
-                        if isinstance(message, ToolMessage):
-                            if message.name == "get_verse_image" and not data_flag[0]:
-                                data = json.loads(message.content)
-                                verse_images = data.get("verse_images",[]) 
-                                if verse_images:
-                                    response_object.has_verse_image = True
-                                    response_object.verse_images = [
-                                       SurahForImage.model_validate(v) for v in verse_images
-                                    ]
-                                data_flag[0] = True
-                            elif message.name == "get_Quran_Audio" and not data_flag[1]:
-                                data = json.loads(message.content)
-                                audio_data = data.get("audio_data", [])
-                                if audio_data:
-                                    response_object.has_verse_audio = True
-                                    response_object.audio_data = [SurahForAudio.model_validate(v) for v in audio_data]
-                                data_flag[1] = True
+                    # initialize a response object
+                    response_object = None
+                    ai_response = None
+                    if active_agent == agent_module.main_agent:
+                        # Create a new instance of OutputSchema
+                        response_object = NormalOutputSchema(
+                            response=messages_array[-1].content or "",
+                            has_verse_audio=False,
+                            has_verse_image=False,
+                            # by default audio_data and verse_images are an empty list so no need to initialize explicitly
+                        )
 
-                    # generate a message id for response message
-                    response_message_id = generate_uuid()
-                    while response_message_id in unique_message_ids:
-                        response_message_id = generate_uuid()
-                    unique_message_ids.append(response_message_id)
+                        # Assign ai response to the response field
+                        ai_response = response_object.response
+                        # initialize a data array for flags
+                        data_flag = [False, False]
+                        for message in reversed(messages_array):
+                            if data_flag == [True, True]:
+                                break
+                            if isinstance(message, ToolMessage):
+                                if message.name == "get_verse_image" and not data_flag[0]:
+                                    data = json.loads(message.content)
+                                    verse_images = data.get("verse_images",[]) 
+                                    if verse_images:
+                                        response_object.has_verse_image = True
+                                        response_object.verse_images = [
+                                        SurahForImage.model_validate(v) for v in verse_images
+                                        ]
+                                    data_flag[0] = True
+                                elif message.name == "get_Quran_Audio" and not data_flag[1]:
+                                    data = json.loads(message.content)
+                                    audio_data = data.get("audio_data", [])
+                                    if audio_data:
+                                        response_object.has_verse_audio = True
+                                        response_object.audio_data = [SurahForAudio.model_validate(v) for v in audio_data]
+                                    data_flag[1] = True
+                        
+                        try:
+                            supabase_client.table('chat_messages').insert({
+                                "message_id": response_message_id,
+                                "session_id": session_id,
+                                "user_id": user_id,
+                                "role": "assistant",
+                                "content": ai_response,
+                                "reply_to_message_id": user_message_id,
+                                "has_verse_audio": response_object.has_verse_audio,
+                                "audio_data": [surah.model_dump() for surah in response_object.audio_data],
+                                "has_verse_image": response_object.has_verse_image,
+                                "verse_images": [surah.model_dump() for surah in response_object.verse_images]
+                            }).execute()
+                            print("✅ Assistant message saved successfully!")
+                        except Exception as e:
+                            print("Some error occured while inserting assistant messages", e)
+                            raise
+                    elif active_agent == story_agent:
+                        response_object = StoryOutputSchema(
+                            response = messages_array[-1].content or ""
+                        )
+                        ai_response = response_object.response                   
+                        data_flag = False
+                        for message in reversed(messages_array):
+                            if data_flag:
+                                break
+                            if isinstance(message, ToolMessage):
+                                if message.name == "story_structure":
+                                    data = json.loads(message.content)
+                                    # initialize the story data array to store results
+                                    story_data: List[StoryParagraph] = []
+                                    await websocket.send_json({
+                                        "type": "loading_message",
+                                        "content": "Preparing your story"
+                                    })
+                                    for i, story_chunk in enumerate(data, start = 1):
+                                        story_paragraph = story_chunk.get("story_paragraph")
+                                        paragraph_title = story_chunk.get("paragraph_title")
+                                        scene_summary = story_chunk.get("scene_summary")
+                                        important_characters = story_chunk.get("important_characters")
+                                        important_objects = story_chunk.get("important_objects")
+                                        forbidden_elements = story_chunk.get("forbidden_elements")
 
-                    user_message_id = user_message_id if not resend_flag else resend_message_id
-                    ai_response = response_object.response
+                                        if None in (scene_summary, important_characters, important_objects, forbidden_elements, paragraph_title, story_paragraph):
+                                            continue
+                                        # build the pipeline
+
+                                        # build the AI Prompt builder's prompt                                       
+                                        prompt_builder_prompt = [
+                                            SystemMessage(content = prompt_builder_instructions),
+                                            HumanMessage(content=f"""
+                                            Scene Summary: {scene_summary} \n\n 
+                                            Important Characters: {important_characters}\n\n 
+                                            Important Objects: {important_objects} \n\n 
+                                            Forbidden Elements: {forbidden_elements}
+                                            """)
+                                        ]
+                                        response = prompt_builder.invoke(prompt_builder_prompt)
+                                        image_prompt = response.image_prompt
+                                        # print(f"Image prompt for image {i}: {image_prompt}")
+                                        # pass the image prompt to the AI image generator
+                                        if not image_prompt:
+                                            continue
+                                        for try_number in range(8):
+                                            try:
+                                                # initialize a counter for saving images
+                                                image_counter = 1
+                                                image = generate_image(image_prompt)
+                                                base64image = pil_to_base64(image)
+                                                save_image_local(image, image_counter)
+                                                # print("Base 64 image", base64image)
+                                                story_data.append(StoryParagraph(story_paragraph = story_paragraph, paragraph_title = paragraph_title, image = base64image))
+                                                # print(f"Image pipeline successfully completed for image {i}")
+                                                break
+                                            except Exception as e:
+                                                print(f"Image generation pipeline failed for image {i}, error: {e},Try number {try_number + 1}, retrying...")
+                                        else:
+                                            print(f"Image pipeline failed for 8 retries for image {i}")
+                                    response_object.story_segments = story_data
+                                    data_flag = True      
+                        try:
+                            supabase_client.table('chat_messages').insert({
+                                "message_id": response_message_id,
+                                "session_id": session_id,
+                                "user_id": user_id,
+                                "role": "assistant",
+                                "content": ai_response,
+                                "reply_to_message_id": user_message_id,
+                                "story_data": [segment.model_dump() for segment in response_object.story_segments],
+                            }).execute()
+                            print("✅ Assistant message saved successfully!")
+                        except Exception as e:
+                            print("Some error occured while inserting assistant messages", e)
+                            raise                  
+                    else:
+                        ai_response = ""
                     print(ai_response)
                     # append assistant message to conversation history
                     conversation_history.append({"role": "assistant", "content": ai_response , "id": response_message_id, "reply_to_message_id": user_message_id})
-
-                    try:
-                        supabase_client.table('chat_messages').insert({
-                            "message_id": response_message_id,
-                            "session_id": session_id,
-                            "user_id": user_id,
-                            "role": "assistant",
-                            "content": ai_response,
-                            "reply_to_message_id": user_message_id,
-                            "has_verse_audio": response_object.has_verse_audio,
-                            "audio_data": [surah.model_dump() for surah in response_object.audio_data],
-                            "has_verse_image": response_object.has_verse_image,
-                            "verse_images": [surah.model_dump() for surah in response_object.verse_images]
-                        }).execute()
-                        print("✅ Assistant message saved successfully!")
-                    except Exception as e:
-                        print("Some error occured while inserting assistant messages", e)
-                        raise
 
                     # generate title and description for the current chat history if there are 2 user/assistant messages each
                     # run the below logic in a seperate thread
@@ -948,7 +1036,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             "resend_flag": resend_flag,
                             "reply_to_message_id": user_message_id,
                             "final": True
-                        })
+                    })
 
                     # # tool logic
 
