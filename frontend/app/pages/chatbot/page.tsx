@@ -1356,10 +1356,10 @@ function ChatContent() {
                                   />
                                 </>
                               )}
-                              {/* {openStoryContainer && ai_msg.story_data.length > 0 && ( */}
-                              <StoryContainer story_data={ai_msg.story_data} />
+                              {openStoryContainer && ai_msg.story_data.length > 0 && streamingMessageIndex != record_index && (
+                                <StoryContainer story_data={ai_msg.story_data} />
 
-                              {/* Place it here, inside the div */}
+                              )}
                               {streamingMessageIndex != record_index &&
                                 reportedMessageIDs &&
                                 !reportedMessageIDs.includes(
