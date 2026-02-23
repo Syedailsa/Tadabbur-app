@@ -35,7 +35,8 @@ function groupChatMessages(chatMessages: any) {
           has_verse_audio: msg.has_verse_audio,
           verse_audio_data: msg.audio_data,
           has_verse_image: msg.has_verse_image,
-          verse_images: msg.verse_images
+          verse_images: msg.verse_images,
+          story_data: []
 
         };
         userMsg.responses.push(assistantMsg);
