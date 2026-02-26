@@ -40,15 +40,13 @@ from api import (
     file_router,
     transcribe_audio_router
 )
-from reset_password_api import password_reset_router
 from quran_api import quran_router , parah_router, story_router
-from reset_password_api import password_reset_router
 from reflection_api import reflection_router
 from database import init_db_pool, close_db_pool, delete_all_user_sessions, delete_user_session
 from fastapi.openapi.utils import get_openapi
 from speech_to_text import SpeechToTextEngine
 from config.db import get_supabase_client
-
+from utils.db_retry import db_retry, DBRetryError
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
@@ -334,7 +332,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     try:
                         await websocket.send_json({"type": "pong"})
                     except Exception:
-                        pass # Socket might have closed just now
+                        pass 
                 continue
 
             if data.get("type") == "tts_request":
@@ -395,16 +393,16 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
                 if msg_id_to_stop and partial_content:
                     try:
-                        await asyncio.to_thread(
+                        await db_retry(
                             lambda: supabase_client.table('chat_messages')
-                            .update({"content": partial_content})
-                            .eq("message_id", msg_id_to_stop)
-                            
-                            .execute()
+                                .update({"content": partial_content})
+                                .eq("message_id", msg_id_to_stop)
+                                .execute(),
+                            label="stop_generation_save"
                         )
-                        logger.info(f"✅ DB updated with partial content for {msg_id_to_stop}")
-                    except Exception as e:
-                        logger.error(f"Error updating partial response: {e}")
+                    except DBRetryError as e:
+                        logger.error(f"Partial content save failed permanently: {e}")
+                                        
 
                 await websocket.send_json({
                     "type": "stop_acknowledged",
@@ -780,13 +778,19 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     updated_context = existing_context + "\n\n--- FILE CONTENT ---\n" + new_file_text
                     session_file_context[session_id] = updated_context
                     try:
-                        await asyncio.to_thread(
+                        await db_retry(
                             lambda: supabase_client.table('chat_sessions').update({
-                                'file_context': updated_context
-                            }).eq('session_id', session_id).execute()
+                                'file_context': updated_context,
+                            }).eq('session_id', session_id).execute(),
+                            label="save_file_context"
                         )
-                    except Exception as db_e:
-                        logger.error(f"Failed to save file context to DB: {db_e}")
+                    except DBRetryError as e:
+                        logger.error(f"Failed to save file context after retries: {e}")
+                        await websocket.send_json({
+                            "type": "error",
+                            "error_code": "FILE_CONTEXT_SAVE_FAILED",
+                            "message": "Failed to save file context. Please try again."
+                        })
                 if user_message_id not in unique_message_ids:
                     unique_message_ids.append(user_message_id)
 
@@ -794,30 +798,47 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
                 if not resend_flag:
                     try:
-                        # Check if session exists in DB before inserting message
+                         # Check if session exists in DB before inserting message
                         sess_check = supabase_client.table('chat_sessions').select('session_id').eq('session_id', session_id).execute()
                         if not sess_check.data:
                             logger.info(f"📝 First message detected. Persisting session {session_id} to DB.")
-                            supabase_client.table("chat_sessions").insert({
-                                'session_id': session_id, 
-                                'user_id': user_id,   
-                            }).execute()
-                    except Exception as sess_e:
-                        logger.error(f"Failed to lazy-create session: {sess_e}")
+                            await db_retry(
+                                lambda: supabase_client.table("chat_sessions").insert({
+                                    'session_id': session_id,
+                                    'user_id': user_id,
+                                }).execute(),
+                                label="create_session"
+                            )
+                    except DBRetryError as e:
+                        logger.error(f"Failed to create session after retries: {e}")
+                        await websocket.send_json({
+                            "type": "error",
+                            "error_code": "SESSION_CREATION_FAILED",
+                            "message": "Failed to create session. Please try again."
+                        })
+                        continue
 
                 if not resend_flag:
                     try:
-                        supabase_client.table('chat_messages').insert({
-                            "message_id": user_message_id,
-                            "user_id": user_id, 
-                            "session_id": session_id,
-                            "role": role,
-                            "content": message_string,
-                        }).execute()
+                        await db_retry(
+                            lambda:supabase_client.table('chat_messages').insert({
+                                "message_id": user_message_id,
+                                "user_id": user_id, 
+                                "session_id": session_id,
+                                "role": role,
+                                "content": message_string,
+                            }).execute(),
+                            label="insert_user_message"
+                        )
                         print("✅ User message saved successfully!")
-                    except Exception as e:
-                        print("Some error occured while inserting user messages", e)
-                        raise
+                    except DBRetryError as e:
+                        logger.error(f"❌ User message failed to save after retries: {e}")
+                        await websocket.send_json({
+                            "type": "error",
+                            "error_code": "MESSAGE_SAVE_FAILED",
+                            "message": "Failed to save your message. Please try again."
+                        })
+                        continue
                 
                 if not resend_flag:
                     file_name = data.get("file_name")
@@ -825,19 +846,29 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     
                     if file_name and new_file_text:
                         try:
-                            supabase_client.table('session_files').insert({
-                                "file_id": generate_uuid(),
-                                "file_name": file_name,
-                                "file_type": file_type,
-                                "file_content": new_file_text, 
-                                "message_id": user_message_id,
-                                "session_id": session_id,
-                                "user_id": user_id
-                            }).execute()
+                            await db_retry(
+                                lambda: supabase_client.table('session_files').insert({
+                            
+                                    "file_id": generate_uuid(),
+                                    "file_name": file_name,
+                                    "file_type": file_type,
+                                    "file_content": new_file_text, 
+                                    "message_id": user_message_id,
+                                    "session_id": session_id,
+                                    "user_id": user_id
+                                }).execute(),
+                                label="insert_session_file"
+                            )
                             print(f"✅ File record '{file_name}' saved to session_files")
-                        except Exception as e:
-                            print("Error saving to session_files:", e)
-
+                        except DBRetryError as e:
+                            logger.error(f"❌ Failed to save file record after retries: {e}")
+                            await websocket.send_json({
+                                "type": "error",
+                                "error_code": "FILE_SAVE_FAILED",
+                                "message": f"Failed to save file '{file_name}'. Please try again."
+                            })
+                            continue
+                            
                 logger.info(f"[{current_agent_name}] Session: {session_id} | Message: {message_string} ...")
                 # File Feature - Check current session first, then fallback to default_session
                  
@@ -868,10 +899,23 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         messages = base_messages + conversation_history
                     else:
                         messages = base_messages + conversation_history + [{"role": "user", "content": message_string}]
-                        
-                    agent_response = active_agent.invoke(
-                        {"messages": messages},
-                    )
+
+
+                    agent_response = None  
+
+                    for attempt in range(3):
+                        try:
+                            agent_response = await asyncio.to_thread(
+                                active_agent.invoke,{"messages": messages},
+                            )
+                            break
+                        except Exception as e:
+                            logger.warning(f"⚠️ Agent invoke attempt {attempt+1}/3 failed: {e}")
+                            if attempt < 2:
+                                await asyncio.sleep(1.5)
+                            else:
+                                raise RuntimeError(f"Agent failed after 3 attempts: {e}")
+
                     messages_array = agent_response['messages']
                     # Create a new instance of OutputSchema
                     response_object = OutputSchema(
@@ -916,23 +960,37 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     conversation_history.append({"role": "assistant", "content": ai_response , "id": response_message_id, "reply_to_message_id": user_message_id})
 
                     try:
-                        supabase_client.table('chat_messages').insert({
-                            "message_id": response_message_id,
-                            "session_id": session_id,
-                            "user_id": user_id,
-                            "role": "assistant",
-                            "content": ai_response,
-                            "reply_to_message_id": user_message_id,
-                            "has_verse_audio": response_object.has_verse_audio,
-                            "audio_data": [surah.model_dump() for surah in response_object.audio_data],
-                            "has_verse_image": response_object.has_verse_image,
-                            "verse_images": [surah.model_dump() for surah in response_object.verse_images]
-                        }).execute()
+                        await db_retry(
+                            lambda:supabase_client.table('chat_messages').insert({
+                                "message_id": response_message_id,
+                                "session_id": session_id,
+                                "user_id": user_id,
+                                "role": "assistant",
+                                "content": ai_response,
+                                "reply_to_message_id": user_message_id,
+                                "has_verse_audio": response_object.has_verse_audio,
+                                "audio_data": [surah.model_dump() for surah in response_object.audio_data],
+                                "has_verse_image": response_object.has_verse_image,
+                                "verse_images": [surah.model_dump() for surah in response_object.verse_images]
+                            }).execute(),
+                            label="insert_assistant_message"
+                        )
                         print("✅ Assistant message saved successfully!")
-                    except Exception as e:
-                        print("Some error occured while inserting assistant messages", e)
-                        raise
+                    except DBRetryError as e:
+                        logger.error(f"❌ Assistant message failed to save after retries: {e}")
+                        await websocket.send_json({
+                            "type": "assistance_response",
+                            "message_id": response_message_id,
+                            "content": response_object.model_dump(mode = "json"),
+                            "reply_to_message_id": user_message_id,
+                            "db_saved" : False,
+                            "final": True
+                        })
 
+                        await websocket.send_json({"type": "streaming_end"})
+                        await websocket.send_json({"type": "run_complete"})       
+
+                        continue
                     # generate title and description for the current chat history if there are 2 user/assistant messages each
                     # run the below logic in a seperate thread
                     asyncio.create_task(

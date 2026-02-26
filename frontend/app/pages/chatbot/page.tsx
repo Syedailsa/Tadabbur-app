@@ -32,7 +32,6 @@ import Controls from "../../components/chatbot/UI/Controls";
 import PromptExtraOptions from "../../components/chatbot/UI/PrompExtraOptions";
 import generateUUID from "@/utils/generateShortId";
 import { ChatHisoryDialogueBox } from "../../components/chatbot/UI/ChatHistoryDialogueBox";
-import { ChatRecord } from "@/app/context/chatbot/ChatContext";
 import { SurahForAudios, SurahForVerseImages } from "@/app/components/chatbot/interfaces/Surah";
 import ReportContentDialogueBox from "../../components/chatbot/UI/ReportContentDialogueBox";
 import { ChatMessage } from "../../components/chatbot/interfaces/ChatMessage";
@@ -147,9 +146,18 @@ function ChatContent() {
       console.log("🌐 Browser report: Network is OFF");
       setConnectionStatus("disconnected");
     };
+    type PendingDelete = { type: string; user_id: string | null; session_id?: string };
 
     const handleOnline = () => {
       console.log("🌐 Browser report: Network is ON");
+      const pending: PendingDelete[] = JSON.parse(localStorage.getItem("tadabbur_pending_deletes") || "[]");
+      if (pending.length > 0) {
+        pending.forEach((op) => {
+          wsSendAsync(wsRef.current, op);
+        });
+        localStorage.removeItem("tadabbur_pending_deletes");
+        console.log("🗑️ Pending deletes executed after reconnection");
+      }
       setConnectionStatus("connected");
       setReconnectTrigger(prev => prev + 1);
     };
@@ -588,6 +596,9 @@ function ChatContent() {
           case "delete_session":
             const delete_status = data.status;
             if (delete_status === "success") {
+              window.dispatchEvent(new CustomEvent("tadabbur-session-deleted", {
+              detail: { session_id: data.session_id }
+             }));
               // Refresh chat history
               const user = localStorage.getItem("user");
               let user_id = null;
@@ -606,19 +617,25 @@ function ChatContent() {
                 });
               }
               alert("Chat session deleted successfully");
+              type PendingDelete = { type: string; user_id: string | null; session_id?: string };
+              const pending: PendingDelete[] = JSON.parse(localStorage.getItem("tadabbur_pending_deletes") || "[]");
+              const updated = pending.filter((op) => op.session_id !== data.session_id);
+              localStorage.setItem("tadabbur_pending_deletes", JSON.stringify(updated));
             } else {
               alert("Error deleting chat session: " + data.error);
             }
-            break;
+            break;  
 
           case "delete_all_sessions":
             const delete_all_status = data.status;
             if (delete_all_status === "success") {
               setChatHistory([]);
-              alert("All chat sessions deleted successfully");
+              window.dispatchEvent(new CustomEvent("tadabbur-all-sessions-deleted"));
+              localStorage.removeItem("tadabbur_pending_deletes");
             } else {
-              alert("Error deleting all chat sessions: " + data.error);
+              alert("Error deleting chat sessions: " + data.error);
             }
+
             break;
 
           case "get_chat":
@@ -1769,17 +1786,37 @@ function ChatContent() {
                   </span>
                 )}
 
-                {isGenerating && (
-                  <div className="flex justify-end mb-1">
+                <div className="flex justify-end mb-1 items-center gap-x-2">
+                  {isGenerating ? (
                     <button
                       onClick={stopGeneration}
                       className="flex items-center gap-x-2 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs rounded-md switzer-500 transition-colors shadow-sm"
                     >
-                    <div className="w-2 h-2 bg-white rounded-sm"></div>
+                      <div className="w-2 h-2 bg-white rounded-sm"></div>
                       Stop
                     </button>
-                  </div>
-                )}
+                  ) : (
+                    <button
+                      onClick={() => {
+                        if (attachedFile && isUploading) {
+                          alert("File is still uploading, please wait a moment...");
+                          return;
+                        }
+                        const input = inputRef.current?.innerText || "";
+                        if (input.trim() !== "" || fileContext) {
+                          ask(input.trim());
+                        }
+                      }}
+                      className="flex items-center justify-center w-8 h-8 bg-neutral-900 hover:bg-neutral-700 active:scale-95 text-white rounded-full transition-all shadow-sm"
+                      title="Send message"
+                    >
+                      {/* Up Arrow SVG */}
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-6">
+                        <path d="M12 4l8 8h-5v8H9v-8H4z"/>
+                      </svg>
+                    </button>
+                  )}
+                </div>
 
                 <BottomOptions />
                 <ExtraOptions />
