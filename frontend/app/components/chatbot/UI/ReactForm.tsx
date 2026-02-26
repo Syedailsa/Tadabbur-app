@@ -44,7 +44,7 @@ const RegistrationForm: React.FC<RegistrationFormProps> = ({ onComplete }) => {
     setServerError(null);
 
     try {
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem("auth_token");
 
       if (!token) {
         throw new Error("User not authenticated");

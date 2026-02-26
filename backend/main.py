@@ -502,24 +502,18 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
             if data.get("type") == "get_chat":
                 requested_session_id = data.get("session_id", "")
 
-                if current_session_id == requested_session_id and len(conversation_history) > 0:
-                    logger.info(f"⚠️ get_chat already processed for {requested_session_id}, skipping duplicate.")
-                    continue
-
                 logger.info(f"📥 get_chat request for session: {requested_session_id}")
                 try:
-                    loop = asyncio.get_event_loop()
-                    msg_task = loop.run_in_executor( None, get_chat_messages, requested_session_id, user_id, supabase_client)
-                    file_task = loop.run_in_executor(
-                        None, lambda: supabase_client.table('session_files')
-                        .select('file_id, file_name, file_type, message_id, file_content')
-                        .eq("user_id", user_id).eq('session_id', requested_session_id)
-                        .order('created_at').execute()
-                    )
+                    def fetch_files():
+                        return supabase_client.table('session_files')\
+                            .select('file_id, file_name, file_type, message_id, file_content')\
+                            .eq("user_id", user_id).eq('session_id', requested_session_id)\
+                            .order('created_at').execute()
                     
-                    chat_history, files_res = await asyncio.gather(msg_task, file_task)
+                    chat_history = await asyncio.to_thread(get_chat_messages, requested_session_id, user_id, supabase_client)
+                    files_res = await asyncio.to_thread(fetch_files)
                     files_response = files_res.data
-                    
+
                     combined_file_content = ""
                     files_by_message = defaultdict(list)
                     for f in (files_response or []):

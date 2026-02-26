@@ -41,6 +41,7 @@ import groupChatMessages from "@/utils/groupChatMessages";
 import WaveForm from "../../components/chatbot/UI/WaveForm";
 import hidePromptExtraOptionsModelBoxArray from "@/app/components/chatbot/interfaces/hidePromptExtraOptionsModelBoxArray";
 import { useRouter, useSearchParams } from "next/navigation";
+import Cookies from "js-cookie";
 import {
   SessionInitMessage,
   ChatRecordType,
@@ -116,6 +117,8 @@ function ChatContent() {
   const urlSessionId = searchParams.get("session_id");
   const totalReconnectAttempts = useRef(0);
   const [showOfflineToast, setShowOfflineToast] = useState(false);
+  // ... existing states
+  const [reconnectTrigger, setReconnectTrigger] = useState(0);
   const MAX_RECONNECT_TRIES = 5;
   const router = useRouter()
 
@@ -127,12 +130,11 @@ function ChatContent() {
         const isExpired = Date.now() - (parsed.timestamp || 0) > 3600000;
       
       if (isExpired) {
-        console.log("🗑️ Pending prompt expired, clearing from storage.");
+        console.log(" Pending prompt expired, clearing from storage.");
         localStorage.removeItem("tadabbur_pending_prompt");
       } else {
-        // put it back to the active queue for processing
         pendingPromptRef.current = parsed;
-        console.log("📦 Recovered a valid pending message.");
+        console.log(" Recovered a valid pending message.");
       }
       } catch (e) {
         localStorage.removeItem("tadabbur_pending_prompt");
@@ -148,6 +150,8 @@ function ChatContent() {
 
     const handleOnline = () => {
       console.log("🌐 Browser report: Network is ON");
+      setConnectionStatus("connected");
+      setReconnectTrigger(prev => prev + 1);
     };
 
     window.addEventListener("offline", handleOffline);
@@ -173,8 +177,8 @@ function ChatContent() {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
+    Cookies.remove('auth_token');
+    localStorage.clear();
     router.push('/pages/auth');
   };
 
@@ -339,7 +343,7 @@ function ChatContent() {
   useEffect(() => {
     const checkPersonalization = async () => {
       try {
-        const token = localStorage.getItem("token");
+        const token = localStorage.getItem("auth_token");
         if (!token) {
           setIsCheckingPersonalization(false);
           setShowPersonalizationForm(true);
@@ -362,7 +366,7 @@ function ChatContent() {
           }
           return await response.json();
         }, 5, 1000);
-        // console.log("📊 Personalization data received:", data);
+        console.log("📊 Personalization data received:", data);
 
         if (data.is_personalized && data.username && data.age) {
 
@@ -406,7 +410,7 @@ function ChatContent() {
         return;
       }
 
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem("auth_token");
       if (!token) {
         console.error("No authentication token found. Cannot connect to chat.");
         return;
@@ -628,19 +632,49 @@ function ChatContent() {
               setConnectionStatus("connected"); 
               setLoading(false);
 
-              const lastMsg = chat_history[chat_history.length - 1];
-
-              if (lastMsg && lastMsg.role === "user" && (!lastMsg.responses || lastMsg.responses.length === 0)) {
-                console.log("🤖 Auto-regenerating missing response for:", lastMsg.message_id);
-                
-                ask(
-                  lastMsg.content, 
-                  null, 
-                  true, 
-                  lastMsg.message_id, 
-                  { responses: [], attachments: lastMsg.attachments || [] }
-                );
+              const saved = localStorage.getItem("tadabbur_pending_prompt");
+              if (saved) {
+                try {
+                  const pendingData = JSON.parse(saved);
+                  // Only auto-send if it belongs to this session or session is new
+                  const isCorrectSession = !pendingData.target_session_id || pendingData.target_session_id === session_id;
+                  
+                  if (isCorrectSession && pendingData.input) {
+                    console.log("🚀 Connection restored. Sending pending prompt from localStorage...");
+                    
+                    // Call ask directly
+                    ask(
+                      pendingData.input, 
+                      pendingData.guidelines, 
+                      pendingData.resend_flag, 
+                      pendingData.resend_message_id, 
+                      pendingData.old_responses_attachments
+                    );
+                    
+                    localStorage.removeItem("tadabbur_pending_prompt");
+                    pendingPromptRef.current = null;
+                  }
+                } catch (e) {
+                  console.error("Error processing pending prompt:", e);
+                  localStorage.removeItem("tadabbur_pending_prompt");
+                }
               }
+              
+              setTimeout(() => {
+                  const lastMsg = chat_history[chat_history.length - 1];
+
+                  if (lastMsg && lastMsg.role === "user" && (!lastMsg.responses || lastMsg.responses.length === 0)) {
+                    console.log("🤖 Auto-regenerating missing response for:", lastMsg.message_id);
+                    
+                    ask(
+                      lastMsg.content, 
+                      null, 
+                      true, 
+                      lastMsg.message_id, 
+                      { responses: [], attachments: lastMsg.attachments || [] }
+                    );
+                  }
+              }, 500);
 
               // initialize an emtpy array for hidePromptExtraOptionsModelBoxArray
               const array: hidePromptExtraOptionsModelBoxArray[] = [];
@@ -857,27 +891,43 @@ function ChatContent() {
       } 
     };
 
-  }, []);
+  }, [reconnectTrigger]);
 
-  useEffect(() => {
-  if (connectionStatus !== "connected") return;
+//   useEffect(() => {
+//     const isWaitingForSessionId = urlSessionId && !sessionID;
+//     if (connectionStatus !== "connected" || isWaitingForSessionId) return;
 
-  const processPending = () => {
-    const saved = localStorage.getItem("tadabbur_pending_prompt");
-    const data = pendingPromptRef.current || (saved ? JSON.parse(saved) : null);
+//     const processPending = () => {
+//       const saved = localStorage.getItem("tadabbur_pending_prompt");
+//       if (!saved) return;
 
-    if (data && data.input) {
-      console.log("🚀 Reconnection Verified, Sending pending prompt...");
-      
-      ask(data.input, data.guidelines, data.resend_flag, data.resend_message_id, data.old_responses_attachments);
-      
-      localStorage.removeItem("tadabbur_pending_prompt");
-      pendingPromptRef.current = null;
-    }
-  };
+//       try {
+//         const data = JSON.parse(saved);
 
-  processPending();
-}, [connectionStatus]);
+//         const isCorrectSession = !data.target_session_id || data.target_session_id === sessionID;
+//         if (isCorrectSession && data.input) {
+//             console.log("Correct session detected. Sending recovered prompt...");
+            
+//             ask(
+//               data.input, 
+//               data.guidelines, 
+//               data.resend_flag, 
+//               data.resend_message_id, 
+//               data.old_responses_attachments
+//             );
+            
+//             localStorage.removeItem("tadabbur_pending_prompt");
+//             pendingPromptRef.current = null;
+//           } else {
+//             console.log(`Prompt target (${data.target_session_id}) doesn't match current (${sessionID}). Holding.`);
+//           }
+//       } catch (e) {
+//         console.error("Error parsing pending prompt:", e);
+//       }
+//     };
+
+//     processPending();
+// }, [connectionStatus, sessionID, urlSessionId]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -958,29 +1008,6 @@ function ChatContent() {
   ) => {
     if (streamingMessageIndex !== null || (!input.trim() && !fileContext)) return;
 
-    if (connectionStatus !== "connected") {
-      console.log("📡 Socket not ready. Saving prompt to pending queue.");
-      const pendingData = { 
-          input, 
-          guidelines, 
-          resend_flag, 
-          resend_message_id, 
-          old_responses_attachments,
-          timestamp: Date.now() 
-      };
-      pendingPromptRef.current = pendingData;
-      try {
-        localStorage.setItem("tadabbur_pending_prompt", JSON.stringify(pendingData));
-        console.log("prompt saved to pending queue:", pendingData);
-      } catch (error) {
-        console.warn("⚠️ LocalStorage full, message only saved in memory:", error);
-      }
-      setShowOfflineToast(true);
-      setTimeout(() => setShowOfflineToast(false), 4000); // Hide after 4 seconds
-
-      return; 
-    }
-
     if (resend_flag) {
       if (!old_responses_attachments || old_responses_attachments.responses.length === 0) {
         // console.log("No old assistant responses, continuing....");
@@ -1029,6 +1056,30 @@ function ChatContent() {
 
     }
 
+    if (connectionStatus !== "connected") {
+      console.log("📡 Socket not ready. Saving prompt to pending queue.");
+      const pendingData = { 
+          input, 
+          guidelines, 
+          resend_flag, 
+          resend_message_id: messageID, 
+          old_responses_attachments,
+          target_session_id: sessionID,
+          timestamp: Date.now() 
+      };
+      pendingPromptRef.current = pendingData;
+      try {
+        localStorage.setItem("tadabbur_pending_prompt", JSON.stringify(pendingData));
+        console.log("prompt saved to pending queue:", pendingData);
+      } catch (error) {
+        console.warn("⚠️ LocalStorage full, message only saved in memory:", error);
+      }
+      setShowOfflineToast(true);
+      setTimeout(() => setShowOfflineToast(false), 4000); // 4 seconds
+
+      return; 
+    }
+
     const userMessage: ChatMessage = {
       message_id: messageID,
       role: "user",
@@ -1056,9 +1107,11 @@ function ChatContent() {
     oldMessagesRef.current = resend_flag ? old_responses_attachments?.responses ?? [] : [];
 
     setMessages((prev) => {
-      // prev is already typed correctly from useState
+      const isExisting = prev.some(m => m.message_id === messageID);
+      if (isExisting) {
+        return prev;
+      }
       const updated = [...(prev || []), userMessage];
-      // Set the streaming index to the upcoming new message
       setStreamingMessageIndex(updated.length - 1);
       return updated;
     });
@@ -1078,6 +1131,7 @@ function ChatContent() {
         resend_message_id: resend_message_id || "",
         new_file_context: fileContext,
       }); 
+      localStorage.removeItem("tadabbur_pending_prompt");
       setFileContext(null);
       if (inputRef.current) {
         inputRef.current.innerText = "";

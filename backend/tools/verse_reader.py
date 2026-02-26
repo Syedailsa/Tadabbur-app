@@ -1,12 +1,10 @@
-# """
-# Quran Audio Playback Tool
-# Provides audio URLs for Quran recitation
-# """
-
+import json
 import requests
 import operator
 import logging
 from data.data import surah_name_english_array, surah_name_english_translation_array
+from langchain_core.caches import InMemoryCache
+from langchain_core.outputs import Generation
 from pydantic import BaseModel, Field
 from typing import Optional
 from tools.utils import normalize_surah
@@ -66,6 +64,7 @@ QURAN_DATA_LOCK = Lock()
 QURAN_API_BASE = "https://api.alquran.cloud/v1/quran/en.asad"
 QURAN_IMAGE_BASE_API = "http://cdn.islamic.network/quran/images/high-resolution"
 QURAN_DATA_CACHE = None
+QURAN_TOOL_CACHE = InMemoryCache(maxsize=1000)  
 
 
 def get_Quran_data():
@@ -213,6 +212,13 @@ def get_verse_image(args: List[Filters] = None) -> dict:
         }
         return response_data
     # initialize a results array to concatenate results
+    cache_key = json.dumps([arg.model_dump() for arg in args], sort_keys=True)
+    llm_string = "quran_tool_v1" # Identifier for this specific tool version
+    cached_result = QURAN_TOOL_CACHE.lookup(prompt=cache_key, llm_string=llm_string)
+    if cached_result:
+        logger.info("Cache hit for Quran verse image query")
+        # LangChain cache returns a list of Generation objects
+        return json.loads(cached_result[0].text)
     surah_array = [] 
     Quran_data = None
     try:
@@ -360,6 +366,12 @@ def get_verse_image(args: List[Filters] = None) -> dict:
             "verse_images": surah_array,
             "error": None
         }
+        
+        QURAN_TOOL_CACHE.update(
+            prompt=cache_key,
+            llm_string=llm_string,
+            return_val=[Generation(text=json.dumps(response_data))]
+        )
 
         return response_data
     else:

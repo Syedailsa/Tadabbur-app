@@ -1,8 +1,3 @@
-# """
-# Quran Audio Playback Tool
-# Provides audio URLs for Quran recitation
-# """
-
 import requests
 import operator
 from data.data import reciters_name_array, surah_name_english_array, surah_name_english_translation_array
@@ -13,6 +8,10 @@ from tools.utils import normalize_surah
 from langchain.tools import tool
 from typing import List, Literal
 from langchain.tools import tool
+import json
+import logging
+from langchain_core.caches import InMemoryCache
+from langchain_core.outputs import Generation
 
 class SurahFilter(BaseModel):
     """Input for surah queries"""
@@ -55,11 +54,13 @@ class VerseFilter(BaseModel):
     limit: Optional[int] = 1
 
 class Filters(BaseModel):
-    surah_args: SurahFilter = None
-    verse_args: VerseFilter = None
+    surah_args: Optional[SurahFilter] = None
+    verse_args: Optional[VerseFilter] = None
 
 
 QURAN_API_BASE = "http://api.alquran.cloud/v1/quran"
+AUDIO_TOOL_CACHE = InMemoryCache(maxsize=1000)
+logger = logging.getLogger(__name__)
 
 class QuranAudioInput(BaseModel):
     args: Optional[List[Filters]] = None
@@ -186,7 +187,19 @@ def get_Quran_Audio(args: List[Filters] = None, reciter:str = "ar.alafasy") -> L
 
         }
         return response_data
-    # initialize a results array to concatenate results
+    
+    cache_payload = {
+        "args": [arg.model_dump() for arg in args],
+        "reciter": reciter
+    }
+    cache_key = json.dumps(cache_payload, sort_keys=True)
+    llm_string = "quran_audio_v1"
+
+    cached_result = AUDIO_TOOL_CACHE.lookup(prompt=cache_key, llm_string=llm_string)
+    if cached_result:
+        logger.info(f"Audio cache hit for reciter: {reciter}")
+        return json.loads(cached_result[0].text)
+    
     surah_array = []    
     # fetch the data
     reciter_identifier = normalize_reciter_name(reciter, reciters_name_array)
@@ -341,6 +354,11 @@ def get_Quran_Audio(args: List[Filters] = None, reciter:str = "ar.alafasy") -> L
             "error": None
 
         }
+        AUDIO_TOOL_CACHE.update(
+            prompt=cache_key,
+            llm_string=llm_string,
+            return_val=[Generation(text=json.dumps(response_data))]
+        )
         return response_data
     else:
         response_data = {
