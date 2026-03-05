@@ -31,20 +31,20 @@ const ReportContentDialogueBox: React.FC<ReportContenDialogueBoxProps> = ({
     if (selectedReason === "other") {
       if (!customFeedback) return;
       wsSendAsync(
-      wsRef?.current,{
-          type: "report",
-          message_id: reportedMessageID,
-          feedback: customFeedback,
-        }).catch(() => {})
-      
+        wsRef?.current, {
+        type: "report",
+        message_id: reportedMessageID,
+        feedback: customFeedback,
+      }).catch(() => { })
+
     } else {
       wsSendAsync(
-      wsRef?.current,{
-          type: "report",
-          message_id: reportedMessageID,
-          feedback: selectedReason,
-        }).catch(() => {})
-      
+        wsRef?.current, {
+        type: "report",
+        message_id: reportedMessageID,
+        feedback: selectedReason,
+      }).catch(() => { })
+
     }
     setHideReportContentDialogueBox(true);
   };
