@@ -15,7 +15,11 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+WEB_GOOGLE_CLIENT_ID = os.getenv("WEB_GOOGLE_CLIENT_ID")
+APP_GOOGLE_CLIENT_ID = os.getenv("APP_GOOGLE_CLIENT_ID")
+
+GOOGLE_CLIENT_IDS = [WEB_GOOGLE_CLIENT_ID, APP_GOOGLE_CLIENT_ID]
+
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-this")
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 24 * 7  
@@ -63,45 +67,91 @@ def decode_token(token: str) -> dict:
 
 async def verify_google_token(token: str) -> dict:
     """
-    REAL Google OAuth2 Token Verification
-    Uses Google's official library – 100% secure & production ready
+    Verify Google token against multiple Client IDs (Web + Mobile)
     """
     if not token:
         raise HTTPException(status_code=400, detail="Google token is required")
 
-    if not GOOGLE_CLIENT_ID:
-        raise HTTPException(status_code=500, detail="Server error: GOOGLE_CLIENT_ID not configured")
+    if not GOOGLE_CLIENT_IDS:
+        raise HTTPException(status_code=500, detail="Server error: GOOGLE_CLIENT_IDS not configured")
 
-    try:
-        # Verify token with Google
+    last_exception = None
+    for client_id in GOOGLE_CLIENT_IDS:
+        try:
+            claim = id_token.verify_oauth2_token(
+                token,
+                requests.Request(),
+                audience=client_id
+            )
+
+            # Extra security
+            if claim['iss'] not in ['accounts.google.com', 'https://accounts.google.com']:
+                raise ValueError("Invalid token issuer")
+            
+            if claim.get('email_verified') is not True:
+                raise HTTPException(status_code=401, detail="Please verify your email with Google")
+
+            return {
+                "google_id": claim['sub'],
+                "email": claim['email'],
+                "name": claim.get('name'),
+                "given_name": claim.get('given_name'),
+                "family_name": claim.get('family_name'),
+                "picture": claim.get('picture'),
+                "email_verified": claim.get('email_verified', False),
+            }
+
+        except ValueError as e:
+            last_exception = e
+            continue  # next client ID try
+        except Exception as e:
+            last_exception = e
+            continue
+
+    # Agar dono fail ho gaye
+    raise HTTPException(status_code=401, detail=f"Invalid Google token: {last_exception}")
+
+# async def verify_google_token(token: str) -> dict:
+#     """
+#     REAL Google OAuth2 Token Verification
+#     Uses Google's official library – 100% secure & production ready
+#     """
+#     if not token:
+#         raise HTTPException(status_code=400, detail="Google token is required")
+
+#     if not GOOGLE_CLIENT_ID:
+#         raise HTTPException(status_code=500, detail="Server error: GOOGLE_CLIENT_ID not configured")
+
+#     try:
+#         # Verify token with Google
         
-        claim = id_token.verify_oauth2_token(
-            token,
-            requests.Request(),
-            audience=GOOGLE_CLIENT_ID
-        )
+#         claim = id_token.verify_oauth2_token(
+#             token,
+#             requests.Request(),
+#             audience=GOOGLE_CLIENT_ID
+#         )
 
-        # Extra security checks 
-        if claim['iss'] not in ['accounts.google.com', 'https://accounts.google.com']:
-            raise ValueError("Invalid token issuer")
+#         # Extra security checks 
+#         if claim['iss'] not in ['accounts.google.com', 'https://accounts.google.com']:
+#             raise ValueError("Invalid token issuer")
         
-        if claim.get('email_verified') is not True:
-            raise HTTPException(status_code=401, detail="Please verify your email with Google")
+#         if claim.get('email_verified') is not True:
+#             raise HTTPException(status_code=401, detail="Please verify your email with Google")
 
-        return {
-            "google_id": claim['sub'],
-            "email": claim['email'],
-            "name": claim.get('name'),
-            "given_name": claim.get('given_name'),
-            "family_name": claim.get('family_name'),
-            "picture": claim.get('picture'),
-            "email_verified": claim.get('email_verified', False),
-        }
+#         return {
+#             "google_id": claim['sub'],
+#             "email": claim['email'],
+#             "name": claim.get('name'),
+#             "given_name": claim.get('given_name'),
+#             "family_name": claim.get('family_name'),
+#             "picture": claim.get('picture'),
+#             "email_verified": claim.get('email_verified', False),
+#         }
 
-    except ValueError as e:
-        raise HTTPException(status_code=401, detail=f"Invalid Google token: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Google authentication failed. Please try again.")
+#     except ValueError as e:
+#         raise HTTPException(status_code=401, detail=f"Invalid Google token: {str(e)}")
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail="Google authentication failed. Please try again.")
 
 # ==================== OTP FUNCTIONS ====================
 
