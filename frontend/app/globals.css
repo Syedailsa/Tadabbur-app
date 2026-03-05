@@ -46,3 +46,78 @@
 .bg-tadabbur-icon {
   background-image: url("../images/Tadabbur_icon.png");
 }
+
+@layer utilities {
+  .hide-scrollbar {
+    scrollbar-width: none; /* Firefox */
+  }
+
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none; /* Chrome, Safari */
+  }
+}
+
+.chat-history-cupboard-scrollbar {
+  overflow-y: auto;
+  max-height: 480px;
+}
+
+.chat-history-cupboard-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.chat-history-cupboard-scrollbar::-webkit-scrollbar-track {
+  background: black;
+}
+
+.chat-history-cupboard-scrollbar::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 10px;
+  min-height: 20px;
+}
+
+.black-scrollbar {
+  overflow-y: auto;
+}
+
+.black-scrollbar::-webkit-scrollbar-track {
+  background: #000000; /* Black track */
+}
+
+.black-scrollbar::-webkit-scrollbar-thumb {
+  background: #111111; /* Dark thumb */
+  border-radius: 10px;
+}
+
+.black-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #222222; /* Slightly lighter on hover */
+}
+
+/* Firefox */
+.black-scrollbar {
+  scrollbar-width: auto;
+  scrollbar-color: #ffffff #000000; /* thumb track */
+}
+
+.white-scrollbar {
+  overflow-y: auto;
+}
+
+.white-scrollbar::-webkit-scrollbar-track {
+  background: #ffffff; /* Black track */
+}
+
+.white-scrollbar::-webkit-scrollbar-thumb {
+  background: #cdcdcd; /* Dark thumb */
+  border-radius: 10px;
+}
+
+.white-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #222222; /* Slightly lighter on hover */
+}
+
+/* Firefox */
+.white-scrollbar {
+  scrollbar-width: auto;
+  scrollbar-color: #000000 #ffffff; /* thumb track */
+}

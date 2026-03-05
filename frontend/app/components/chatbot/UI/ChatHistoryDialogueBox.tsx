@@ -4,24 +4,17 @@ import { useContext, useEffect, useRef, useState } from "react";
 import ChatHistory from "../../../../icons/history_icon.svg";
 import { X } from "lucide-react";
 import { wsSendAsync } from "@/app/utils/retryOpernation";
-
-const formatDateToDMY = (dateString: string | null): string => {
-  const date = new Date(dateString || new Date());
-  const day = date.getDate().toString().padStart(2, "0");
-  const month = (date.getMonth() + 1).toString().padStart(2, "0");
-  const year = date.getFullYear();
-
-  return `${day}-${month}-${year}`;
-};
+import formatDateToDMY from "@/utils/formatDateToDMY";
 
 const ChatHisoryDialogueBox = () => {
   const {
+    wsRef,
     chatHistory,
     setSelectedSessionID,
     openChatHistoryDialogueBox,
     setOpenChatHistoryDialogueBox,
-    wsRef,
   } = useContext(ChatContext)!;
+
   const [translatePic, setTranslatePic] = useState<boolean | null>(null);
   const dialogueRef = useRef<HTMLDivElement>(null);
 
@@ -60,6 +53,7 @@ const ChatHisoryDialogueBox = () => {
         user_id: user_id,
       });
     }
+
   }, [openChatHistoryDialogueBox, wsRef]);
 
   if (!openChatHistoryDialogueBox) return null;
@@ -153,7 +147,7 @@ const ChatHisoryDialogueBox = () => {
                       onClick={() => {
                         setSelectedSessionID(chat.session_id);
                         setOpenChatHistoryDialogueBox(false);
-            
+
                         wsSendAsync(wsRef.current, {
                           type: "get_chat",
                           session_id: chat.session_id,

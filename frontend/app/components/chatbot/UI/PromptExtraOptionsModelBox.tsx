@@ -23,10 +23,12 @@ const PromptExtraOptionsModelBox = ({
   assistant_index,
 }: PromptExtraOptionsModelBoxProps) => {
 
-  const { wsRef, sessionID, messages, setMessages, setReportedMessageID, audioRef, currentPlayableAudio, setHidePromptExtraOptionsModelBoxArray, setHideReportContentDialogueBox, } = useContext(ChatContext)!
+  const { wsRef, sessionID, messages, setMessages, setReportedMessageID, audioRef, currentPlayableAudio, setHidePromptExtraOptionsModelBoxArray, setHideReportContentDialogueBox, currentMode } = useContext(ChatContext)!
   const overlayRef = useRef<HTMLDivElement | null>(null);
 
   const audio_state = messages?.find((m: ChatMessage) => m.message_id === reply_to_message_id)?.responses.find((r: AssistantMessage) => r.message_id === message_id)?.audio_state
+  const backgroundTheme = currentMode === "normal" ? "white" : "black"
+  const fontTheme = currentMode === "normal" ? "black" : "white"
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -109,36 +111,36 @@ const PromptExtraOptionsModelBox = ({
       ref={overlayRef}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="absolute bottom-12 left-36 w-42 h-max rounded-xl bg-white shadow-md overflow-clip border border-black/5 px-1 pt-1 pb-2"
+      className={`absolute bottom-12 left-36 w-42 h-max border rounded-xl ${backgroundTheme} ${backgroundTheme === "white" ? "border-black/5 bg-white" : "bg-black/80 border-white/10 backdrop-blur-md"} shadow-md overflow-clip px-1 p-2`}
     >
       <div className="w-full h-full flex flex-col items-center">
         {audio_state === "loading" ? (
-          <div className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-pointer">
+          <div className={`w-full flex rounded-md items-center p-1 ${backgroundTheme === "white" ? "hover:bg-black/5" : "hover:bg-neutral-700/80"} cursor-pointer`}>
             <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.6, repeat: Infinity, repeatType: "loop" }} className="ml-2 w-4 h-4 border-x-2 border-black/40 rounded-full fill-current text-black/50"></motion.div>
             <p className="ml-2 switzer-500 text-black/50 text-[0.94rem]">
               Loading
             </p>
           </div>
         ) : (audio_state === "ended" || !audio_state) ? (
-          <div className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-pointer"
+          <div className={`w-full flex rounded-md items-center p-1 ${backgroundTheme === "white" ? "hover:bg-black/5" : "hover:bg-neutral-700/80"} cursor-pointer`}
             onClick={() => handleOptionClick({ type: "read_aloud" })}>
-            <ReadAloud className="ml-2 w-5 h-5 fill-current text-black/80" />
-            <p className="ml-2 switzer-500 text-[0.94rem]">Read aloud</p>
+            <ReadAloud className={`ml-2 w-5 h-5 fill-current ${fontTheme === "black" ? "text-black/80" : "text-white"}`} />
+            <p className={`ml-2 switzer-500 text-[0.94rem] text-${fontTheme}`}>Read aloud</p>
           </div>
         ) : audio_state === "playing" ? (
           <div onClick={() => {
             audioRef?.current?.pause()
 
-          }} className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-pointer">
-            <Pause className="ml-2 w-5 h-5 fill-current text-black/80" />
-            <p className="ml-2 switzer-500 text-[0.94rem]">Pause</p>
+          }} className={`w-full flex rounded-md items-center p-1 ${backgroundTheme === "white" ? "hover:bg-black/5" : "hover:bg-neutral-700/80"} cursor-pointer`}>
+            <Pause className={`ml-2 w-5 h-5 fill-current ${fontTheme === "black" ? "text-black/80" : "text-white"}`} />
+            <p className={`ml-2 switzer-500 text-[0.94rem] text-${fontTheme}`}>Pause</p>
           </div>
         ) : audio_state === "paused" ? (
           <div onClick={() => {
             audioRef?.current?.play()
-          }} className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-pointer">
-            <Play className="ml-2 w-5 h-5 fill-current text-black/80" />
-            <p className="ml-2 switzer-500 text-[0.94rem]">Pause</p>
+          }} className={`w-full flex rounded-md items-center p-1 ${backgroundTheme === "white" ? "hover:bg-black/5" : "hover:bg-neutral-700/80"} cursor-pointer`}>
+            <Play className={`ml-2 w-5 h-5 fill-current ${fontTheme === "black" ? "text-black/80" : "text-white"}`} />
+            <p className={`ml-2 switzer-500 text-[0.94rem] text-${fontTheme}`}>Play</p>
           </div>
 
         ) : (null)}
@@ -146,10 +148,10 @@ const PromptExtraOptionsModelBox = ({
       </div>
       <div
         onClick={() => handleOptionClick({ type: "report" })}
-        className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-pointer"
+        className={`w-full flex rounded-md items-center p-1 ${backgroundTheme === "white" ? "hover:bg-black/5" : "hover:bg-neutral-700/80"} cursor-pointer`}
       >
-        <Flag className="ml-2 w-5 h-5 " />
-        <p className="ml-2 switzer-500 text-[0.94rem]">Report Content</p>
+        <Flag className={`ml-2 w-5 h-5 fill-current text-${fontTheme}`} />
+        <p className={`ml-2 switzer-500 text-[0.94rem] text-${fontTheme}`}>Report Content</p>
       </div>
     </motion.div>
   );

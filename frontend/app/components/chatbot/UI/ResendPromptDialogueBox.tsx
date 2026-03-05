@@ -19,8 +19,20 @@ const ResendPromptDialogueBox = ({ parent_index, reply_to_message_id, setHideRes
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLDivElement>(null);
   const [hidePlaceholder, setHidePlaceholder] = useState<boolean>(false);
-  const { messages, ask
+  const { messages, ask, currentMode
   } = useContext(ChatContext)!
+
+
+  const backgroundTheme = currentMode === "normal" ? "white" : "black"
+  const fontTheme = currentMode === "normal" ? "black" : "white"
+
+  const IconMap = {
+    Regenerate: <Regenrate className={`w-3.5 h-3.5 fill-current text-${fontTheme}`} />,
+    ShortText: <ShortText className={`w-5.5 h-5.5 fill-current text-${fontTheme}`} />,
+    LongText: <LongText className={`w-4.5 h-4.5 fill-current text-${fontTheme}`} />,
+    Reference: <Reference className={`w-4.5 h-4.5 fill-current text-${fontTheme}`} />,
+    Engaging: <Engaging className={`w-4.5 h-4.5 fill-current text-${fontTheme}`} />,
+  };
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -55,15 +67,16 @@ const ResendPromptDialogueBox = ({ parent_index, reply_to_message_id, setHideRes
     setHideResendPromptDialogue(true);
 
   };
+
   return (
     <motion.div
       ref={overlayRef}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.2, ease: easeInOut }}
-      className="absolute bg-white bottom-12 left-28 rounded-md shadow-md h-max w-48 py-2"
+      className={`absolute border ${backgroundTheme === "white" ? "bg-white border-black/5" : "bg-black/80 backdrop-blur-md border border-white/10"} bottom-12 left-28 rounded-lg shadow-md h-max w-48 py-2`}
     >
-      <div className="flex w-full gap-x-2 px-2">
+      <div className="flex w-full px-2">
         <div className="relative w-full">
           <div
             ref={inputRef}
@@ -80,10 +93,10 @@ const ResendPromptDialogueBox = ({ parent_index, reply_to_message_id, setHideRes
               }
             }}
             contentEditable
-            className="px-2 switzer-500 focus:outline-none border border-black/10 rounded-md max-w-37 max-h-10 overflow-y-auto"
+            className={`px-2 switzer-500 focus:outline-none text-${fontTheme} border border-${fontTheme}/10 rounded-md max-w-37 max-h-10 overflow-y-auto`}
           ></div>
           {!hidePlaceholder && (
-            <span className="absolute text-[0.9rem] pointer-events-none text-black/70 switzer-500 top-[0.2rem] left-2">
+            <span className={`absolute text-[0.9rem] pointer-events-none text-${fontTheme}/70 switzer-500 top-[0.2rem] left-2`}>
               Your prompt here
             </span>
           )}
@@ -94,7 +107,7 @@ const ResendPromptDialogueBox = ({ parent_index, reply_to_message_id, setHideRes
             setHideResendPromptDialogue(true);
           }}
         >
-          <SendIcon className="fill-current text-black/70 hover:text-black cursor-pointer" />
+          <SendIcon className={`fill-current text-${fontTheme}/70 hover:text-${fontTheme} cursor-pointer`} />
         </div>
       </div>
 
@@ -140,11 +153,11 @@ const ResendPromptDialogueBox = ({ parent_index, reply_to_message_id, setHideRes
                 }
                 setHideResendPromptDialogue(true);
               }}
-              className="py-1 px-1 flex gap-x-3 tracking-tight hover:bg-black/5 rounded-md items-center cursor-pointer"
+              className={`p-1 flex tracking-tight ${backgroundTheme === "white" ? "hover:bg-black/5" : "hover:bg-neutral-700/80"} rounded-md items-center cursor-pointer`}
               key={idx}
             >
               {Icon}
-              <p className="switzer-500">{option.text}</p>
+              <p className={`switzer-500 text-${fontTheme} ml-3`}>{option.text}</p>
             </div>
           );
         })}
@@ -169,11 +182,4 @@ const options = [
   },
 ];
 
-const IconMap = {
-  Regenerate: <Regenrate className="w-4 h-4 fill-current text-black" />,
-  ShortText: <ShortText className="w-5.5 h-5.5 fill-current text-black" />,
-  LongText: <LongText className="w-4.5 h-4.5 fill-current text-black" />,
-  Reference: <Reference className="w-4.5 h-4.5 fill-current text-black" />,
-  Engaging: <Engaging className="w-4.5 h-4.5 fill-current text-black" />,
-};
 export default ResendPromptDialogueBox;

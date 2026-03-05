@@ -30,8 +30,7 @@ const PromptExtraOptions = ({
 }: PromptExtraOptionsProps) => {
 
   const { sessionID, wsRef, messages, setMessages, hidePromptExtraOptionsModelBoxArray,
-    setHidePromptExtraOptionsModelBoxArray,
-
+    setHidePromptExtraOptionsModelBoxArray, currentMode
   } = useContext(ChatContext)!
 
   const [overlayTranslateAmount, setOverlayTranslateAmount] = useState<
@@ -59,7 +58,7 @@ const PromptExtraOptions = ({
 
 
   const hidePromptExtraOptionsModelBox = hidePromptExtraOptionsModelBoxArray.find((m: hidePromptExtraOptionsModelBoxArray) => m.assistant_message_id == message_id)?.hidePromptExtraOptionsModelBox
-
+  const theme = currentMode === "normal" ? "black" : "white"
   type OptionType = "copy" | "resend" | "liked" | "disliked";
   const handleOptionClick = ({ type }: { type: OptionType }) => {
     if (parent_index === null) return
@@ -243,7 +242,7 @@ const PromptExtraOptions = ({
             }}
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
           >
-            <Copy className="w-4.5 h-4.5" />
+            <Copy className={`w-4.5 h-4.5 fill-current text-${theme}`} />
           </div>
 
           <div
@@ -261,7 +260,7 @@ const PromptExtraOptions = ({
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
           >
             <ThumbsUp
-              className={`w-4 h-4 ${feedback === "liked" ? "fill-blue-400" : ""
+              className={`w-4 h-4 fill-current text-${theme} ${feedback === "liked" ? "fill-blue-400" : ""
                 }`}
             />
           </div>
@@ -281,7 +280,7 @@ const PromptExtraOptions = ({
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
           >
             <ThumbsDown
-              className={`w-4 h-4 ${feedback === "disliked" ? "fill-red-400" : ""
+              className={`w-4 h-4 fill-current text-${theme} ${feedback === "disliked" ? "fill-red-400" : ""
                 }`}
             />
           </div>
@@ -299,7 +298,7 @@ const PromptExtraOptions = ({
             }}
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
           >
-            <Refresh className="w-4 h-4" />
+            <Refresh className={`w-4 h-4 fill-current text-${theme}`} />
           </div>
           <div
             onMouseOver={() => {
@@ -311,7 +310,7 @@ const PromptExtraOptions = ({
 
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
           >
-            <MoreOptions className="w-4 h-4" />
+            <MoreOptions className={`w-4.5 h-4.5 fill-current text-${theme}`} />
           </div>
           {active && (
             <motion.div
@@ -342,7 +341,7 @@ const PromptExtraOptions = ({
             }}
             className="p-1.5 hover:bg-black/5 ml-auto rounded-md cursor-pointer"
           >
-            <Copy className="w-4.5 h-4.5" />
+            <Copy className={`w-4.5 h-4.5 fill-current text-${theme}`} />
           </div>
           {active && (
             <motion.div

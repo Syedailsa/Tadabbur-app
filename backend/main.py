@@ -148,7 +148,7 @@ def get_chat_messages(session_id: str, user_id: str, supabase_client) -> List[st
         print("Session id or supabase client none, so returning...")
         return []
 
-    chat_messages = supabase_client.table('chat_messages').select('message_id', 'user_id', 'role', 'content', 'reply_to_message_id', 'feedback', 'audio_url', 'has_verse_audio', 'audio_data', 'has_verse_image', 'verse_images').in_("role", ["user", "assistant"]).eq('session_id', session_id).eq('user_id', user_id).order('created_at').execute().data
+    chat_messages = supabase_client.table('chat_messages').select('message_id', 'user_id', 'role', 'content', 'reply_to_message_id', 'feedback', 'audio_url', 'has_verse_audio', 'audio_data', 'has_verse_image', 'verse_images', 'story_data').in_("role", ["user", "assistant"]).eq('session_id', session_id).eq('user_id', user_id).order('created_at').execute().data
 
     
     if chat_messages:
@@ -312,7 +312,11 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
     # initialize the conversation history and message_IDs set
     conversation_history = []
     unique_message_ids = []
+<<<<<<< HEAD
+    current_mode = "normal"
+=======
 
+>>>>>>> c284ef43e063c6c1dd5dac6d697822e6c1d9218c
     # ====== SESSION CODE START ======
     session_id = None
     session_model_key: str = "gpt-oss-20b"
@@ -416,7 +420,9 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
             # SESSION INIT
             if data.get("type") == "session-init":
                     requested_session_id = data.get("session_id", "").strip()
-
+                    mode = data.get("mode", "normal")
+                    current_mode = mode
+                    logger.info(f"Session mode: {mode}")
                     if not initialized or requested_session_id != current_session_id:
                         current_session_id = requested_session_id
                         initialized = True
@@ -452,7 +458,8 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                     
                                     await websocket.send_json({
                                         "type": "session_id", "status": "acknowledged", 
-                                        "session_id": session_id, "message_ids": unique_message_ids
+                                        "session_id": session_id, "message_ids": unique_message_ids,
+                                        "mode": mode
                                     })
                                 else:
                                     await websocket.send_json({"type": "session_id", "status": "error", "error": "Unauthorized"})
@@ -466,7 +473,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                 await websocket.send_json({
                                     "type": "session_id", "status": "acknowledged",
                                     "session_id": session_id, "current_agent": current_agent_name,
-                                    "message_ids": []
+                                    "message_ids": [], "mode": mode
                                 })
 
                         except Exception as e:
@@ -502,18 +509,27 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
             if data.get("type") == "get_chat":
                 requested_session_id = data.get("session_id", "")
                 logger.info(f"📥 get_chat request for session: {requested_session_id}")
+                if not requested_session_id:
+                    print("No session id present, can't proceed")
+                    await websocket.send_json({
+                        "type": "get_chat", 
+                        "status": "not-acknowledged",
+                        "error": "No session ID present"
+                    })
+                    continue
                 try:
-                    msg_task = asyncio.to_thread(get_chat_messages, requested_session_id, user_id, supabase_client)
-                    file_task = asyncio.to_thread(
+                    chat_history = await asyncio.to_thread(get_chat_messages, requested_session_id, user_id, supabase_client)
+                    files_response = await asyncio.to_thread(
                         lambda: supabase_client.table('session_files')
                         .select('file_id, file_name, file_type, message_id, file_content')
                         .eq("user_id", user_id).eq('session_id', requested_session_id)
                         .order('created_at').execute()
                     )
+                    session = supabase_client.table("chat_sessions").select("mode").eq("session_id", requested_session_id).limit(1).single().execute().data
                     
-                    chat_history, files_res = await asyncio.gather(msg_task, file_task)
-                    files_response = files_res.data
-                    
+                    current_mode = session.get("mode", "normal")
+                    print("Session mode", current_mode)
+                    files_response = files_response.data
                     combined_file_content = ""
                     files_by_message = defaultdict(list)
                     for f in (files_response or []):
@@ -540,10 +556,11 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                 "type": "get_chat", 
                                 "status": "acknowledged",
                                 "session_id": session_id, 
-                                "chat_history": chat_history
+                                "chat_history": chat_history,
+                                "mode": current_mode
                             })
                         except Exception as e:
-                            logger.error(f"Failed to send history (Socket closed?): {e}")
+                            logger.error(f"Failed to send history {e}")
                 except Exception as e:
                     logger.error(f"Error loading chat: {e}")
                 continue
@@ -807,6 +824,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             supabase_client.table("chat_sessions").insert({
                                 'session_id': session_id, 
                                 'user_id': user_id,   
+                                'mode': current_mode
                             }).execute()
                     except Exception as sess_e:
                         logger.error(f"Failed to lazy-create session: {sess_e}")
