@@ -312,7 +312,11 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
     # initialize the conversation history and message_IDs set
     conversation_history = []
     unique_message_ids = []
+<<<<<<< HEAD
     current_mode = "normal"
+=======
+
+>>>>>>> c284ef43e063c6c1dd5dac6d697822e6c1d9218c
     # ====== SESSION CODE START ======
     session_id = None
     session_model_key: str = "gpt-oss-20b"

@@ -67,6 +67,7 @@ import FullStoryViewContainer from "@/app/components/chatbot/UI/FullStoryViewCon
 import StoryModeExtraOptions from "@/app/components/chatbot/UI/StoryModeExtraOptions";
 
 
+
 function ChatContent() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const inputRef = useRef<HTMLDivElement | null>(null);
@@ -103,6 +104,10 @@ function ChatContent() {
   const [hideReportContentDialogueBox, setHideReportContentDialogueBox] =
     useState<boolean | null>(true);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
+<<<<<<< HEAD
+=======
+  const [openStoryContainer, setOpenStoryContainer] = useState<boolean>(false)
+>>>>>>> c284ef43e063c6c1dd5dac6d697822e6c1d9218c
   const [fileContext, setFileContext] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false);
   const currentMessageIDRef = useRef<string | null>(null);
@@ -634,7 +639,13 @@ function ChatContent() {
           const audio_data: SurahForAudios[] = data.content.audio_data || []
           const verse_images: SurahForVerseImages[] = data.content.verse_images || []
           const story_data: StoryParagraph[] = data.content.story_segments ?? []
+<<<<<<< HEAD
 
+=======
+          if (story_data.length > 0) {
+            setOpenStoryContainer(true)
+          }
+>>>>>>> c284ef43e063c6c1dd5dac6d697822e6c1d9218c
           // check if oldMessages is present with resend flag
           if (resend_flag) {
             if (
@@ -1312,12 +1323,288 @@ function ChatContent() {
                               <div className="absolute border border-black/5 rounded-md w-max px-2 py-0.5 poppins-semibold -top-3 z-10 -right-2 shadow-2xs fill-current text-black/30 bg-gray-50 subpixel-antialiased">
                                 <p>ATTACHED</p>
                               </div>
+<<<<<<< HEAD
                               <div className="flex flex-col gap-y-0.5">
                                 <p className="roboto-600 text-[0.9rem]">{attachment.attachmentName}</p>
                                 <p className="subpixel-antialiased text-black/70" style={{ fontStyle: "italic" }}>
                                   {attachment.attachmentType && attachment.attachmentType === "text/plain" ? "Text"
                                     : attachment.attachmentType === "application/pdf" ? "PDF"
                                       : "File"} File
+=======
+                            )
+                          })
+                        )}
+                        <div>
+                          <p className="ml-auto w-max min-w-40 max-w-[20rem] bg-neutral-900 text-white switzer-500 py-2 px-3 rounded-md shadow-md border border-black/5">
+                            {record.content}
+                          </p>
+                        </div>
+
+                        {/* PromptExtraOptions */}
+                        <div>
+                          <PromptExtraOptions message_id={record.message_id} reply_to_message_id={null} parent_index={record_index} assistant_index={null} messageType="user" />
+                        </div>
+                        {record?.responses?.map((ai_msg, ai_msg_idx) => {
+                          // loading circle logic here
+                          return loading &&
+                            !loadingMessage &&
+                            !ai_msg.content ? (
+                            <motion.div
+                              key={ai_msg_idx}
+                              animate={{ scale: [1, 1.2, 1] }}
+                              transition={{
+                                duration: 0.4,
+                                ease: easeInOut,
+                                repeat: Infinity,
+                                repeatType: "loop",
+                              }}
+                              className="w-3 h-3 rounded-full bg-black"
+                            ></motion.div>
+                          ) : !loading && loadingMessage && !ai_msg.content ? (
+                            <p key={ai_msg_idx} id="loading-message" className="switzer-500 animate-pulse">{loadingMessage}</p>
+                          ) : reportedMessageIDs &&
+                            !reportedMessageIDs.includes(ai_msg?.message_id) &&
+                            ai_msg_idx === record.active_message_index ? (
+                            <div key={ai_msg_idx}>
+                              <div className="w-max min-w-40 max-w-full switzer-500 mt-2 py-2 px-3 rounded-md bg-white shadow-md">
+                                <ReactMarkdown
+                                  remarkPlugins={[remarkGfm]}
+                                  rehypePlugins={[rehypeRaw]}
+                                  components={{
+                                    // HEADERS
+                                    h1: ({ node, ...props }) => (
+                                      <h1
+                                        className="text-3xl font-bold"
+                                        {...props}
+                                      />
+                                    ),
+                                    h2: ({ node, ...props }) => (
+                                      <h2
+                                        className="text-2xl font-semibold"
+                                        {...props}
+                                      />
+                                    ),
+                                    h3: ({ node, ...props }) => (
+                                      <h3
+                                        className="text-xl font-semibold"
+                                        {...props}
+                                      />
+                                    ),
+
+                                    // PARAGRAPH
+                                    p: ({ node, ...props }) => (
+                                      <p
+                                        className="leading-7 my-2 text-gray-800"
+                                        {...props}
+                                      />
+                                    ),
+
+                                    // STRONG ( **bold** )
+                                    strong: ({ node, ...props }) => (
+                                      <strong
+                                        className="font-bold text-black"
+                                        {...props}
+                                      />
+                                    ),
+
+                                    // EMPHASIS ( *italic* )
+                                    em: ({ node, ...props }) => (
+                                      <em
+                                        className="italic text-gray-700"
+                                        {...props}
+                                      />
+                                    ),
+
+                                    // LINE BREAK
+                                    br: ({ node, ...props }) => <br />,
+
+                                    // LINKS
+                                    a: ({ node, ...props }) => (
+                                      <a
+                                        className="text-blue-600 underline wrap-break-word"
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        {...props}
+                                      />
+                                    ),
+
+                                    // LISTS
+                                    ul: ({ node, ...props }) => (
+                                      <ul
+                                        className="list-disc pl-6"
+                                        {...props}
+                                      />
+                                    ),
+                                    ol: ({ node, ...props }) => (
+                                      <ol
+                                        className="list-decimal pl-6"
+                                        {...props}
+                                      />
+                                    ),
+                                    li: ({ node, ...props }) => (
+                                      <li className="my-1" {...props} />
+                                    ),
+                                    blockquote: ({ node, ...props }) => (
+                                      <blockquote
+                                        className="border-l-4 border-gray-400 pl-4 italic my-3"
+                                        {...props}
+                                      />
+                                    ),
+
+                                    // HORIZONTAL RULE
+                                    hr: () => (
+                                      <hr className="my-4 border-gray-300" />
+                                    ),
+
+                                    // IMAGES
+                                    img: ({ node, ...props }) => (
+                                      <img
+                                        className="rounded-md my-2"
+                                        alt=""
+                                        {...props}
+                                      />
+                                    ),
+                                    table: ({ node, ...props }) => (
+                                      <div className="overflow-x-auto my-4 border border-black/20 rounded-lg shadow-sm">
+                                        <table className="min-w-full divide-y divide-gray-200" {...props} />
+                                      </div>
+                                    ),
+                                    thead: ({ node, ...props }) => (
+                                      <thead
+                                        className="bg-gray-50"
+                                        {...props}
+                                      />
+                                    ),
+                                    tbody: ({ node, ...props }) => (
+                                      <tbody
+                                        className="bg-white divide-y divide-gray-200"
+                                        {...props}
+                                      />
+                                    ),
+                                    tr: ({ node, ...props }) => (
+                                      <tr
+                                        className="hover:bg-gray-50"
+                                        {...props}
+                                      />
+                                    ),
+                                    th: ({ node, ...props }) => (
+                                      <th className="px-4 py-3 text-left text-sm font-medium text-black uppercase tracking-wider border-b" {...props} />
+                                    ),
+                                    td: ({ node, ...props }) => (
+                                      <td className="px-4 py-3 text-sm text-gray-700 border-b border-black/20 whitespace-pre-wrap" {...props} />
+                                    ),
+                                    code({
+                                      inline,
+                                      className,
+                                      children,
+                                      ...props
+                                    }: {
+                                      inline?: boolean;
+                                      className?: string;
+                                      children?: ReactNode;
+                                    } & HTMLAttributes<HTMLElement>) {
+                                      const match = /language-(\w+)/.exec(className || '');
+
+                                      if (!inline && match) {
+                                        // Create a clean props object without HTML attributes that conflict
+                                        const syntaxHighlighterProps = {
+                                          language: match[1],
+                                          PreTag: "div" as const,
+                                          className: "rounded-md shadow-sm my-4",
+                                          style: dracula as { [key: string]: CSSProperties }
+                                        };
+
+                                        return (
+                                          <SyntaxHighlighter
+                                            {...syntaxHighlighterProps}
+                                          >
+                                            {String(children).replace(/\n$/, "")}
+                                          </SyntaxHighlighter>
+                                        );
+                                      } else {
+                                        return (
+                                          <code
+                                            className="bg-gray-100 text-red-500 px-1.5 py-0.5 rounded text-sm font-mono"
+                                            {...props}
+                                          >
+                                            {children}
+                                          </code>
+                                        );
+                                      }
+                                    },
+                                  }}
+                                >
+                                  {preprocessContent(ai_msg.content)}
+                                </ReactMarkdown>
+                              </div>
+
+                              {ai_msg.has_verse_audio && ai_msg.verse_audio_data.length > 0 && streamingMessageIndex != record_index && (
+                                <>
+                                  <br />
+                                  <QuranDialogBox
+                                    type="audio"
+                                    surahs={ai_msg?.verse_audio_data}
+                                  />
+                                </>
+                              )}
+
+                              {ai_msg.has_verse_image && ai_msg.verse_images.length > 0 && streamingMessageIndex != record_index && (
+                                <>
+                                  <br />
+                                  <QuranDialogBox
+                                    type="read"
+                                    surahs={ai_msg?.verse_images}
+                                  />
+                                </>
+                              )}
+                              {openStoryContainer && ai_msg.story_data.length > 0 && streamingMessageIndex != record_index && (
+                                <StoryContainer story_data={ai_msg.story_data} />
+
+                              )}
+                              {streamingMessageIndex != record_index &&
+                                reportedMessageIDs &&
+                                !reportedMessageIDs.includes(
+                                  ai_msg?.message_id
+                                ) && (
+                                  <div>
+                                    <PromptExtraOptions
+                                      message_id={ai_msg?.message_id}
+                                      reply_to_message_id={
+                                        ai_msg?.reply_to_message_id
+                                      }
+                                      parent_index={record_index}
+                                      assistant_index={ai_msg_idx}
+                                      messageType={"assistant"}
+                                    />
+                                  </div>
+                                )}
+
+                            </div>
+                          ) : reportedMessageIDs &&
+                            reportedMessageIDs.includes(ai_msg?.message_id) ? (
+                            // reportedmessage component here
+                            <div
+                              key={ai_msg_idx}
+                              className="flex flex-col gap-y-1.5 w-[90%] max-w-120 "
+                            >
+                              <div className="h-max rounded-md shadow-md min-h-25 border border-red-200/10 px-2 pt-2 pb-3">
+                                <div className="mb-0.5 w-full flex justify-between">
+                                  <p
+                                    id="report-title"
+                                    className="text-red-800 switzer-500 text-[1.1rem] tracking-[-0.04rem]"
+                                  >
+                                    This response is reported
+                                  </p>
+                                  <DisclaimerIcon className="w-5 h-5 fill-current text-red-700/90" />
+                                </div>
+
+                                <p
+                                  id="report-description"
+                                  className="switzer-500 text-black/60 tracking-tight"
+                                >
+                                  This response promotes violence or self-harm
+                                  and goes against our community policies.
+>>>>>>> c284ef43e063c6c1dd5dac6d697822e6c1d9218c
                                 </p>
                               </div>
                             </div>
