@@ -104,6 +104,68 @@ const PromptExtraOptionsModelBox = ({
     }
   };
 
+  useEffect(() => {
+  const audio = audioRef.current;
+  if (!audio) return;
+
+  const handlePlay = () => {
+    if (currentPlayableAudio.current?.response_message_id !== message_id) return;
+
+    setMessages((prev: ChatMessage[]) =>
+      prev.map((m) =>
+        m.message_id === reply_to_message_id
+          ? {
+              ...m,
+              responses: m.responses.map((r) =>
+                r.message_id === message_id ? { ...r, audio_state: "playing" } : r
+              ),
+            }
+          : m
+      )
+    );
+  };
+
+  const handlePause = () => {
+    setMessages((prev: ChatMessage[]) =>
+      prev.map((m) =>
+        m.message_id === reply_to_message_id
+          ? {
+              ...m,
+              responses: m.responses.map((r) =>
+                r.message_id === message_id ? { ...r, audio_state: "paused" } : r
+              ),
+            }
+          : m
+      )
+    );
+  };
+
+  const handleEnded = () => {
+    setMessages((prev: ChatMessage[]) =>
+      prev.map((m) =>
+        m.message_id === reply_to_message_id
+          ? {
+              ...m,
+              responses: m.responses.map((r) =>
+                r.message_id === message_id ? { ...r, audio_state: "ended" } : r
+              ),
+            }
+          : m
+      )
+    );
+  };
+
+  audio.addEventListener("play", handlePlay);
+  audio.addEventListener("pause", handlePause);
+  audio.addEventListener("ended", handleEnded);
+
+  return () => {
+    audio.removeEventListener("play", handlePlay);
+    audio.removeEventListener("pause", handlePause);
+    audio.removeEventListener("ended", handleEnded);
+  };
+}, [message_id, reply_to_message_id, audioRef, setMessages]);
+
   return (
     <motion.div
       ref={overlayRef}
@@ -113,36 +175,56 @@ const PromptExtraOptionsModelBox = ({
     >
       <div className="w-full h-full flex flex-col items-center">
         {audio_state === "loading" ? (
-          <div className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-pointer">
-            <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.6, repeat: Infinity, repeatType: "loop" }} className="ml-2 w-4 h-4 border-x-2 border-black/40 rounded-full fill-current text-black/50"></motion.div>
-            <p className="ml-2 switzer-500 text-black/50 text-[0.94rem]">
-              Loading
-            </p>
+          <div className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-not-allowed">
+            <motion.div 
+              animate={{ rotate: 360 }} 
+              transition={{ duration: 0.6, repeat: Infinity, ease: "linear" }} 
+              className="ml-2 w-4 h-4 border-2 border-black/10 border-t-black/50 rounded-full"
+            />
+            <p className="ml-2 switzer-500 text-black/50 text-[0.94rem]">Loading...</p>
           </div>
-        ) : (audio_state === "ended" || !audio_state) ? (
-          <div className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-pointer"
-            onClick={() => handleOptionClick({ type: "read_aloud" })}>
-            <ReadAloud className="ml-2 w-5 h-5 fill-current text-black/80" />
-            <p className="ml-2 switzer-500 text-[0.94rem]">Read aloud</p>
-          </div>
-        ) : audio_state === "playing" ? (
-          <div onClick={() => {
-            audioRef?.current?.pause()
-
-          }} className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-pointer">
+        ) : (audio_state === "playing") ? (
+          <div 
+            onClick={() => audioRef?.current?.pause()} 
+            className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-pointer"
+          >
             <Pause className="ml-2 w-5 h-5 fill-current text-black/80" />
             <p className="ml-2 switzer-500 text-[0.94rem]">Pause</p>
           </div>
-        ) : audio_state === "paused" ? (
-          <div onClick={() => {
-            audioRef?.current?.play()
-          }} className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-pointer">
+        ) : (audio_state === "paused") ? (
+          <div 
+            onClick={() => {
+              const audio = audioRef.current;
+              const audio_link = messages?.find((m: ChatMessage) => m.message_id === reply_to_message_id)
+                                ?.responses.find((r: AssistantMessage) => r.message_id === message_id)?.audio_link;
+
+              if (audio && audio_link) {
+                if (!audio.src.includes(audio_link)) {
+                  audio.src = audio_link;
+                  audio.load();
+                }
+                audio.play();
+                currentPlayableAudio.current = { 
+                  user_message_id: reply_to_message_id, 
+                  response_message_id: message_id, 
+                  state: "playing" 
+                };
+              }
+            }} 
+            className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-pointer"
+          >
             <Play className="ml-2 w-5 h-5 fill-current text-black/80" />
-            <p className="ml-2 switzer-500 text-[0.94rem]">Pause</p>
+            <p className="ml-2 switzer-500 text-[0.94rem]">Resume</p>
           </div>
-
-        ) : (null)}
-
+        ) : (
+          <div 
+            onClick={() => handleOptionClick({ type: "read_aloud" })} 
+            className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-pointer"
+          >
+            <ReadAloud className="ml-2 w-5 h-5 fill-current text-black/80" />
+            <p className="ml-2 switzer-500 text-[0.94rem]">Read aloud</p>
+          </div>
+        )}
       </div>
       <div
         onClick={() => handleOptionClick({ type: "report" })}

@@ -48,7 +48,8 @@ class SpeechToTextEngine:
                         self.url, 
                         headers=headers, 
                         data=data, 
-                        files=files
+                        files=files,
+                        timeout=60.0
                     )
 
                 if response.status_code == 200:

@@ -9,6 +9,7 @@ import ChatProvider from "@/app/providers/chatbot/ChatProvider";
 import DisclaimerIcon from "../../../icons/disclaimer.svg";
 import CrossIcon from "../../../icons/cross_icon.svg"
 import TextFileIcon from "../../../icons/text-file-icon.svg"
+import SendIcon from "../../../icons/send_icon.svg";
 import PdfFileIcon from "../../../icons/pdf-file-icon.svg"
 import UndoArrow from "../../../icons/refresh.svg";
 import { AssistantMessage, Attachment } from "@/app/components/chatbot/interfaces/ChatMessage";
@@ -101,13 +102,15 @@ function ChatContent() {
   const controls = useAnimationControls();
   const [hidePromptExtraOptionsModelBoxArray, setHidePromptExtraOptionsModelBoxArray] =
     useState<hidePromptExtraOptionsModelBoxArray[]>([]);
-  const [connectionStatus, setConnectionStatus] = useState<"connected" | "reconnecting" | "disconnected" >("disconnected");
+  const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected" >("disconnected");
+  const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
   const pendingPromptRef = useRef<{
     input: string;
     guidelines: string | null;
     resend_flag: boolean;
     resend_message_id: string | null;
     old_responses_attachments: { responses: AssistantMessage[], attachments: Attachment[] } | null;
+    target_session_id: string | null;
     timestamp: number | null;
   } | null>(null);
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
@@ -116,7 +119,6 @@ function ChatContent() {
   const urlSessionId = searchParams.get("session_id");
   const totalReconnectAttempts = useRef(0);
   const [showOfflineToast, setShowOfflineToast] = useState(false);
-  // ... existing states
   const [reconnectTrigger, setReconnectTrigger] = useState(0);
   const MAX_RECONNECT_TRIES = 5;
   const router = useRouter()
@@ -504,7 +506,8 @@ function ChatContent() {
       };
 
       wsRef.current.onerror = (error) => {
-        console.error("An error occured in websocket", error);
+        console.log("An error occured in websocket", error);
+        setConnectionStatus("disconnected");
         websocket.close();
       };
 
@@ -552,27 +555,27 @@ function ChatContent() {
             }
             break;
 
-            case "session_id":
-              const session_id = data.session_id;
-              const session_status = data.status;
-              const message_ids = data.message_ids;
-              if (session_status === "acknowledged") {
-                setSessionID(session_id);
-                const currentUrlId = searchParams.get("session_id");
-                if (!currentUrlId || currentUrlId === "") {
-                  router.push(`/pages/chatbot?session_id=${session_id}`, { scroll: false });
-                }
-                setMessages([]);
-                setMessages((prevMessages) => {
-                  if (prevMessages && prevMessages.length > 0) {
-                    return [];
-                  }
-                  return prevMessages; // Return unchanged if no messages
-                });
-                setHidePromptExtraOptionsModelBoxArray([])
-                setMessageIDs(message_ids);
+          case "session_id":
+            const session_id = data.session_id;
+            const session_status = data.status;
+            const message_ids = data.message_ids;
+            if (session_status === "acknowledged") {
+              setSessionID(session_id);
+              const currentUrlId = searchParams.get("session_id");
+              if (!currentUrlId || currentUrlId === "" || currentUrlId !== session_id) {
+                router.replace(`/pages/chatbot?session_id=${session_id}`, { scroll: false });
               }
-              break;
+              setMessages([]);
+              setMessages((prevMessages) => {
+                if (prevMessages && prevMessages.length > 0) {
+                  return [];
+                }
+                return prevMessages; 
+              });
+              setHidePromptExtraOptionsModelBoxArray([])
+              setMessageIDs(message_ids);
+            }
+            break;
 
           case "model-selection":
             const model_status = data.status;
@@ -593,49 +596,128 @@ function ChatContent() {
             }
             break;
 
-          case "delete_session":
-            const delete_status = data.status;
-            if (delete_status === "success") {
-              window.dispatchEvent(new CustomEvent("tadabbur-session-deleted", {
-              detail: { session_id: data.session_id }
-             }));
-              // Refresh chat history
-              const user = localStorage.getItem("user");
-              let user_id = null;
-              if (user) {
-                try {
-                  const userData = JSON.parse(user);
-                  user_id = userData.id;
-                } catch (e) {
-                  console.error("Error parsing user data:", e);
-                }
-              }
-              if (user_id) {
-                wsSendAsync(wsRef.current, {
-                  type: "chat_history",
-                  user_id: user_id,
-                });
-              }
-              alert("Chat session deleted successfully");
-              type PendingDelete = { type: string; user_id: string | null; session_id?: string };
-              const pending: PendingDelete[] = JSON.parse(localStorage.getItem("tadabbur_pending_deletes") || "[]");
-              const updated = pending.filter((op) => op.session_id !== data.session_id);
-              localStorage.setItem("tadabbur_pending_deletes", JSON.stringify(updated));
-            } else {
-              alert("Error deleting chat session: " + data.error);
-            }
-            break;  
+          // case "delete_session":
+          //   const delete_status = data.status;
+          //   if (delete_status === "success") {
+          //     window.dispatchEvent(new CustomEvent("tadabbur-session-deleted", {
+          //     detail: { session_id: data.session_id }
+          //    }));
+          //     // Refresh chat history
+          //     const user = localStorage.getItem("user");
+          //     let user_id = null;
+          //     if (user) {
+          //       try {
+          //         const userData = JSON.parse(user);
+          //         user_id = userData.id;
+          //       } catch (e) {
+          //         console.error("Error parsing user data:", e);
+          //       }
+          //     }
+          //     if (user_id) {
+          //       wsSendAsync(wsRef.current, {
+          //         type: "chat_history",
+          //         user_id: user_id,
+          //       });
+          //     }
+          //     setShowDeleteSuccess(true);
+          //     setTimeout(() => setShowDeleteSuccess(false), 3000);
+          //     type PendingDelete = { type: string; user_id: string | null; session_id?: string };
+          //     const pending: PendingDelete[] = JSON.parse(localStorage.getItem("tadabbur_pending_deletes") || "[]");
+          //     const updated = pending.filter((op) => op.session_id !== data.session_id);
+          //     localStorage.setItem("tadabbur_pending_deletes", JSON.stringify(updated));
+          //   } else {
+          //     alert("Error deleting chat session: " + data.error);
+          //   }
+          //   break;  
 
+          case "delete_session": {
+          const delete_status = data.status;
+          if (delete_status === "success") {
+            window.dispatchEvent(new CustomEvent("tadabbur-session-deleted", {
+              detail: { session_id: data.session_id }
+            }));
+
+            const currentUrlSessionId = new URLSearchParams(window.location.search).get("session_id");
+            if (currentUrlSessionId === data.session_id) {
+              setMessages([]);
+              setSessionID(null);
+              setMessageIDs([]);
+              setHidePromptExtraOptionsModelBoxArray([]);
+              setLoading(false);
+              setIsGenerating(false);
+              
+              const u = localStorage.getItem("user");
+              let uid = null;
+              try { uid = u ? JSON.parse(u).id : null; } catch {}
+
+              wsSendAsync(wsRef.current, {
+                type: "session-init",
+                session_id: "",
+                user_id: uid,
+                model: "kimi-k2-instruct-0905",
+              });
+            }
+
+            
+            const user = localStorage.getItem("user");
+            let user_id: string = "" ;
+
+              try {
+                const userData = JSON.parse(user || "{}");
+                user_id = userData.id;
+              } catch (e) {
+                console.error("Error parsing user data:", e);
+              
+            }
+
+            if (user_id) {
+              wsSendAsync(wsRef.current, {
+                type: "chat_history",
+                user_id: user_id,
+              });
+            }
+            setShowDeleteSuccess(true);
+            setTimeout(() => setShowDeleteSuccess(false), 3000);
+            type PendingDelete = { type: string; user_id: string | null; session_id?: string };
+            const pending: PendingDelete[] = JSON.parse(localStorage.getItem("tadabbur_pending_deletes") || "[]");
+            const updated = pending.filter((op) => op.session_id !== data.session_id);
+            localStorage.setItem("tadabbur_pending_deletes", JSON.stringify(updated));
+
+          } else {
+            alert("Error deleting chat session: " + data.error);
+          }
+          break;
+        }  
+
+            
           case "delete_all_sessions":
             const delete_all_status = data.status;
             if (delete_all_status === "success") {
-              setChatHistory([]);
-              window.dispatchEvent(new CustomEvent("tadabbur-all-sessions-deleted"));
-              localStorage.removeItem("tadabbur_pending_deletes");
+            setChatHistory([]);
+            window.dispatchEvent(new CustomEvent("tadabbur-all-sessions-deleted"));
+            localStorage.removeItem("tadabbur_pending_deletes");
+
+            
+            setMessages([]);
+            setSessionID(null);
+            setMessageIDs([]);
+            setHidePromptExtraOptionsModelBoxArray([]);
+            router.push('/pages/chatbot', { scroll: false });
+            
+            wsSendAsync(wsRef.current, {
+              type: "session-init",
+              session_id: "",
+              user_id: (() => {
+                try {
+                  const u = localStorage.getItem("user");
+                  return u ? JSON.parse(u).id : null;
+                } catch { return null; }
+              })(),
+              model: "kimi-k2-instruct-0905",
+            });
             } else {
               alert("Error deleting chat sessions: " + data.error);
             }
-
             break;
 
           case "get_chat":
@@ -678,20 +760,23 @@ function ChatContent() {
               }
               
               setTimeout(() => {
-                  const lastMsg = chat_history[chat_history.length - 1];
+                const lastMsg = chat_history[chat_history.length - 1];
 
-                  if (lastMsg && lastMsg.role === "user" && (!lastMsg.responses || lastMsg.responses.length === 0)) {
-                    console.log("🤖 Auto-regenerating missing response for:", lastMsg.message_id);
-                    
-                    ask(
-                      lastMsg.content, 
-                      null, 
-                      true, 
-                      lastMsg.message_id, 
-                      { responses: [], attachments: lastMsg.attachments || [] }
-                    );
-                  }
-              }, 500);
+                const hasNoResponse = !lastMsg.responses || lastMsg.responses.length === 0;
+                const hasEmptyResponse = lastMsg.responses?.[0]?.content === "";
+
+                if (lastMsg && lastMsg.role === "user" && (hasNoResponse || hasEmptyResponse)) {
+                  console.log("🤖 Orphaned user message detected. Regenerating...");
+                  
+                  ask(
+                    lastMsg.content, 
+                    null, 
+                    true, 
+                    lastMsg.message_id, 
+                    { responses: [], attachments: lastMsg.attachments || [] }
+                  );
+                }
+              }, 800);
 
               // initialize an emtpy array for hidePromptExtraOptionsModelBoxArray
               const array: hidePromptExtraOptionsModelBoxArray[] = [];
@@ -910,42 +995,6 @@ function ChatContent() {
 
   }, [reconnectTrigger]);
 
-//   useEffect(() => {
-//     const isWaitingForSessionId = urlSessionId && !sessionID;
-//     if (connectionStatus !== "connected" || isWaitingForSessionId) return;
-
-//     const processPending = () => {
-//       const saved = localStorage.getItem("tadabbur_pending_prompt");
-//       if (!saved) return;
-
-//       try {
-//         const data = JSON.parse(saved);
-
-//         const isCorrectSession = !data.target_session_id || data.target_session_id === sessionID;
-//         if (isCorrectSession && data.input) {
-//             console.log("Correct session detected. Sending recovered prompt...");
-            
-//             ask(
-//               data.input, 
-//               data.guidelines, 
-//               data.resend_flag, 
-//               data.resend_message_id, 
-//               data.old_responses_attachments
-//             );
-            
-//             localStorage.removeItem("tadabbur_pending_prompt");
-//             pendingPromptRef.current = null;
-//           } else {
-//             console.log(`Prompt target (${data.target_session_id}) doesn't match current (${sessionID}). Holding.`);
-//           }
-//       } catch (e) {
-//         console.error("Error parsing pending prompt:", e);
-//       }
-//     };
-
-//     processPending();
-// }, [connectionStatus, sessionID, urlSessionId]);
-
   useEffect(() => {
     let isCancelled = false;
 
@@ -1048,7 +1097,7 @@ function ChatContent() {
       // generate a message ID for the user message if its not a resend message
       messageID = generateUUID();
       while (messageIDs?.includes(messageID)) {
-        messageID = generateUUID(); // Reassign the same variable
+        messageID = generateUUID(); 
       }
       setMessageIDs((prev) => {
         return [...(prev || []), messageID];
@@ -1160,6 +1209,7 @@ function ChatContent() {
       // Also save to pending if the actual send fails
       const pendingData = { 
           input, guidelines, resend_flag, resend_message_id, old_responses_attachments, 
+          target_session_id: urlSessionId,
           timestamp: Date.now() 
       };
       pendingPromptRef.current = pendingData;
@@ -1240,6 +1290,18 @@ function ChatContent() {
       ) : (
         <div className="relative w-screen h-screen bg-gray-50 flex flex-col items-center">
           {/* --- UI STATUS INDICATOR --- */}
+          <AnimatePresence>
+            {showDeleteSuccess && (
+              <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="fixed top-10 left-1/2 -translate-x-1/2 bg-emerald-700 text-white text-[0.75rem] switzer-600 px-4 py-2 rounded-full shadow-xl z-9999 whitespace-nowrap flex items-center gap-2"
+              >
+                Session Deleted Successfully
+              </motion.div>
+            )}
+          </AnimatePresence>
           <div className="fixed top-4 right-4 z-9999 flex flex-col items-end gap-y-2 pointer-events-none">
             <AnimatePresence mode="wait">
               {connectionStatus === "disconnected" && (
@@ -1262,7 +1324,7 @@ function ChatContent() {
                     <UndoArrow className="w-4 h-4 rotate-180" />
                   </div>
                   <p className="switzer-500 text-sm">
-                    You're offline check your network connection ! 
+                    {"You're offline check your network connection ! "}
                   </p>
                 </motion.div>
               )}
@@ -1290,7 +1352,7 @@ function ChatContent() {
             <div className="w-full h-full flex flex-col items-center overflow-y-auto">
               <div className="absolute top-0 p-2 w-full">
                 <div className="pointer-events-auto">
-                  <Controls wsRef={wsRef} />
+                  <Controls wsRef={wsRef} connectionStatus={connectionStatus}/>
                 </div>
                 <button
                   onClick={handleLogout}
@@ -1786,7 +1848,7 @@ function ChatContent() {
                   </span>
                 )}
 
-                <div className="flex justify-end mb-1 items-center gap-x-2">
+                <div className="flex justify-end mb-10 items-center gap-x-2">
                   {isGenerating ? (
                     <button
                       onClick={stopGeneration}
@@ -1807,20 +1869,20 @@ function ChatContent() {
                           ask(input.trim());
                         }
                       }}
-                      className="flex items-center justify-center w-8 h-8 bg-neutral-900 hover:bg-neutral-700 active:scale-95 text-white rounded-full transition-all shadow-sm"
+                      className={`absolute top-2 right-3 p-2 rounded-md bg-black hover:bg-neutral-800 cursor-pointer"
+                      `}
                       title="Send message"
                     >
-                      {/* Up Arrow SVG */}
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-6">
-                        <path d="M12 4l8 8h-5v8H9v-8H4z"/>
-                      </svg>
+                      <SendIcon className="w-4.5 h-4.5 text-white"/>
                     </button>
                   )}
                 </div>
 
-                <BottomOptions />
-                <ExtraOptions />
-                <ModelBox modelList={ModelList} />
+                <div className={`transition-opacity duration-300 ${connectionStatus !== "connected" ? "pointer-events-none opacity-50" : "opacity-100"}`}>
+                  <BottomOptions />
+                  <ExtraOptions />
+                  <ModelBox modelList={ModelList} />
+                </div>
               </motion.div>
             </div>
 

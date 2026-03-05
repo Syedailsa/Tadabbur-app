@@ -47,6 +47,8 @@ from fastapi.openapi.utils import get_openapi
 from speech_to_text import SpeechToTextEngine
 from config.db import get_supabase_client
 from utils.db_retry import db_retry, DBRetryError
+from utils.ws_retry import ws_send, WSDisconnectedError
+
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
@@ -62,21 +64,21 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # --- Startup Logic ---
+    # Startup
     """Initialize database pool on startup"""
     print("Instantiating db pool")
     db_pool_instance = await init_db_pool()
     app.state.db_pool = db_pool_instance
     yield  # app stays active here while receiving requests
     
-    # --- Shutdown Logic ---
+    # Shutdown
     """Close database pool on shutdown"""
     await close_db_pool()
     
 # ------------------- APP CONFIG -------------------
 app = FastAPI(title="Tadabbur Agent API", lifespan=lifespan)
 # ------------------- APP CONFIG -------------------
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-this")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 ALGORITHM = "HS256"
 
 def custom_openapi():
@@ -373,13 +375,23 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                 print(f"✅ Updated message {message_id_ref} with TTS audio URL in DB")
                             except Exception as e:
                                 print("Some error occured while updating message with audio url", e)
+                            
+                            try:
+                                await ws_send(websocket, {
+                                    "type": "tts_audio_url",
+                                    "message_id": message_id_ref,
+                                    "user_id": user_message_id,
+                                    "audio_url": res.audio_file
+                                }, label="tts_audio_url")
+                            except WSDisconnectedError:
+                                break
 
-                            await websocket.send_json({
-                                "type": "tts_audio_url",
-                                "message_id": message_id_ref,
-                                "user_id": user_message_id,
-                                "audio_url": res.audio_file
-                            })
+                            # await websocket.send_json({
+                            #     "type": "tts_audio_url",
+                            #     "message_id": message_id_ref,
+                            #     "user_id": user_message_id,
+                            #     "audio_url": res.audio_file
+                            # })
 
                     except Exception as e:
                         print("Some error occured while generating audio for text", e)
@@ -403,12 +415,18 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     except DBRetryError as e:
                         logger.error(f"Partial content save failed permanently: {e}")
                                         
-
-                await websocket.send_json({
-                    "type": "stop_acknowledged",
-                    "message_id": msg_id_to_stop
-                })
-                continue
+                try: 
+                    await ws_send(websocket, {
+                        "type": "stop_acknowledged",
+                        "message_id": msg_id_to_stop
+                    }, label="stop_acknowledged")
+                except WSDisconnectedError:
+                    break
+                # await websocket.send_json({
+                #     "type": "stop_acknowledged",
+                #     "message_id": msg_id_to_stop
+                # })
+                # continue
 
             # ========== SESsION CODE START ==========
             # SESSION INIT
@@ -429,7 +447,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
                         logger.info(f"Processing session: {session_id}")
 
-                        # 2. Check DB securely
                         try:
                             response = supabase_client.table('chat_sessions')\
                                 .select('user_id', 'file_context')\
@@ -448,12 +465,20 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                     msgs = supabase_client.table('chat_messages').select('message_id').eq('session_id', session_id).execute()
                                     unique_message_ids = [m['message_id'] for m in msgs.data] if msgs.data else []
                                     
-                                    await websocket.send_json({
-                                        "type": "session_id", "status": "acknowledged", 
-                                        "session_id": session_id, "message_ids": unique_message_ids
-                                    })
+                                    # await websocket.send_json({
+                                    #     "type": "session_id", "status": "acknowledged", 
+                                    #     "session_id": session_id, "message_ids": unique_message_ids
+                                    # })
+                                    try:
+                                        await ws_send(websocket, {
+                                            "type": "session_id", "status": "acknowledged", 
+                                            "session_id": session_id, "message_ids": unique_message_ids
+                                        }, label="session_init")
+                                    except WSDisconnectedError:
+                                        break
                                 else:
-                                    await websocket.send_json({"type": "session_id", "status": "error", "error": "Unauthorized"})
+                                    # await websocket.send_json({"type": "session_id", "status": "error", "error": "Unauthorized"})
+                                    await ws_send(websocket, {"type": "session_id", "status": "error", "error": "Unauthorized"}, label="session_init_error")
                                     continue
                             else:
                                 logger.info(f"🆕 Generated ID for potential new session: {session_id}")
@@ -461,15 +486,25 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                 conversation_history = []
                                 unique_message_ids = []
                                 
-                                await websocket.send_json({
-                                    "type": "session_id", "status": "acknowledged",
-                                    "session_id": session_id, "current_agent": current_agent_name,
-                                    "message_ids": []
-                                })
+                                # await websocket.send_json({
+                                #     "type": "session_id", "status": "acknowledged",
+                                #     "session_id": session_id, "current_agent": current_agent_name,
+                                #     "message_ids": []
+                                # })
+                                try:
+                                    await ws_send(websocket, {
+                                        "type": "session_id", "status": "acknowledged",
+                                        "session_id": session_id, "current_agent": current_agent_name,
+                                        "message_ids": []
+                                    }, label="session_init")
+                                
+                                except WSDisconnectedError:
+                                    break
 
                         except Exception as e:
                             logger.error(f"Session Init Error: {e}")
-                            await websocket.send_json({"type": "session_id", "status": "error", "error": str(e)})
+                            # await websocket.send_json({"type": "session_id", "status": "error", "error": str(e)})
+                            await ws_send(websocket, {"type": "session_id", "status": "error", "error": str(e)}, label="session_init_error")
                         
                         continue
             
@@ -482,19 +517,36 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         .order('created_at', desc=True)\
                         .execute().data
 
-                    await websocket.send_json({
-                        "type": "chat_history",
-                        "status":"acknowledged",
-                        "chat_history": chat_sessions
-                    })
+                    # await websocket.send_json({
+                    #     "type": "chat_history",
+                    #     "status":"acknowledged",
+                    #     "chat_history": chat_sessions
+                    # })
+                    try:
+                        await ws_send(websocket, {
+                            "type": "chat_history",
+                            "status":"acknowledged",
+                            "chat_history": chat_sessions
+                        }, label="chat_history_response")
+                        logger.info(f"Sent {len(chat_sessions)} sessions to frontend for user {user_id}")
+                    except WSDisconnectedError:
+                        break
                     logger.info(f"Sent {len(chat_sessions)} sessions to frontend for user {user_id}")
                 except Exception as e:
                     logger.error(f"Error fetching chat history: {e}")
-                    await websocket.send_json({
+                    # await websocket.send_json({
+                    #     "type": "chat_history",
+                    #     "status": "error",
+                    #     "error": str(e)
+                    # })
+                    try:
+                        await ws_send(websocket, {
                         "type": "chat_history",
                         "status": "error",
                         "error": str(e)
-                    })
+                    }, label="chat_history_error")
+                    except WSDisconnectedError:
+                        break
                 continue
 
             if data.get("type") == "get_chat":
@@ -535,15 +587,25 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     await asyncio.sleep(0.6)
 
                     if websocket.client_state == WebSocketState.CONNECTED:
+                        # try:
+                        #     await websocket.send_json({
+                        #         "type": "get_chat", 
+                        #         "status": "acknowledged",
+                        #         "session_id": session_id, 
+                        #         "chat_history": chat_history
+                        #     })
+                        # except Exception as e:
+                        #     logger.error(f"Failed to send history (Socket closed?): {e}")
                         try:
-                            await websocket.send_json({
+                            await ws_send(websocket, {
                                 "type": "get_chat", 
                                 "status": "acknowledged",
                                 "session_id": session_id, 
                                 "chat_history": chat_history
-                            })
-                        except Exception as e:
-                            logger.error(f"Failed to send history (Socket closed?): {e}")
+                            }, label="get_chat_history")
+                        except WSDisconnectedError:
+                            logger.error(f"Disconnected while sending chat history for session {session_id}")
+                            break
                 except Exception as e:
                     logger.error(f"Error loading chat: {e}")
                 continue
@@ -553,35 +615,71 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 session_id_to_delete = data.get("session_id", "")
 
                 if not session_id_to_delete:
-                    await websocket.send_json({
-                        "type": "delete_session",
-                        "status": "error",
-                        "error": "session_id is required"
-                    })
+                    # await websocket.send_json({
+                    #     "type": "delete_session",
+                    #     "status": "error",
+                    #     "error": "session_id is required"
+                    # })
+                    try:
+                        await ws_send(websocket, {
+                            "type": "delete_session",
+                            "status": "error",
+                            "error": "session_id is required"
+                        })
+                    except WSDisconnectedError:
+                        logger.error("Failed to send delete_session error response (Socket closed?)")
+                        break
                     continue
 
                 try:
                     success = await delete_user_session(user_id, session_id_to_delete)
                     if success:
-                        await websocket.send_json({
+                        # await websocket.send_json({
+                        #     "type": "delete_session",
+                        #     "status": "success",
+                        #     "session_id": session_id_to_delete
+                        # })
+                        # logger.info(f"Deleted session {session_id_to_delete} for user {user_id}")
+                        try:
+                            await ws_send(websocket, {
                             "type": "delete_session",
                             "status": "success",
                             "session_id": session_id_to_delete
                         })
-                        logger.info(f"Deleted session {session_id_to_delete} for user {user_id}")
+                        except WSDisconnectedError:
+                            logger.error("Failed to send delete_session success response (Socket closed?)")
+                            break
                     else:
-                        await websocket.send_json({
+                        # await websocket.send_json({
+                        #     "type": "delete_session",
+                        #     "status": "error",
+                        #     "error": "Session not found or access denied"
+                        # })
+                        try:
+                            await ws_send(websocket, {
                             "type": "delete_session",
                             "status": "error",
                             "error": "Session not found or access denied"
                         })
+                        except WSDisconnectedError:
+                            logger.info("Disconnected during delete_session error response (Socket closed?)")
+                            break
                 except Exception as e:
                     logger.error(f"Error deleting session: {e}")
-                    await websocket.send_json({
+                    # await websocket.send_json({
+                    #     "type": "delete_session",
+                    #     "status": "error",
+                    #     "error": str(e)
+                    # })
+                    try:
+                        await ws_send(websocket, {
                         "type": "delete_session",
                         "status": "error",
                         "error": str(e)
                     })
+                    except WSDisconnectedError:
+                        logger.info("Failed to send delete_session error response (Socket closed?)")
+                        break
                 continue
 
             # Handle DELETE ALL SESSIONS request
@@ -589,23 +687,49 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 try:
                     success = await delete_all_user_sessions(user_id)
                     if success:
-                        await websocket.send_json({
+                        # await websocket.send_json({
+                        #     "type": "delete_all_sessions",
+                        #     "status": "success"
+                        # })
+                        try:
+                            await ws_send(websocket, {
                             "type": "delete_all_sessions",
                             "status": "success"
                         })
+                        except WSDisconnectedError:
+                            logger.error("Failed to send delete_all_sessions success response (Socket closed?)")
+                            break
                     else:
-                        await websocket.send_json({
+                        # await websocket.send_json({
+                        #     "type": "delete_all_sessions",
+                        #     "status": "error",
+                        #     "error": "Failed to delete sessions"
+                        # })
+                        try:
+                            await ws_send(websocket, {
                             "type": "delete_all_sessions",
                             "status": "error",
                             "error": "Failed to delete sessions"
                         })
+                        except WSDisconnectedError:
+                            logger.info("Failed to send delete_all_sessions error response (Socket closed?)")
+                            break
                 except Exception as e:
                     logger.error(f"Error deleting all sessions: {e}")
-                    await websocket.send_json({
+                    # await websocket.send_json({
+                    #     "type": "delete_all_sessions",
+                    #     "status": "error",
+                    #     "error": str(e)
+                    # })
+                    try:
+                        await ws_send(websocket, {
                         "type": "delete_all_sessions",
                         "status": "error",
                         "error": str(e)
                     })
+                    except WSDisconnectedError:
+                        logger.info("Failed to send delete_all_sessions error response (Socket closed?)")
+                        break
                 continue
 
             # === AGENT SWITCH ===
@@ -643,29 +767,60 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     else:
                         print(f"⚠️ Model pref saved as {session_model_key}, but not applied immediately because user is in {current_agent_name} mode.")
 
-                    await websocket.send_json({
+                    # await websocket.send_json({
+                    #     "type": "model-selection",
+                    #     "status": "acknowledged",
+                    #     "model": requested_model,
+                    #     "display_name": display_name
+                    # })
+                    
+                    # await websocket.send_json({
+                    #     "type": "loading_message",
+                    #     "content": f"Switched to **{display_name}**"
+                    # })
+                    
+                    try:
+                        await ws_send(websocket, {
                         "type": "model-selection",
                         "status": "acknowledged",
                         "model": requested_model,
                         "display_name": display_name
                     })
+                    except WSDisconnectedError:
+                        logger.error("Failed to send model-selection acknowledgment (Socket closed?)")
+                        break
                     
-                    await websocket.send_json({
+                    try:
+                        await ws_send(websocket, {
                         "type": "loading_message",
                         "content": f"Switched to **{display_name}**"
                     })
+                    except WSDisconnectedError:
+                        logger.error("Failed to send loading message after model selection (Socket closed?)")
+                        break
                     
                     logger.info(f"Model preference updated to: {display_name}")
                 
                 else:
-                    await websocket.send_json({
+                    # await websocket.send_json({
+                    #     "type": "model-selection",
+                    #     "status": "not-acknowledged",
+                    #     "model": requested_model,
+                    #     "error": "This model is not supported.",
+                    #     "available": list(agent_module.SUPPORTED_CHAT_MODELS.keys())
+                    # })
+                    try:
+                        await ws_send(websocket, {
                         "type": "model-selection",
                         "status": "not-acknowledged",
                         "model": requested_model,
                         "error": "This model is not supported.",
                         "available": list(agent_module.SUPPORTED_CHAT_MODELS.keys())
                     })
-                continue  
+                    except WSDisconnectedError:
+                        logger.error("Failed to send model-selection error response (Socket closed?)")
+                        break
+                continue   
             
 
             if data.get("type") == "undo-report":
@@ -677,17 +832,34 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 try:
                     # delete hard rule in a different thread for optimization
                     await asyncio.to_thread(delete_report_rule, supabase_client, message_id, user_id)
-                    await websocket.send_json({
+                    # await websocket.send_json({
+                    #     "type": "undo-report",
+                    #     "status": "acknowledged",
+                    #     "message_id": message_id,
+                    #     "user_id": user_id
+                    # })
+                    await ws_send(websocket, {
                         "type": "undo-report",
                         "status": "acknowledged",
                         "message_id": message_id,
                         "user_id": user_id
-                    })
+                    }, label="undo_report_acknowledged")
+                except WSDisconnectedError:
+                    logger.info("Failed to send undo-report acknowledgment (Socket closed?)")
+                    break
                 except Exception as e:
-                    await websocket.send_json({
+                    # await websocket.send_json({
+                    #     "type": "undo-report",
+                    #     "status": "not-acknowledged"
+                    # })
+                    try:
+                        await ws_send(websocket, {
                         "type": "undo-report",
                         "status": "not-acknowledged"
-                    })
+                    }, label="undo_report_not_acknowledged")
+                    except WSDisconnectedError:
+                        logger.error("Failed to send undo-report error response (Socket closed?)")
+                        break
                     continue
                 continue
 
@@ -701,10 +873,18 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     
                     if not message_id or not feedback:
                         print("No variant/message ID/feedback, can't proceed to report content")
-                        await websocket.send_json({
-                        "type": "report",
-                        "status": "not-acknowledged"
-                    })
+                    #     await websocket.send_json({
+                    #     "type": "report",
+                    #     "status": "not-acknowledged"
+                    # })
+                        try:
+                            await ws_send(websocket,{
+                            "type": "report",
+                            "status": "not-acknowledged"
+                        }, label="report_not_acknowledged")
+                        except WSDisconnectedError:
+                            logger.info("Failed to send report not-acknowledged response (Socket closed?)")
+                            break
                         ack_sent = True
                         continue
                     
@@ -720,22 +900,45 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
                             print("Report response", response)
                             if not response:
-                                await websocket.send_json({
-                                    "type": "report",
-                                    "user_id": user_id,
-                                    "message_id": message_id,
-                                    "status": "not-acknowledged"
-                                })
+                                # await websocket.send_json({
+                                #     "type": "report",
+                                #     "user_id": user_id,
+                                #     "message_id": message_id,
+                                #     "status": "not-acknowledged"
+                                # })
+                                try:
+                                    await ws_send(websocket, {
+                                        "type": "report",
+                                        "user_id": user_id,
+                                        "message_id": message_id,
+                                        "status": "not-acknowledged"
+                                    }, label="report_not_acknowledged")
+                                except WSDisconnectedError:
+                                    logger.info("Failed to send report not-acknowledged response (Socket closed?)")
+                                    break
                             else:
-                                await websocket.send_json(response)
-                            ack_sent = True
-                            
+                                # await websocket.send_json(response)
+                                try:
+                                    await ws_send(websocket, response, label="report_acknowledged")
+                                    ack_sent = True
+                                except WSDisconnectedError:
+                                    logger.info("Failed to send report acknowledgment (Socket closed?)")
+                                    break
+                        
                         except Exception as e:
-                            await websocket.send_json({
-                            "type": "report",
-                            "status": "not-acknowledged"
-                            })
-                            ack_sent = True
+                            # await websocket.send_json({
+                            # "type": "report",
+                            # "status": "not-acknowledged"
+                            # })
+                            try:
+                                await ws_send(websocket, {
+                                "type": "report",
+                                "status": "not-acknowledged"
+                                }, label="report_not_acknowledged")
+                                ack_sent = True
+                            except WSDisconnectedError:
+                                logger.info("Failed to send report not-acknowledged response (Socket closed?)")
+                                break
                         continue
                             
                     else:
@@ -745,10 +948,20 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 except Exception as e:
                     print(f"An error occured while reporting the assistant's response {message_id}")    
                     if not ack_sent:
-                        await websocket.send_json({
-                        "type": "report",
-                        "status": "not-acknowledged"
-                    })
+                    #     await websocket.send_json({
+                    #     "type": "report",
+                    #     "status": "not-acknowledged"
+                    # })
+                        try:
+                            await ws_send(websocket, {
+                                "type": "report",
+                                "status": "not-acknowledged"
+                            }, label="report_not_acknowledged")
+
+                        except WSDisconnectedError:
+                            logger.info("Failed to send report not-acknowledged response (Socket closed?)")
+                            break
+
                 continue
 
             if data.get("type") in ["liked", "disliked"]:
@@ -786,11 +999,20 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         )
                     except DBRetryError as e:
                         logger.error(f"Failed to save file context after retries: {e}")
-                        await websocket.send_json({
+                        # await websocket.send_json({
+                        #     "type": "error",
+                        #     "error_code": "FILE_CONTEXT_SAVE_FAILED",
+                        #     "message": "Failed to save file context. Please try again."
+                        # })
+                        try:
+                            await ws_send(websocket, {
                             "type": "error",
                             "error_code": "FILE_CONTEXT_SAVE_FAILED",
                             "message": "Failed to save file context. Please try again."
-                        })
+                        }, label="file_context_save_failed")
+                        except WSDisconnectedError:
+                            logger.info("Failed to send file context save error response (Socket closed?)")
+                            break
                 if user_message_id not in unique_message_ids:
                     unique_message_ids.append(user_message_id)
 
@@ -811,33 +1033,51 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             )
                     except DBRetryError as e:
                         logger.error(f"Failed to create session after retries: {e}")
-                        await websocket.send_json({
+                        # await websocket.send_json({
+                        #     "type": "error",
+                        #     "error_code": "SESSION_CREATION_FAILED",
+                        #     "message": "Failed to create session. Please try again."
+                        # })
+                        try:
+                            await ws_send(websocket, {
                             "type": "error",
                             "error_code": "SESSION_CREATION_FAILED",
                             "message": "Failed to create session. Please try again."
-                        })
+                        }, label="session_creation_failed")
+                        except WSDisconnectedError:
+                            logger.info("Failed to send session creation error response (Socket closed?)")
+                            break
                         continue
 
                 if not resend_flag:
                     try:
                         await db_retry(
-                            lambda:supabase_client.table('chat_messages').insert({
+                            lambda:supabase_client.table('chat_messages').upsert({
                                 "message_id": user_message_id,
                                 "user_id": user_id, 
                                 "session_id": session_id,
                                 "role": role,
                                 "content": message_string,
-                            }).execute(),
+                            }, on_conflict="message_id").execute(),
                             label="insert_user_message"
                         )
                         print("✅ User message saved successfully!")
                     except DBRetryError as e:
                         logger.error(f"❌ User message failed to save after retries: {e}")
-                        await websocket.send_json({
+                        # await websocket.send_json({
+                        #     "type": "error",
+                        #     "error_code": "MESSAGE_SAVE_FAILED",
+                        #     "message": "Failed to save your message. Please try again."
+                        # })
+                        try:
+                            await ws_send(websocket, {
                             "type": "error",
                             "error_code": "MESSAGE_SAVE_FAILED",
                             "message": "Failed to save your message. Please try again."
-                        })
+                        }, label="message_save_failed")
+                        except WSDisconnectedError:
+                            logger.info("Failed to send message save error response (Socket closed?)")
+                            break
                         continue
                 
                 if not resend_flag:
@@ -862,11 +1102,20 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             print(f"✅ File record '{file_name}' saved to session_files")
                         except DBRetryError as e:
                             logger.error(f"❌ Failed to save file record after retries: {e}")
-                            await websocket.send_json({
+                            # await websocket.send_json({
+                            #     "type": "error",
+                            #     "error_code": "FILE_SAVE_FAILED",
+                            #     "message": f"Failed to save file '{file_name}'. Please try again."
+                            # })
+                            try:
+                                await ws_send(websocket, {
                                 "type": "error",
                                 "error_code": "FILE_SAVE_FAILED",
                                 "message": f"Failed to save file '{file_name}'. Please try again."
-                            })
+                            }, label="file_save_failed")
+                            except WSDisconnectedError:
+                                logger.info("Failed to send file save error response (Socket closed?)")
+                                break
                             continue
                             
                 logger.info(f"[{current_agent_name}] Session: {session_id} | Message: {message_string} ...")
@@ -978,17 +1227,37 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         print("✅ Assistant message saved successfully!")
                     except DBRetryError as e:
                         logger.error(f"❌ Assistant message failed to save after retries: {e}")
-                        await websocket.send_json({
+                        # await websocket.send_json({
+                        #     "type": "assistance_response",
+                        #     "message_id": response_message_id,
+                        #     "content": response_object.model_dump(mode = "json"),
+                        #     "reply_to_message_id": user_message_id,
+                        #     "db_saved" : False,
+                        #     "final": True
+                        # })
+
+                        # await websocket.send_json({"type": "streaming_end"})
+                        # await websocket.send_json({"type": "run_complete"})   
+                        try:
+                            await ws_send(websocket, {
                             "type": "assistance_response",
                             "message_id": response_message_id,
                             "content": response_object.model_dump(mode = "json"),
                             "reply_to_message_id": user_message_id,
                             "db_saved" : False,
                             "final": True
-                        })
+                        }, label="assistance_response_db_save_failed")
+                        except WSDisconnectedError:
+                            logger.info("Failed to send assistance response with DB save failure flag (Socket closed?)")
+                            break
 
-                        await websocket.send_json({"type": "streaming_end"})
-                        await websocket.send_json({"type": "run_complete"})       
+                        try:
+                            await ws_send(websocket, {"type": "streaming_end"}, label="streaming_end_after_db_failure")
+                            await ws_send(websocket, {"type": "run_complete"}, label="run_complete_after_db_failure")
+
+                        except WSDisconnectedError:
+                            logger.info("Failed to send streaming_end or run_complete after DB save failure (Socket closed?)")
+                            break    
 
                         continue
                     # generate title and description for the current chat history if there are 2 user/assistant messages each
@@ -1003,19 +1272,35 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     )
 
                     if response_object:
-                        await websocket.send_json({
+                        # await websocket.send_json({
+                        #     "type": "assistance_response",
+                        #     "message_id": response_message_id,
+                        #     "content": response_object.model_dump(mode = "json"),
+                        #     "resend_flag": resend_flag,
+                        #     "reply_to_message_id": user_message_id,
+                        #     "final": True
+                        # })
+                        try:
+                            await ws_send(websocket, {
                             "type": "assistance_response",
                             "message_id": response_message_id,
                             "content": response_object.model_dump(mode = "json"),
                             "resend_flag": resend_flag,
                             "reply_to_message_id": user_message_id,
                             "final": True
-                        })
+                        }, label="assistance_response")
+                        except WSDisconnectedError:
+                            logger.info("Failed to send assistance response (Socket closed?)")
+                            break
 
-                    # # tool logic
-
-                    await websocket.send_json({"type": "streaming_end"})
-                    await websocket.send_json({"type": "run_complete"})
+                    # await websocket.send_json({"type": "streaming_end"})
+                    # await websocket.send_json({"type": "run_complete"})
+                    try:
+                        await ws_send(websocket, {"type": "streaming_end"}, label="streaming_end")
+                        await ws_send(websocket, {"type": "run_complete"}, label="run_complete")
+                    except WSDisconnectedError:
+                        logger.info("Failed to send streaming_end or run_complete (Socket closed?)")
+                        break
 
 
                 except WebSocketDisconnect:
@@ -1026,10 +1311,22 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
 
                 except Exception as e:
-                    await websocket.send_json({"type": "assistance_response", "content": "Sorry, something went wrong."})
-                    await websocket.send_json({"type": "streaming_end"})
-                    await websocket.send_json({"type": "run_complete"})
-                    raise
+                    logger.error(f"Error during agent execution: {e}")
+                    if conversation_history and conversation_history[-1].get("role") == "assistant":
+                        conversation_history.pop() 
+
+                    # await websocket.send_json({"type": "assistance_response", "content": "Sorry, something went wrong."})
+                    # await websocket.send_json({"type": "streaming_end"})
+                    # await websocket.send_json({"type": "run_complete"})
+                    # raise
+                    try:
+                        await ws_send(websocket, {"type": "assistance_response", "content": "Connection lost. I will retry once you are back online."}, label="assistance_response_error")
+                        await ws_send(websocket, {"type": "streaming_end"}, label="streaming_end_error")
+                        await ws_send(websocket, {"type": "run_complete"}, label="run_complete_error")
+                    
+                    except WSDisconnectedError:
+                        logger.info("Failed to send error messages (Socket closed?)")
+                    continue
 
 
     except WebSocketDisconnect:

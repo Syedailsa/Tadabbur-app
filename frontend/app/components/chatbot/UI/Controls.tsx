@@ -1,4 +1,4 @@
-import { easeInOut, motion } from "framer-motion";
+import { AnimatePresence, easeInOut, motion } from "framer-motion";
 import { ChatContext } from "@/app/context/chatbot/ChatContext";
 import React, { FC, useContext, useEffect, useRef, useState } from "react";
 import SettingIcon from "../../../../icons/settings_icon.svg";
@@ -7,14 +7,15 @@ import NewChatIcon from "../../../../icons/new_chat_icon.svg";
 import { ControlProps } from "../interfaces/ControlProps";
 import { wsSendAsync } from "@/app/utils/retryOpernation";
 
-const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
+const Controls: FC<ControlProps> = ({ wsRef, connectionStatus }): React.ReactElement | null => {
   const [active, setActive] = useState<boolean | null>(false);
   const controlRef = useRef<HTMLDivElement | null>(null);
   const [overlayText, setOverlayText] = useState<string | null>(null);
   const { setOpenChatHistoryDialogueBox } = useContext(ChatContext)!;
   const [overlayTranslate, setOverlayTranslate] = useState<number>(0);
+  const [showOfflineError, setShowOfflineError] = useState(false);
 
-  useEffect(() => {
+  useEffect(() => { 
     if (!active) return;
     const handleOutsideClick = (e: MouseEvent) => {
       if (
@@ -30,6 +31,15 @@ const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
       document.removeEventListener("click", handleOutsideClick);
     };
   }, [active, setActive]);
+
+  const validateConnection = (callback: () => void) => {
+    if (connectionStatus !== "connected") {
+      setShowOfflineError(true);
+      setTimeout(() => setShowOfflineError(false), 2000); 
+      return;
+    }
+    callback();
+  };
 
   const InitializeNewSession = () => {
     if (!wsRef.current) return;
@@ -52,10 +62,29 @@ const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
         user_id: user_id,
         model: "kimi-k2-instruct-0905",
       }).catch(() => { })
-
   };
+  const fetchChatHistory = () => {
+    const user = sessionStorage.getItem('user');
+    let user_id = user ? JSON.parse(user).id : null;
+    wsSendAsync(wsRef.current, { type: "chat_history", user_id: user_id }).catch(() => { });
+    setOpenChatHistoryDialogueBox(true);
+  };
+
   return (
     <div className="w-full flex justify-center-safe">
+      <AnimatePresence>
+        {showOfflineError && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="absolute top-10 left-1/2 -translate-x-1/2 bg-red-500 text-white text-[0.7rem] switzer-600 px-3 py-1.5 rounded-md shadow-lg z-100 whitespace-nowrap flex items-center gap-2"
+          >
+            <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+            INTERNET DISCONNECTED
+          </motion.div>
+        )}
+      </AnimatePresence>
       <motion.div
         ref={controlRef}
         onClick={() => {
@@ -81,21 +110,9 @@ const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
             className="flex gap-x-4"
           >
             <div
-              onClick={() => {
-                const user = sessionStorage.getItem('user');
-                let user_id = null;
-                if (user) {
-                  try {
-                    const userData = JSON.parse(user);
-                    user_id = userData.id;
-                  } catch (e) {
-                    console.error("Error parsing user data:", e);
-                  }
-                }
-                wsSendAsync
-                  (wsRef.current, { type: "chat_history", user_id: user_id }).catch(() => { });
-
-                setOpenChatHistoryDialogueBox(true);
+              onClick={(e) => {
+                e.stopPropagation();
+                validateConnection(fetchChatHistory);
               }}
               onMouseOver={() => {
                 setOverlayText("Chat History");
@@ -109,7 +126,10 @@ const Controls: FC<ControlProps> = ({ wsRef }): React.ReactElement | null => {
               <HistoryIcon className="w-5 h-5 fill-current" />
             </div>
             <div
-              onClick={InitializeNewSession}
+              onClick={(e) => {
+                e.stopPropagation();
+                validateConnection(InitializeNewSession);
+              }}
               onMouseOver={() => {
                 setOverlayText("New Chat");
                 setOverlayTranslate(8);

@@ -7,8 +7,13 @@ from qdrant_client import QdrantClient, models
 from tools.utils import normalize_surah
 from data.data import surah_name_english_translation_array, surah_name_english_array
 from langchain.tools import tool
+import logging
+import json
+from langchain_core.caches import InMemoryCache
+from langchain_core.outputs import Generation
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 COLLECTION_NAME = "Asbab_Nuzul"
 EMBEDDING_MODEL = "fireworks/qwen3-embedding-8b"
 
@@ -17,6 +22,13 @@ embeddings = FireworksEmbeddings(
   api_key = os.getenv('FIREWORKS_AI_API_KEY'),
   model = EMBEDDING_MODEL
 )
+qdrant_client = QdrantClient(
+    url=os.getenv("QDRANT_URL_ENDPOINT"),
+    api_key=os.getenv("QDRANT_API_KEY"),
+    timeout=60
+    )
+
+ASBAB_NUZUL_CACHE = InMemoryCache(maxsize=1000)
 
 class ToolSchema(BaseModel):
     "Surah and verse filters"
@@ -31,6 +43,8 @@ class ToolSchema(BaseModel):
     surah_englishName: Optional[str] = Field(default=None)
     surah_englishNameTranslation: Optional[str] = Field(default=None)
     query: Optional[str] = Field(default=None)
+
+    limit: Optional[int] = Field(default=5, description="Number of results to return for this query")
 
 class ToolSchemaList(BaseModel):
     "List of surah filters"
@@ -70,17 +84,26 @@ def searchAsbabNuzul(
     2. Do **not** infer metadata such as surah_number, verse_number, surah_englishName, surah_englishNameTranslation.  
     3. If the user provides only surah and ayah numbers → pass **only those fields**.  
     """
-    
-    qdrant_client = QdrantClient(
-    url=os.getenv("QDRANT_URL_ENDPOINT"),
-    api_key=os.getenv("QDRANT_API_KEY"),
-    timeout=60
+    cache_key = json.dumps(
+        {"args": [arg.model_dump() for arg in args]},
+        sort_keys=True
     )
+    llm_string = "asbab_nuzul_v1"
+
+    cached_result = ASBAB_NUZUL_CACHE.lookup(prompt=cache_key, llm_string=llm_string)
+    if cached_result:
+        logger.info("Cache hit — Asbab Nuzul result from cache")
+        return json.loads(cached_result[0].text)
+    
+    if not qdrant_client:
+        logger.error("Qdrant client not instantiated properly")
+        return "Qdrant client not instantiated properly"
+
     results_array = []
 
     for row in args:
         query = row.query
-        limit = row.query
+        limit = row.limit
         verse_tool_args = {
             "surah_number": row.surah_number,    
             "surah_number_min": row.surah_number_min,
@@ -94,22 +117,16 @@ def searchAsbabNuzul(
             "surah_englishNameTranslation": normalize_surah(row.surah_englishNameTranslation , surah_name_english_translation_array),
         }
 
-        print("Query", query)
-        # if no Qdrant Client, then return
-        if not qdrant_client:
-            print("Qdrant client not instantiated properly")
-            return "Qdrant client not instantiated properly"
-
         # checks if all tool arguments are none
         if not any(verse_tool_args.values()):
             # all arguments are none so return
-            print("No tool arguments are provided")
+            logger.warning("No tool arguments are provided")
             return "No tool arguments are provided"
 
         # filter and remove the none tool arguments
         clean_arguments = {k:v for k,v in verse_tool_args.items() if v is not None}
 
-        print("Clean tool arguments", clean_arguments)
+        logger.info("Clean tool arguments: %s", clean_arguments)
 
         must = []
         # build the filter
@@ -156,7 +173,15 @@ def searchAsbabNuzul(
         )
         results_array.append(results)
     if results_array:
-        print("Resuls to return", results_array)
-        return results_array
+        logger.info("Results found: %d", len(results_array))
+        serializable = [r.model_dump() if hasattr(r, "model_dump") else r for r in results_array]
+        ASBAB_NUZUL_CACHE.update(
+            prompt=cache_key,
+            llm_string=llm_string,
+            return_val=[Generation(text=json.dumps(serializable))]
+        )
+        logger.info("Cache updated with new Asbab Nuzul result")
+        return serializable
     else:
-        print("No results found for the user's query")
+        logger.warning("No results found for the user's query")
+        return "No results found"

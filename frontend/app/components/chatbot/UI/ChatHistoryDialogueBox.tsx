@@ -34,8 +34,12 @@ const ChatHisoryDialogueBox = () => {
   const dialogueRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-  const handleSessionDeleted = () => {
-    setToast(prev => ({ type: "deleted", sessionTitle: prev.sessionTitle }));
+  const handleSessionDeleted = (e: any) => {
+    const deletedTitle = e.detail?.title; 
+    setToast({ 
+      type: "deleted", 
+      sessionTitle: deletedTitle || "Session" 
+    });
     setDeletingSessionId(null);
   };
   const handleAllDeleted = () => {
@@ -153,38 +157,37 @@ const handleDeleteAll = () => {
       transition={{ duration: 0.4, ease: easeInOut }}
       className="w-screen h-screen absolute inset-0 flex justify-center items-center z-10"
     >
-    <AnimatePresence>
-  {toast.type && (
-    <motion.div
-      key="toast"
-      initial={{ opacity: 0, y: -20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -10 }}
-      transition={{ duration: 0.25 }}
-      className="absolute top-6 z-50 flex items-center gap-x-3 px-4 py-3 rounded-xl shadow-xl border"
-      style={{
-        background: toast.type === "deleted" || toast.type === "deleted-all" ? "#f0fdf4" : "#fffbeb",
-        borderColor: toast.type === "deleted" || toast.type === "deleted-all" ? "#bbf7d0" : "#fde68a",
-      }}
-    >
-      {toast.type === "deleting" || toast.type === "deleting-all" ? (
-        <Loader2 size={18} className="animate-spin text-amber-500 shrink-0" />
-      ) : (
-        <CheckCircle size={18} className="text-green-500 shrink-0" />
-      )}
-      <p className="switzer-500 text-sm" style={{
-        color: toast.type === "deleted" || toast.type === "deleted-all" ? "#15803d" : "#92400e"
-      }}>
-        {toast.type === "deleting" && `Deleting "${toast.sessionTitle}"...`}
-        {toast.type === "deleted" && `"${toast.sessionTitle}" deleted successfully!`}
-        {toast.type === "deleting-all" && "Deleting all sessions..."}
-        {toast.type === "deleted-all" && "All sessions deleted successfully!"}
-      </p>
-    </motion.div>
-  )}
-</AnimatePresence>
-      <div
-      
+      <AnimatePresence>
+        {toast.type && (
+          <motion.div
+            key="toast"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.25 }}
+            className="absolute top-6 z-50 flex items-center gap-x-3 px-4 py-3 rounded-xl shadow-xl border"
+            style={{
+              background: toast.type === "deleted" || toast.type === "deleted-all" ? "#f0fdf4" : "#fffbeb",
+              borderColor: toast.type === "deleted" || toast.type === "deleted-all" ? "#bbf7d0" : "#fde68a",
+            }}
+          >
+            {toast.type === "deleting" || toast.type === "deleting-all" ? (
+              <Loader2 size={18} className="animate-spin text-amber-500 shrink-0" />
+            ) : (
+              <CheckCircle size={18} className="text-green-500 shrink-0" />
+            )}
+            <p className="switzer-500 text-sm" style={{
+              color: toast.type === "deleted" || toast.type === "deleted-all" ? "#15803d" : "#92400e"
+            }}>
+              {toast.type === "deleting" && `Deleting "${toast.sessionTitle}"...`}
+              {toast.type === "deleted" && `"${toast.sessionTitle}" deleted successfully!`}
+              {toast.type === "deleting-all" && "Deleting all sessions..."}
+              {toast.type === "deleted-all" && "All sessions deleted successfully!"}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <div   
         ref={dialogueRef}
         className="w-[95%] max-w-130 h-120 p-2 bg-white border border-gray-500/5 shadow-lg rounded-md "
       >

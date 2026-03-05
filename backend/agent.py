@@ -982,13 +982,8 @@ standard_system_instructions = """
     When calling get_verse_image or get_Quran_Audio:
     1. Never display the raw links or metadata (audio links, verse images links, ruku, juz, etc.) in the response.
     2. Only respond with a simple acknowledgment, e.g.:
-<<<<<<< HEAD
-    - "Following are the verse images for your requested verses."
-    - "Following are the audio players for your requested verses."
-=======
     - "The verse images are ready."
     - "The audio data is available."
->>>>>>> ae2d1fcb818bef712f02b359f0c0922aeb0e5aee
     3. Do not describe or expand on the tool output in any way.
     4. If the tool returns empty or null, mention that the data is not available.
 
@@ -1016,7 +1011,7 @@ def get_agent_by_user_age( age: int , username: str, model_key: str = None ):
     """
     llm = get_llm(model_key)
     user_context_str = f"You are chatting with **{username}**, who is **{age} years old**."
-    
+    print(user_context_str)
     if age <= 12:
         selected_template = child_system_instructions 
         print(f"\n--- AGENT INITIALIZED: Child Mode | User: {username}, Age: {age} | Model: {llm.model_name} ---\n")
