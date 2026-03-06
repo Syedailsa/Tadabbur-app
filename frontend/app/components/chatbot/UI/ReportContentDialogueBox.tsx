@@ -49,7 +49,7 @@ const ReportContentDialogueBox: React.FC<ReportContenDialogueBoxProps> = ({
     setHideReportContentDialogueBox(true);
   };
   return (
-    <div className="absolute w-screen h-screen flex justify-center items-center backdrop-blur-sm">
+    <div className="absolute w-screen h-screen flex justify-center items-center backdrop-blur-sm z-40">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}

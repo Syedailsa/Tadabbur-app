@@ -1146,7 +1146,7 @@ function ChatContent() {
 
                 <button
                   onClick={handleLogout}
-                  className="pointer-events-auto mr-2 mt-2 px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm font-medium rounded-md shadow-md transition-colors"
+                  className="cursor-pointer ml-16 mt-2 px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm font-medium rounded-md shadow-md transition-colors"
                 >
                   Logout
                 </button>
