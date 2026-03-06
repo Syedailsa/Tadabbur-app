@@ -55,8 +55,7 @@ const PromptExtraOptions = ({
     setHidePromptExtraOptionsModelBoxArray((prev: hidePromptExtraOptionsModelBoxArray[]) => prev.map(m => m.assistant_message_id == message_id ? { ...m, hidePromptExtraOptionsModelBox: true } : m))
   }, [message_id, setHidePromptExtraOptionsModelBoxArray])
 
-
-
+  const active_message_index = messages?.[parent_index].active_message_index ?? 0
   const hidePromptExtraOptionsModelBox = hidePromptExtraOptionsModelBoxArray.find((m: hidePromptExtraOptionsModelBoxArray) => m.assistant_message_id == message_id)?.hidePromptExtraOptionsModelBox
   const theme = currentMode === "normal" ? "black" : "white"
   type OptionType = "copy" | "resend" | "liked" | "disliked";
@@ -170,12 +169,11 @@ const PromptExtraOptions = ({
                 onClick={() => {
                   const activeIndex =
                     messages?.[parent_index]?.active_message_index;
-
+                  console.log("Active index", active_message_index)
                   // check if activeIndex is below zero
-                  if (activeIndex && activeIndex <= 0) {
+                  if (active_message_index != null && active_message_index <= 0) {
                     return;
                   }
-
 
                   setMessages((prev: ChatMessage[]) => {
                     const messageArray = [...prev];
@@ -200,12 +198,10 @@ const PromptExtraOptions = ({
 
               <motion.div
                 onClick={() => {
-                  const activeIndex =
-                    messages?.[parent_index]?.active_message_index;
                   const number_of_responses =
                     messages?.[parent_index]?.number_of_responses;
 
-                  if (activeIndex + 1 >= number_of_responses) {
+                  if (active_message_index != null && active_message_index + 1 >= number_of_responses) {
                     return;
                   }
 

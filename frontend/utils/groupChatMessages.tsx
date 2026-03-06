@@ -1,10 +1,10 @@
-import { AssistantMessage } from "@/app/components/chatbot/interfaces/ChatMessage";
+import { AssistantMessage, ChatMessage } from "@/app/components/chatbot/interfaces/ChatMessage";
 
 function groupChatMessages(chatMessages: any) {
   const userMessagesMap = new Map();
 
   // First, create all user messages in the map
-  chatMessages.forEach((msg: any) => {
+  chatMessages.forEach((msg: ChatMessage) => {
     if (msg.role === "user") {
       userMessagesMap.set(msg.message_id, {
         message_id: msg.message_id || null,
@@ -13,7 +13,7 @@ function groupChatMessages(chatMessages: any) {
         attachments: msg.attachments,
         responses: [],
         number_of_responses: 0,
-        active_message_index: 0,
+        active_message_index: 0
       });
     }
   });
