@@ -113,11 +113,16 @@ const PromptExtraOptionsModelBox = ({
       animate={{ opacity: 1 }}
       className={`absolute bottom-12 left-36 w-42 h-max border rounded-xl ${backgroundTheme} ${backgroundTheme === "white" ? "border-black/5 bg-white" : "bg-black/80 border-white/10 backdrop-blur-md"} shadow-md overflow-clip px-1 p-2`}
     >
+
       <div className="w-full h-full flex flex-col items-center">
         {audio_state === "loading" ? (
           <div className={`w-full flex rounded-md items-center p-1 ${backgroundTheme === "white" ? "hover:bg-black/5" : "hover:bg-neutral-700/80"} cursor-pointer`}>
-            <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.6, repeat: Infinity, repeatType: "loop" }} className="ml-2 w-4 h-4 border-x-2 border-black/40 rounded-full fill-current text-black/50"></motion.div>
-            <p className="ml-2 switzer-500 text-black/50 text-[0.94rem]">
+            <motion.div style={{
+              borderLeftWidth: '2px',
+              borderRightWidth: '2px',
+              borderColor: fontTheme === "black" ? 'rgba(0,0,0,0.5)' : 'white'
+            }} animate={{ rotate: 360 }} transition={{ duration: 0.6, repeat: Infinity, repeatType: "loop" }} className={`ml-2 w-4 h-4 rounded-full fill-current`}></motion.div>
+            <p className={`ml-2 switzer-500 text-${fontTheme === "black" ? "black/50" : "white"} text-[0.94rem]`}>
               Loading
             </p>
           </div>

@@ -191,9 +191,9 @@ const PromptExtraOptions = ({
                 id="arrow-right"
                 className="p-1 hover:bg-black/5 cursor-pointer rounded-md"
               >
-                <ArrowLeft className="w-4 h-4" />
+                <ArrowLeft className={`w-4.5 h-4.5 fill-current text-${theme}`} />
               </motion.div>
-              <p className="switzer-500">
+              <p className={`switzer-500 text-${theme}`}>
                 {(messages[parent_index].active_message_index ?? 0) + 1}/
                 {messages[parent_index].number_of_responses ?? 0}
               </p>
@@ -223,7 +223,7 @@ const PromptExtraOptions = ({
                 id="arrow-right"
                 className="p-1 hover:bg-black/5 cursor-pointer rounded-md"
               >
-                <ArrowLeft className="w-4 h-4 rotate-180" />
+                <ArrowLeft className={`w-4.5 h-4.5 rotate-180 fill-current text-${theme}`} />
               </motion.div>
             </div>
           )}
