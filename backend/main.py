@@ -418,6 +418,8 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     requested_session_id = data.get("session_id", "").strip()
                     mode = data.get("mode", "normal")
                     current_mode = mode
+                    # set the active agent
+                    active_agent = agent_module.main_agent if current_mode == "normal" else story_agent
                     logger.info(f"Session mode: {mode}")
                     if not initialized or requested_session_id != current_session_id:
                         current_session_id = requested_session_id
@@ -462,7 +464,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                     continue
                             else:
                                 logger.info(f"🆕 Generated ID for potential new session: {session_id}")
-
                                 conversation_history = []
                                 unique_message_ids = []
                                 
@@ -476,7 +477,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             logger.error(f"Session Init Error: {e}")
                             await websocket.send_json({"type": "session_id", "status": "error", "error": str(e)})
                         
-                        continue
+                    continue
             
             # Handle CHAT HISTORY request
             if data.get("type") == "chat_history":
@@ -524,6 +525,8 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     session = supabase_client.table("chat_sessions").select("mode").eq("session_id", requested_session_id).limit(1).single().execute().data
                     
                     current_mode = session.get("mode", "normal")
+                    # set the active agent
+                    active_agent = agent_module.main_agent if current_mode == "normal" else story_agent
                     print("Session mode", current_mode)
                     files_response = files_response.data
                     combined_file_content = ""

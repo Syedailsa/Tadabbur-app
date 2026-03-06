@@ -196,20 +196,20 @@ const StoryContainer = ({ story_data }: { story_data: StoryParagraph[] }) => {
                                 </ReactMarkdown>
                                 <div className="self-start">
                                     {idx === (story_data.length - 1) ? (
-                                        <div className="flex justify-between">
-                                            <div className="w-[50%] sm:w-[30%] md:w-[25%] h-auto">
+                                        <div className="flex flex-col gap-y-2 justify-between">
+                                            <div className="w-[80%] sm:w-[50%] md:w-[45%] lg:w-[30%] h-auto">
                                                 <img className="rounded-md" src={`data:image/png;base64,${seg.image}`} />
                                             </div>
 
                                             <div onClick={() => {
                                                 setOpenFullStoryView(true)
                                                 setStoryData(story_data)
-                                            }} className="flex gap-x-2 h-max w-max mt-auto items-center border border-white/10 px-2 py-0.5 rounded-md cursor-pointer hover:text-white/90 text-white/70">
+                                            }} className="flex gap-x-2 h-max w-max items-center border border-white/10 px-2 py-0.5 rounded-md cursor-pointer hover:text-white/90 text-white/70">
                                                 <FullViewIcon className="w-3 h-3 fill-current" />
                                                 <p className="switzer-500 w-max tracking-tight text-[0.8rem]">View in full mode</p>
                                             </div>
                                         </div>
-                                    ) : (<div className="w-[50%] sm:w-[30%] md:w-[25%] h-auto">
+                                    ) : (<div className="w-[80%] sm:w-[50%] md:w-[45%] lg:w-[30%] h-auto">
                                         <img className="rounded-md" src={`data:image/png;base64,${seg.image}`} />
                                     </div>
 
