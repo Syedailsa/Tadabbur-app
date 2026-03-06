@@ -19,22 +19,14 @@ def save_image_local(image, counter: int):
     counter += 1
 
 client = InferenceClient(
-    provider="nscale",
+    provider="fal-ai",
     api_key=os.getenv("HUGGING_FACE_API"),
 )
 
 # output is a PIL.Image object
 def generate_image(prompt: str) -> Image.Image:
     image = client.text_to_image(
-        """Cinematic historical illustration of Prophet Nuh (peace be upon him) building a massive wooden ark in an ancient desert landscape. 
-        The prophet is shown respectfully from the back view only, wearing modest loose earth-toned robes and a simple head covering, holding a wooden tool while supervising construction. 
-        Several early believers assist him, carrying planks and ropes. 
-        The ark is enormous, partially constructed, made of dark aged wood beams. 
-        Sand-covered plain with distant hills, warm golden sunlight, dramatic sky with soft clouds. 
-        Emotion: perseverance, faith, determination.
-
-        Art style: highly detailed, realistic yet respectful historical illust
-    """,
-        model="stabilityai/stable-diffusion-xl-base-1.0",
+        prompt,
+        model="black-forest-labs/FLUX.1-dev",
     )
     return image

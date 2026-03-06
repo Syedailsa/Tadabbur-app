@@ -1165,7 +1165,7 @@ function ChatContent() {
                       {currentMode === "story" && (
                         <motion.div whileHover={{ backgroundColor: "#ffffff0d" }} className="w-max py-2 px-4 rounded-full border border-white/10 cursor-pointer flex items-center gap-x-1 scale-90 sm:scale-100">
                           <div className="rounded-md py-0.5 px-1 shadow-md bg-red-400 flex justify-center items-center mr-1">
-                            <span className="poppins-semibold text-[0.6rem] text-white">NEW</span>
+                            <span className="poppins-semibold text-[0.5rem] text-white">NEW</span>
                           </div>
                           <p className="switzer-500 tracking-tight text-[0.8rem] text-white">Introducing Story Mode</p>
                           <ArrowLeft className="w-3 h-3 fill-current rotate-180 text-white" />
@@ -1178,12 +1178,12 @@ function ChatContent() {
                           color: currentMode === "normal" ? "#000000E6" : "#FFFFFF"
                         }}
                         transition={{ duration: 0.3 }}
-                        className={`text-center px-6 ${currentMode === "normal" ? "switzer-500 text-4xl tracking-tight" : "inter-600 text-[2.6rem] sm:text-[2.8rem] tracking-tighter lg:text-6xl leading-9 lg:leading-12 subpixel-antialiased"}`}
+                        className={`text-center px-6 ${currentMode === "normal" ? "switzer-500 text-4xl tracking-tight" : "inter-600 text-[2.6rem] sm:text-[2.8rem] tracking-tighter lg:text-[3.2rem] leading-9 lg:leading-11 subpixel-antialiased"}`}
                       >
                         {currentMode === "story" ? (
                           <>
                             QURANIC STORIES EXPLAINED WITH <span className="text-cyan-300">POWERFUL</span>,
-                            <span className="flex gap-x-1 justify-center items-center text-green-300"><span className="rounded-full border-2 border-dotted border-red-400 p-1.5"><EngagingIcon className="md:w-12 md:h-12 w-8 h-8" /></span> CREATIVE</span> VISUALS.
+                            <span className="flex gap-x-1 justify-center items-center text-green-300"><span className="rounded-full border-2 border-dotted border-red-400 p-1.5"><EngagingIcon className="md:w-10 md:h-10 w-8 h-8" /></span> CREATIVE</span> VISUALS.
                           </>
                         ) : (
                           greeting
