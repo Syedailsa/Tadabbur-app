@@ -55,7 +55,7 @@ const PromptExtraOptions = ({
     setHidePromptExtraOptionsModelBoxArray((prev: hidePromptExtraOptionsModelBoxArray[]) => prev.map(m => m.assistant_message_id == message_id ? { ...m, hidePromptExtraOptionsModelBox: true } : m))
   }, [message_id, setHidePromptExtraOptionsModelBoxArray])
 
-  const active_message_index = messages?.[parent_index].active_message_index ?? 0
+  const active_message_index = messages?.[parent_index]?.active_message_index ?? 0
   const hidePromptExtraOptionsModelBox = hidePromptExtraOptionsModelBoxArray.find((m: hidePromptExtraOptionsModelBoxArray) => m.assistant_message_id == message_id)?.hidePromptExtraOptionsModelBox
   const theme = currentMode === "normal" ? "black" : "white"
   type OptionType = "copy" | "resend" | "liked" | "disliked";
@@ -254,11 +254,13 @@ const PromptExtraOptions = ({
               handleOptionClick({ type: "liked" });
             }}
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
-          >
-            <ThumbsUp
-              className={`w-4 h-4 fill-current text-${theme} ${feedback === "liked" ? "fill-blue-400" : ""
-                }`}
-            />
+          ><div style={{
+            color: feedback === "liked" ? "#60A5FA" : currentMode === "normal" ? "#000000" : "#ffffff",
+          }}>
+              <ThumbsUp
+                className="w-4 h-4 fill-current"
+              />
+            </div>
           </div>
 
           <div
@@ -274,11 +276,13 @@ const PromptExtraOptions = ({
               handleOptionClick({ type: "disliked" });
             }}
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
-          >
-            <ThumbsDown
-              className={`w-4 h-4 fill-current text-${theme} ${feedback === "disliked" ? "fill-red-400" : ""
-                }`}
-            />
+          ><div style={{
+            color: feedback === "disliked" ? "#F87171" : currentMode === "normal" ? "#000000" : "#ffffff"
+          }}>
+              <ThumbsDown
+                className="w-4 h-4 fill-current"
+              />
+            </div>
           </div>
           <div
             onMouseOver={() => {

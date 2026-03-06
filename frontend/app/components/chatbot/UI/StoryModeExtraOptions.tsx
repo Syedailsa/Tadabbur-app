@@ -1,12 +1,28 @@
 import { motion, easeInOut } from "framer-motion"
 import BookRibbon from "../../../../icons/book_ribbon.svg"
-import { useContext, useEffect } from "react"
+import { useContext, useEffect, useRef } from "react"
 import { ChatContext } from "@/app/context/chatbot/ChatContext"
 import { SessionInitMessage } from "@/app/utils/types"
 import { wsSendAsync } from "@/app/utils/retryOpernation"
 
 const StoryModeExtraOptions = () => {
-    const { setOpenStoryModeExtraOptions, setCurrentMode, wsRef } = useContext(ChatContext)!
+    const { setOpenStoryModeExtraOptions, wsRef } = useContext(ChatContext)!
+    const overlayRef = useRef<HTMLDivElement | null>(null)
+
+    useEffect(() => {
+        const handleOutsideClick = (e: MouseEvent) => {
+            if (
+                overlayRef.current &&
+                !overlayRef.current.contains(e.target as Node)
+            ) {
+                setOpenStoryModeExtraOptions(false);
+            }
+        };
+        document.addEventListener("click", handleOutsideClick);
+        return () => {
+            document.removeEventListener("click", handleOutsideClick);
+        };
+    }, [setOpenStoryModeExtraOptions]);
 
     const initializeTadabburMode = async () => {
         if (!wsRef.current) return
@@ -44,9 +60,10 @@ const StoryModeExtraOptions = () => {
 
     return (
         <motion.div
+            ref={overlayRef}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 0.2, ease: easeInOut }} className="absolute bg-black/80 backdrop-blur-md border border-white/10 w-48 h-max bottom-12 rounded-lg shadow-md p-1.5">
+            transition={{ duration: 0.2, ease: easeInOut }} className="absolute bg-black/80 backdrop-blur-md border border-white/10 w-48 h-max bottom-12 rounded-lg shadow-md p-1.5 z-20">
             <div onClick={() => {
                 initializeTadabburMode()
                 setOpenStoryModeExtraOptions(false)
