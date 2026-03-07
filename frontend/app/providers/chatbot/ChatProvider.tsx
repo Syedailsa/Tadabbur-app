@@ -29,6 +29,8 @@ interface ChatProviderProps {
   attachedFile: File | null;
   setAttachedFile: Dispatch<SetStateAction<File | null>>;
   setChatHistory: React.Dispatch<React.SetStateAction<ChatRecord[] | null>>;
+  openChatHistoryDialogueBox: boolean | null;
+  setOpenChatHistoryDialogueBox: React.Dispatch<React.SetStateAction<boolean | null>>;
   currentPlayableAudio: React.RefObject<{ user_message_id: string, response_message_id: string, state: "loading" | "playing" | "paused" | "ended" | null } | null>;
   hidePromptExtraOptionsModelBoxArray: hidePromptExtraOptionsModelBoxArray[]
   setHidePromptExtraOptionsModelBoxArray: React.Dispatch<React.SetStateAction<hidePromptExtraOptionsModelBoxArray[]>>

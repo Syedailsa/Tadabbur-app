@@ -4,6 +4,7 @@ import { useContext, useEffect, useRef, useState } from "react";
 import ChatHistory from "../../../../icons/history_icon.svg";
 import { X, Trash2, CheckCircle, Loader2 } from "lucide-react";
 import { wsSendAsync } from "@/app/utils/retryOpernation";
+import router from "next/router";
 
 const formatDateToDMY = (dateString: string | null): string => {
   const date = new Date(dateString || new Date());
@@ -17,6 +18,7 @@ const formatDateToDMY = (dateString: string | null): string => {
 const ChatHisoryDialogueBox = () => {
   const {
     chatHistory,
+    setChatHistory,
     setSelectedSessionID,
     openChatHistoryDialogueBox,
     setOpenChatHistoryDialogueBox,
@@ -110,6 +112,8 @@ useEffect(() => {
 
 const handleDeleteSession = (e: React.MouseEvent, chat: ChatRecord) => {
   e.stopPropagation();
+  const currentUrlSessionId = new URLSearchParams(window.location.search).get("session_id");
+  const isCurrentSession = currentUrlSessionId === chat.session_id;
   setDeletingSessionId(chat.session_id);
   setToast({ type: "deleting", sessionTitle: chat.title ?? undefined });
   const user = localStorage.getItem("user");
@@ -122,6 +126,14 @@ const handleDeleteSession = (e: React.MouseEvent, chat: ChatRecord) => {
   const pending = JSON.parse(localStorage.getItem("tadabbur_pending_deletes") || "[]");
   pending.push({ type: "delete_session", user_id, session_id: chat.session_id });
   localStorage.setItem("tadabbur_pending_deletes", JSON.stringify(pending));
+
+  const isSocketClosed = !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN;
+
+  if (isSocketClosed && isCurrentSession) {
+    // Navigate away and clear locally immediately
+    setSelectedSessionID(null);
+    window.location.href = '/pages/chatbot'; 
+  }
   
   wsSendAsync(wsRef.current, {
     type: "delete_session",
@@ -144,6 +156,16 @@ const handleDeleteAll = () => {
       user_id 
     }
   ]));
+  const isSocketClosed = !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN;
+  
+  if (isSocketClosed) { 
+    
+    setOpenChatHistoryDialogueBox(false); 
+    
+    if (setChatHistory) setChatHistory([]); 
+
+    window.location.href = '/pages/chatbot';
+  }
   wsSendAsync(wsRef.current, { type: "delete_all_sessions", user_id });
 };
 

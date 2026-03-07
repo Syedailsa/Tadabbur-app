@@ -113,6 +113,7 @@ function ChatContent() {
     target_session_id: string | null;
     timestamp: number | null;
   } | null>(null);
+  const [openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox] = useState<boolean | null>(false);
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
   const lastPongRef = useRef<number>(Date.now());
   const reconnectAttemptRef = useRef(0);
@@ -516,13 +517,12 @@ function ChatContent() {
         const data = JSON.parse(event.data);
         // console.log("Data from websocket", event.data);
 
-        if (data.type === "pong") {
-          console.log("Pong received - connection alive");
-          return;
-        }
-
         const type = data.type;
         switch (type) {
+          case "pong":
+            console.log("Pong received - connection alive");
+            break;
+
           case "undo-report":
             const id = data.message_id;
             if (id) {
@@ -538,7 +538,6 @@ function ChatContent() {
             const tts_message_id = data.message_id;
             const user_message_id = data.user_id
             if (audio_url && tts_message_id && user_message_id) {
-              // logic here
               try {
                 // store the audio_url for next playback
                 setMessages(prev => prev.map(m => m.message_id === user_message_id ? { ...m, responses: m.responses.map(r => r.message_id === tts_message_id ? { ...r, audio_link: audio_url } : r) } : m))
@@ -585,6 +584,7 @@ function ChatContent() {
             }
 
             break;
+
           case "chat_history":
             const chat_history = data.chat_history;
             const history_status = data.status;
@@ -596,125 +596,89 @@ function ChatContent() {
             }
             break;
 
-          // case "delete_session":
-          //   const delete_status = data.status;
-          //   if (delete_status === "success") {
-          //     window.dispatchEvent(new CustomEvent("tadabbur-session-deleted", {
-          //     detail: { session_id: data.session_id }
-          //    }));
-          //     // Refresh chat history
-          //     const user = localStorage.getItem("user");
-          //     let user_id = null;
-          //     if (user) {
-          //       try {
-          //         const userData = JSON.parse(user);
-          //         user_id = userData.id;
-          //       } catch (e) {
-          //         console.error("Error parsing user data:", e);
-          //       }
-          //     }
-          //     if (user_id) {
-          //       wsSendAsync(wsRef.current, {
-          //         type: "chat_history",
-          //         user_id: user_id,
-          //       });
-          //     }
-          //     setShowDeleteSuccess(true);
-          //     setTimeout(() => setShowDeleteSuccess(false), 3000);
-          //     type PendingDelete = { type: string; user_id: string | null; session_id?: string };
-          //     const pending: PendingDelete[] = JSON.parse(localStorage.getItem("tadabbur_pending_deletes") || "[]");
-          //     const updated = pending.filter((op) => op.session_id !== data.session_id);
-          //     localStorage.setItem("tadabbur_pending_deletes", JSON.stringify(updated));
-          //   } else {
-          //     alert("Error deleting chat session: " + data.error);
-          //   }
-          //   break;  
+          case "delete_session": 
+            const delete_status = data.status;
+            if (delete_status === "success") {
+              window.dispatchEvent(new CustomEvent("tadabbur-session-deleted", {
+                detail: { session_id: data.session_id }
+              }));
 
-          case "delete_session": {
-          const delete_status = data.status;
-          if (delete_status === "success") {
-            window.dispatchEvent(new CustomEvent("tadabbur-session-deleted", {
-              detail: { session_id: data.session_id }
-            }));
+              const currentUrlSessionId = new URLSearchParams(window.location.search).get("session_id");
+              if (currentUrlSessionId === data.session_id) {
+                setMessages([]);
+                setSessionID(null);
+                setMessageIDs([]);
+                setHidePromptExtraOptionsModelBoxArray([]);
+                setLoading(false);
+                setIsGenerating(false);
+                
+                const u = localStorage.getItem("user");
+                let uid = null;
+                try { uid = u ? JSON.parse(u).id : null; } catch {}
 
-            const currentUrlSessionId = new URLSearchParams(window.location.search).get("session_id");
-            if (currentUrlSessionId === data.session_id) {
-              setMessages([]);
-              setSessionID(null);
-              setMessageIDs([]);
-              setHidePromptExtraOptionsModelBoxArray([]);
-              setLoading(false);
-              setIsGenerating(false);
+                wsSendAsync(wsRef.current, {
+                  type: "session-init",
+                  session_id: "",
+                  user_id: uid,
+                  model: "kimi-k2-instruct-0905",
+                });
+              }
+
               
-              const u = localStorage.getItem("user");
-              let uid = null;
-              try { uid = u ? JSON.parse(u).id : null; } catch {}
+              const user = localStorage.getItem("user");
+              let user_id: string = "" ;
 
-              wsSendAsync(wsRef.current, {
-                type: "session-init",
-                session_id: "",
-                user_id: uid,
-                model: "kimi-k2-instruct-0905",
-              });
+                try {
+                  const userData = JSON.parse(user || "{}");
+                  user_id = userData.id;
+                } catch (e) {
+                  console.error("Error parsing user data:", e);
+                
+              }
+
+              if (user_id) {
+                wsSendAsync(wsRef.current, {
+                  type: "chat_history",
+                  user_id: user_id,
+                });
+              }
+              setShowDeleteSuccess(true);
+              setTimeout(() => setShowDeleteSuccess(false), 3000);
+              type PendingDelete = { type: string; user_id: string | null; session_id?: string };
+              const pending: PendingDelete[] = JSON.parse(localStorage.getItem("tadabbur_pending_deletes") || "[]");
+              const updated = pending.filter((op) => op.session_id !== data.session_id);
+              localStorage.setItem("tadabbur_pending_deletes", JSON.stringify(updated));
+
+            } else {
+              alert("Error deleting chat session: " + data.error);
             }
-
-            
-            const user = localStorage.getItem("user");
-            let user_id: string = "" ;
-
-              try {
-                const userData = JSON.parse(user || "{}");
-                user_id = userData.id;
-              } catch (e) {
-                console.error("Error parsing user data:", e);
-              
-            }
-
-            if (user_id) {
-              wsSendAsync(wsRef.current, {
-                type: "chat_history",
-                user_id: user_id,
-              });
-            }
-            setShowDeleteSuccess(true);
-            setTimeout(() => setShowDeleteSuccess(false), 3000);
-            type PendingDelete = { type: string; user_id: string | null; session_id?: string };
-            const pending: PendingDelete[] = JSON.parse(localStorage.getItem("tadabbur_pending_deletes") || "[]");
-            const updated = pending.filter((op) => op.session_id !== data.session_id);
-            localStorage.setItem("tadabbur_pending_deletes", JSON.stringify(updated));
-
-          } else {
-            alert("Error deleting chat session: " + data.error);
-          }
-          break;
-        }  
-
+            break; 
             
           case "delete_all_sessions":
             const delete_all_status = data.status;
             if (delete_all_status === "success") {
-            setChatHistory([]);
-            window.dispatchEvent(new CustomEvent("tadabbur-all-sessions-deleted"));
-            localStorage.removeItem("tadabbur_pending_deletes");
+              if (setOpenChatHistoryDialogueBox) setOpenChatHistoryDialogueBox(false);
+              setChatHistory([]);
+              window.dispatchEvent(new CustomEvent("tadabbur-all-sessions-deleted"));
+              localStorage.removeItem("tadabbur_pending_deletes");
 
-            
-            setMessages([]);
-            setSessionID(null);
-            setMessageIDs([]);
-            setHidePromptExtraOptionsModelBoxArray([]);
-            router.push('/pages/chatbot', { scroll: false });
-            
-            wsSendAsync(wsRef.current, {
-              type: "session-init",
-              session_id: "",
-              user_id: (() => {
-                try {
-                  const u = localStorage.getItem("user");
-                  return u ? JSON.parse(u).id : null;
-                } catch { return null; }
-              })(),
-              model: "kimi-k2-instruct-0905",
-            });
+              setMessages([]);
+              setSessionID(null);
+              setMessageIDs([]);
+              setHidePromptExtraOptionsModelBoxArray([]);
+              router.push('/pages/chatbot', { scroll: false });
+              
+              wsSendAsync(wsRef.current, {
+                type: "session-init",
+                session_id: "",
+                user_id: (() => {
+                  try {
+                    const u = localStorage.getItem("user");
+                    return u ? JSON.parse(u).id : null;
+                  } catch { return null; }
+                })(),
+                model: "kimi-k2-instruct-0905",
+              });
             } else {
               alert("Error deleting chat sessions: " + data.error);
             }
@@ -725,7 +689,7 @@ function ChatContent() {
             if (status === "acknowledged") {
               const messageIDs = data.unique_message_ids;
               const session_id = data.session_id
-              const chat_history = groupChatMessages(data.chat_history);
+              const chat_history = groupChatMessages(data.chat_history || []);
               setMessages(chat_history);
               setMessageIDs(messageIDs);
               setConnectionStatus("connected"); 
@@ -760,7 +724,10 @@ function ChatContent() {
               }
               
               setTimeout(() => {
+                if (!chat_history || chat_history.length === 0) return;
+
                 const lastMsg = chat_history[chat_history.length - 1];
+                if(!lastMsg) return;
 
                 const hasNoResponse = !lastMsg.responses || lastMsg.responses.length === 0;
                 const hasEmptyResponse = lastMsg.responses?.[0]?.content === "";
@@ -776,7 +743,7 @@ function ChatContent() {
                     { responses: [], attachments: lastMsg.attachments || [] }
                   );
                 }
-              }, 800);
+              }, 1500);
 
               // initialize an emtpy array for hidePromptExtraOptionsModelBoxArray
               const array: hidePromptExtraOptionsModelBoxArray[] = [];
@@ -1130,7 +1097,7 @@ function ChatContent() {
           resend_flag, 
           resend_message_id: messageID, 
           old_responses_attachments,
-          target_session_id: sessionID,
+          target_session_id: urlSessionId,
           timestamp: Date.now() 
       };
       pendingPromptRef.current = pendingData;
@@ -1343,6 +1310,8 @@ function ChatContent() {
             ask={ask}
             currentPlayableAudio={currentPlayableAudio}
             hideReportContentDialogueBox={hideReportContentDialogueBox}
+            openChatHistoryDialogueBox={openChatHistoryDialogueBox}
+            setOpenChatHistoryDialogueBox={setOpenChatHistoryDialogueBox}
             setHideReportContentDialogueBox={setHideReportContentDialogueBox}
             hidePromptExtraOptionsModelBoxArray={hidePromptExtraOptionsModelBoxArray}
             setHidePromptExtraOptionsModelBoxArray={setHidePromptExtraOptionsModelBoxArray}
