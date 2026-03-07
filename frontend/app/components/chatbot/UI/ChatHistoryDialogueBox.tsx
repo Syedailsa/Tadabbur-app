@@ -130,7 +130,6 @@ const handleDeleteSession = (e: React.MouseEvent, chat: ChatRecord) => {
   const isSocketClosed = !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN;
 
   if (isSocketClosed && isCurrentSession) {
-    // Navigate away and clear locally immediately
     setSelectedSessionID(null);
     window.location.href = '/pages/chatbot'; 
   }

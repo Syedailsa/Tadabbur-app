@@ -705,7 +705,6 @@ function ChatContent() {
                   if (isCorrectSession && pendingData.input) {
                     console.log("🚀 Connection restored. Sending pending prompt from localStorage...");
                     
-                    // Call ask directly
                     ask(
                       pendingData.input, 
                       pendingData.guidelines, 
@@ -745,7 +744,6 @@ function ChatContent() {
                 }
               }, 1500);
 
-              // initialize an emtpy array for hidePromptExtraOptionsModelBoxArray
               const array: hidePromptExtraOptionsModelBoxArray[] = [];
               if (data.chat_history.length > 0) {
                 for (const record of data.chat_history) {
