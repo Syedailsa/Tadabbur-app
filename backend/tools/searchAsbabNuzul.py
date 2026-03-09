@@ -30,6 +30,12 @@ qdrant_client = QdrantClient(
 
 ASBAB_NUZUL_CACHE = InMemoryCache(maxsize=1000)
 
+qdrant_client = QdrantClient(
+    url=os.getenv("QDRANT_URL_ENDPOINT"),
+    api_key=os.getenv("QDRANT_API_KEY"),
+    timeout=60
+)
+    
 class ToolSchema(BaseModel):
     "Surah and verse filters"
     surah_number: Optional[int] = Field(default=None)
@@ -42,9 +48,8 @@ class ToolSchema(BaseModel):
 
     surah_englishName: Optional[str] = Field(default=None)
     surah_englishNameTranslation: Optional[str] = Field(default=None)
+    limit: Optional[int] = Field(default = 1)
     query: Optional[str] = Field(default=None)
-
-    limit: Optional[int] = Field(default=5, description="Number of results to return for this query")
 
 class ToolSchemaList(BaseModel):
     "List of surah filters"
@@ -82,7 +87,7 @@ def searchAsbabNuzul(
     ### Important Guidelines
     1. When calling `searchAsbabNuzul`, pass **only the arguments explicitly mentioned by the user**. Leave all others as `None`.  
     2. Do **not** infer metadata such as surah_number, verse_number, surah_englishName, surah_englishNameTranslation.  
-    3. If the user provides only surah and ayah numbers → pass **only those fields**.  
+    3. If the user provides only surah and ayah numbers → pass **only those fields**, leaving others as None.  
     """
     cache_key = json.dumps(
         {"args": [arg.model_dump() for arg in args]},
@@ -96,8 +101,12 @@ def searchAsbabNuzul(
         return json.loads(cached_result[0].text)
     
     if not qdrant_client:
-        logger.error("Qdrant client not instantiated properly")
-        return "Qdrant client not instantiated properly"
+            response_object = {
+                "success": False,
+                "results": [],
+                "error": "Retreival failed due to database connection errors"
+            }
+            return response_object
 
     results_array = []
 
@@ -113,14 +122,18 @@ def searchAsbabNuzul(
             "verse_number_min": row.verse_number_min,
             "verse_number_max": row.verse_number_max,
 
-            "surah_englishName": normalize_surah(row.surah_englishName , surah_name_english_array), 
-            "surah_englishNameTranslation": normalize_surah(row.surah_englishNameTranslation , surah_name_english_translation_array),
+            "surah_englishName": normalize_surah(row.surah_englishName, surah_name_english_array), 
+            "surah_englishNameTranslation": normalize_surah(row.surah_englishNameTranslation, surah_name_english_translation_array),
         }
 
         # checks if all tool arguments are none
-        if not any(verse_tool_args.values()):
+        if not any(verse_tool_args.values()) and not query:
             # all arguments are none so return
-            logger.warning("No tool arguments are provided")
+            response_object = {
+                "success": False,
+                "results": [],
+                "error": "Your query needs more information to return results."
+            }
             return "No tool arguments are provided"
 
         # filter and remove the none tool arguments
@@ -130,58 +143,73 @@ def searchAsbabNuzul(
 
         must = []
         # build the filter
-        for k,v in clean_arguments.items():
-            min_or_max = "min" if "_min" in k else ("max" if "_max" in k else None) 
+        if clean_arguments:
+            for k,v in clean_arguments.items():
+                if k == "limit":
+                    continue
+                min_or_max = "min" if "_min" in k else ("max" if "_max" in k else None) 
 
-            if min_or_max in ("min", "max"):
-                field = k.replace(f"_{min_or_max}", "")
-                if min_or_max == "min":
-                    must.append(models.FieldCondition(
-                        key = field,
-                        range = models.Range(
-                            gte = v
+                if min_or_max in ("min", "max"):
+                    field = k.replace(f"_{min_or_max}", "")
+                    if min_or_max == "min":
+                        must.append(models.FieldCondition(
+                            key = field,
+                            range = models.Range(
+                                gte = v
+                            )
+                        ))
+                    elif min_or_max  == 'max':
+                        must.append(models.FieldCondition(
+                            key = field,
+                            range = models.Range(
+                                lte = v
+                            )
+                        ))      
+                    
+                else:
+                    must.append(
+                        models.FieldCondition(
+                            key = k,
+                            match = models.MatchValue(value = v)
                         )
-                    ))
-                elif min_or_max  == 'max':
-                    must.append(models.FieldCondition(
-                        key = field,
-                        range = models.Range(
-                            lte = v
-                        )
-                    ))      
-                
-            else:
-                must.append(
-                    models.FieldCondition(
-                        key = k,
-                        match = models.MatchValue(value = v)
                     )
-                )
         query_embeddings = None
         if query:
             query_embeddings = embeddings.embed_query(query)
-        
 
         if not query_embeddings and not must:
             return "No query or filters provided"
-        
-        results = qdrant_client.query_points(
+
+        similar_points = qdrant_client.query_points(
             collection_name = COLLECTION_NAME,
             query = query_embeddings,
-            query_filter = models.Filter(must=must) if must else None,
-            limit = limit
+            limit = row.limit,
+            using = "verse-dense-vector",
+            query_filter = models.Filter(must=must) if must else None
         )
-        results_array.append(results)
+        results_array.append(similar_points)
     if results_array:
         logger.info("Results found: %d", len(results_array))
         serializable = [r.model_dump() if hasattr(r, "model_dump") else r for r in results_array]
+        response_obj = {
+            "success": True,
+            "results": serializable,
+            "error": "" 
+        }
         ASBAB_NUZUL_CACHE.update(
             prompt=cache_key,
             llm_string=llm_string,
             return_val=[Generation(text=json.dumps(serializable))]
         )
         logger.info("Cache updated with new Asbab Nuzul result")
-        return serializable
+        print(response_obj)
+        return response_obj
     else:
         logger.warning("No results found for the user's query")
-        return "No results found"
+        response_object = {
+            "success": False,
+            "results": [],
+            "error": "No results found for the user's query",
+        }
+        return response_object
+

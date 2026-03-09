@@ -30,8 +30,7 @@ const PromptExtraOptions = ({
 }: PromptExtraOptionsProps) => {
 
   const { sessionID, wsRef, messages, setMessages, hidePromptExtraOptionsModelBoxArray,
-    setHidePromptExtraOptionsModelBoxArray,
-
+    setHidePromptExtraOptionsModelBoxArray, currentMode
   } = useContext(ChatContext)!
 
   const [overlayTranslateAmount, setOverlayTranslateAmount] = useState<
@@ -56,10 +55,9 @@ const PromptExtraOptions = ({
     setHidePromptExtraOptionsModelBoxArray((prev: hidePromptExtraOptionsModelBoxArray[]) => prev.map(m => m.assistant_message_id == message_id ? { ...m, hidePromptExtraOptionsModelBox: true } : m))
   }, [message_id, setHidePromptExtraOptionsModelBoxArray])
 
-
-
+  const active_message_index = messages?.[parent_index]?.active_message_index ?? 0
   const hidePromptExtraOptionsModelBox = hidePromptExtraOptionsModelBoxArray.find((m: hidePromptExtraOptionsModelBoxArray) => m.assistant_message_id == message_id)?.hidePromptExtraOptionsModelBox
-
+  const theme = currentMode === "normal" ? "black" : "white"
   type OptionType = "copy" | "resend" | "liked" | "disliked";
   const handleOptionClick = ({ type }: { type: OptionType }) => {
     if (parent_index === null) return
@@ -171,12 +169,11 @@ const PromptExtraOptions = ({
                 onClick={() => {
                   const activeIndex =
                     messages?.[parent_index]?.active_message_index;
-
+                  console.log("Active index", active_message_index)
                   // check if activeIndex is below zero
-                  if (activeIndex && activeIndex <= 0) {
+                  if (active_message_index != null && active_message_index <= 0) {
                     return;
                   }
-
 
                   setMessages((prev: ChatMessage[]) => {
                     const messageArray = [...prev];
@@ -192,21 +189,19 @@ const PromptExtraOptions = ({
                 id="arrow-right"
                 className="p-1 hover:bg-black/5 cursor-pointer rounded-md"
               >
-                <ArrowLeft className="w-4 h-4" />
+                <ArrowLeft className={`w-4.5 h-4.5 fill-current text-${theme}`} />
               </motion.div>
-              <p className="switzer-500">
+              <p className={`switzer-500 text-${theme}`}>
                 {(messages[parent_index].active_message_index ?? 0) + 1}/
                 {messages[parent_index].number_of_responses ?? 0}
               </p>
 
               <motion.div
                 onClick={() => {
-                  const activeIndex =
-                    messages?.[parent_index]?.active_message_index;
                   const number_of_responses =
                     messages?.[parent_index]?.number_of_responses;
 
-                  if (activeIndex + 1 >= number_of_responses) {
+                  if (active_message_index != null && active_message_index + 1 >= number_of_responses) {
                     return;
                   }
 
@@ -224,7 +219,7 @@ const PromptExtraOptions = ({
                 id="arrow-right"
                 className="p-1 hover:bg-black/5 cursor-pointer rounded-md"
               >
-                <ArrowLeft className="w-4 h-4 rotate-180" />
+                <ArrowLeft className={`w-4.5 h-4.5 rotate-180 fill-current text-${theme}`} />
               </motion.div>
             </div>
           )}
@@ -243,7 +238,7 @@ const PromptExtraOptions = ({
             }}
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
           >
-            <Copy className="w-4.5 h-4.5" />
+            <Copy className={`w-4.5 h-4.5 fill-current text-${theme}`} />
           </div>
 
           <div
@@ -259,11 +254,13 @@ const PromptExtraOptions = ({
               handleOptionClick({ type: "liked" });
             }}
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
-          >
-            <ThumbsUp
-              className={`w-4 h-4 ${feedback === "liked" ? "fill-blue-400" : ""
-                }`}
-            />
+          ><div style={{
+            color: feedback === "liked" ? "#60A5FA" : currentMode === "normal" ? "#000000" : "#ffffff",
+          }}>
+              <ThumbsUp
+                className="w-4 h-4 fill-current"
+              />
+            </div>
           </div>
 
           <div
@@ -279,11 +276,13 @@ const PromptExtraOptions = ({
               handleOptionClick({ type: "disliked" });
             }}
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
-          >
-            <ThumbsDown
-              className={`w-4 h-4 ${feedback === "disliked" ? "fill-red-400" : ""
-                }`}
-            />
+          ><div style={{
+            color: feedback === "disliked" ? "#F87171" : currentMode === "normal" ? "#000000" : "#ffffff"
+          }}>
+              <ThumbsDown
+                className="w-4 h-4 fill-current"
+              />
+            </div>
           </div>
           <div
             onMouseOver={() => {
@@ -299,7 +298,7 @@ const PromptExtraOptions = ({
             }}
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
           >
-            <Refresh className="w-4 h-4" />
+            <Refresh className={`w-4 h-4 fill-current text-${theme}`} />
           </div>
           <div
             onMouseOver={() => {
@@ -311,7 +310,7 @@ const PromptExtraOptions = ({
 
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
           >
-            <MoreOptions className="w-4 h-4" />
+            <MoreOptions className={`w-4.5 h-4.5 fill-current text-${theme}`} />
           </div>
           {active && (
             <motion.div
@@ -342,7 +341,7 @@ const PromptExtraOptions = ({
             }}
             className="p-1.5 hover:bg-black/5 ml-auto rounded-md cursor-pointer"
           >
-            <Copy className="w-4.5 h-4.5" />
+            <Copy className={`w-4.5 h-4.5 fill-current text-${theme}`} />
           </div>
           {active && (
             <motion.div

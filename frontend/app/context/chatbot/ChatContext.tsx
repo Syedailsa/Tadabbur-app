@@ -1,5 +1,5 @@
 import React, { createContext, useContext, Dispatch, SetStateAction } from "react";
-import { ChatMessage, AssistantMessage, Attachment } from "@/app/components/chatbot/interfaces/ChatMessage";
+import { ChatMessage, AssistantMessage, Attachment, StoryParagraph } from "@/app/components/chatbot/interfaces/ChatMessage";
 import hidePromptExtraOptionsModelBoxArray from "@/app/components/chatbot/interfaces/hidePromptExtraOptionsModelBoxArray";
 
 
@@ -9,6 +9,7 @@ export interface ChatRecord {
   description: string | null;
   created_at: string | null;
 }
+
 
 type AskFn = (
   input: string,
@@ -44,12 +45,18 @@ export interface ChatContextType {
   setChatHistory: React.Dispatch<React.SetStateAction<ChatRecord[] | null>>;
   selectedSessionID: string | null;
   setSelectedSessionID: React.Dispatch<React.SetStateAction<string | null>>;
-  openChatHistoryDialogueBox: boolean | null;
-  setOpenChatHistoryDialogueBox: React.Dispatch<React.SetStateAction<boolean | null>>;
+  openChatHistoryDialogueBox: boolean;
+  setOpenChatHistoryDialogueBox: React.Dispatch<React.SetStateAction<boolean>>;
   sessionID: string | null;
   messages: ChatMessage[];
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
   attachedFile: File | null;
   setAttachedFile: Dispatch<SetStateAction<File | null>>;
+  currentMode: "normal" | "story" | null;
+  setCurrentMode: React.Dispatch<React.SetStateAction<"normal" | "story" | null>>;
+  setOpenFullStoryView: React.Dispatch<React.SetStateAction<boolean>>
+  setStoryData: React.Dispatch<React.SetStateAction<StoryParagraph[]>>
+  openStoryModeExtraOptions: boolean
+  setOpenStoryModeExtraOptions: React.Dispatch<React.SetStateAction<boolean>>
 }
 export const ChatContext = createContext<ChatContextType | null>(null);

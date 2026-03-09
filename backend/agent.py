@@ -72,7 +72,7 @@ class ContentSection(BaseModel):
 class QuranResponse(BaseModel):
     title: str = Field(..., description="The main title of the response")
     intro: Optional[str] = Field(..., description="A brief introduction or summary")
-    sections: Optional[List[ContentSection]] = Field(..., description="The detailed content divided into logical sections")
+    sections: Optional[List[ContentSection]] = Field(None, description="The detailed content divided into logical sections")
     references: Optional[List[str]] = Field(None, description="List of Quranic Surah/Ayah references used")
 
 def custom_tool_error_handler(exception: Exception) -> str:
@@ -129,13 +129,33 @@ child_system_instructions = """
     ## Tools
     ### 1. searchAsbabNuzul
     Use searchAsbabNuzul when user asks for queries related to Asbab_Nuzul/Shan_Nuzul (Circumstances of revelation). Use it for searching through user provided references like surah name, verse number, etc. as well as doing semantic searches by forming a query derived from the user's question.
+    
+    ### 1. searchAsbabNuzul
 
+    Use searchAsbabNuzul when the user asks about:
+
+    Asbab al-Nuzul / Shan al-Nuzul
+    (circumstances of revelation of Qur’anic verses or surahs)
+
+    Questions mentioning:
+    1. Surah name
+    2. Surah english name
+    3. Surah english name translation
+    4. Verse number
+    5. Historical reason of revelation
+    6. Event linked to revelation
+    7. Semantic questions which don't provide exact metadata filters, search through query parameter
+
+    The tool supports:
+        Metadata filters (surah, verse, references, etc.)
+        Semantic search using a natural-language query
 
     **Example Queries:**
     - What is the asbab e nuzul of surah Kafiroun?
     - What is the asbab e nuzul of Surah Fatiha verse 1?
     - What is the Asbab Nuzul of surah Yonus verse 10 and surah Baqarah verse 20 and surah Nisa verse 20?
     - What is the shan e nuzul of the surah which was revealed when the Prophet A.S was inflicted by magic?
+    - Shan e nuzul of verse which talks about Patience, HereAfter and the virtues of Jihad.
 
 
     **Important Guidelines:**
@@ -154,26 +174,28 @@ child_system_instructions = """
             {{
                 "surah_number": 1,
                 "surah_englishName": "Al-Faatiha",
-                "verse_number": 5
+                "verse_number": 5,
+                "limit": 1
             }}
         ]
     }}
     ```
 
-
-    - **User:** `"What is Asbab Nuzul of Surah Fatiha and Surah yusuf verse 10?"`
+    - **User:** `"What are the Asbab Nuzul of Surah Fatiha complete and Surah yusuf verse 10?"`
     **Tool call:**
     ```json
     {{
         "args": [
             {{
                 "surah_number": 1,
-                "surah_englishName": "Al-Faatiha"
+                "surah_englishName": "Al-Faatiha",
+                "limit": 7
             }},
             {{
                 "surah_number": 12,
                 "surah_englishName": "Yusuf",
-                "verse_number": 10
+                "verse_number": 10,
+                "limit: 1
             }}
         ]
     }}
@@ -187,7 +209,8 @@ child_system_instructions = """
         "args": [
             {{
                 "surah_englishName": "Al-Falaq",
-                "query": "Harm caused by created things"
+                "query": "Harm caused by created things",
+                "limit": 1
             }}
         ]
     }}
@@ -202,7 +225,8 @@ child_system_instructions = """
             {{
                 "surah_englishName": "Al-An'aam",
                 "verse_number_min": 1,
-                "verse_number_max": 10
+                "verse_number_max": 10,
+                "limit": 10
             }}
         ]
     }}
@@ -572,16 +596,35 @@ standard_system_instructions = """
     - If a user asks for more than 30 verses or demands a large amount of data, apologize and say that you can't help fetch large amounts of data and ask them to shorten the desired amount.
 
 
-    ## Tools
-    ### 1. searchAsbabNuzul
-    Use searchAsbabNuzul when user asks for queries related to Asbab_Nuzul/Shan_Nuzul (Circumstances of revelation). Use it for searching through user provided references like surah name, verse number, etc. as well as doing semantic searches by forming a query derived from the user's question.
 
+    ## Tools
+    
+    ### 1. searchAsbabNuzul
+
+    Use searchAsbabNuzul when the user asks about:
+
+    Asbab al-Nuzul / Shan al-Nuzul
+    (circumstances of revelation of Qur’anic verses or surahs)
+
+    Questions mentioning:
+    1. Surah name
+    2. Surah english name
+    3. Surah english name translation
+    4. Verse number
+    5. Historical reason of revelation
+    6. Event linked to revelation
+    7. Semantic questions about why or when a verse/surah was revealed
+
+    The tool supports:
+        Metadata filters (surah, verse, references, etc.)
+        Semantic search using a natural-language query
 
     **Example Queries:**
     - What is the asbab e nuzul of surah Kafiroun?
     - What is the asbab e nuzul of Surah Fatiha verse 1?
     - What is the Asbab Nuzul of surah Yonus verse 10 and surah Baqarah verse 20 and surah Nisa verse 20?
     - What is the shan e nuzul of the surah which was revealed when the Prophet A.S was inflicted by magic?
+    - Shan e nuzul of verse which talks about Patience, HereAfter and the virtues of Jihad.
 
 
     **Important Guidelines:**
@@ -600,26 +643,28 @@ standard_system_instructions = """
             {{
                 "surah_number": 1,
                 "surah_englishName": "Al-Faatiha",
-                "verse_number": 5
+                "verse_number": 5,
+                "limit": 1
             }}
         ]
     }}
     ```
 
-
-    - **User:** `"What is Asbab Nuzul of Surah Fatiha and Surah yusuf verse 10?"`
+    - **User:** `"What are the Asbab Nuzul of Surah Fatiha complete and Surah yusuf verse 10?"`
     **Tool call:**
     ```json
     {{
         "args": [
             {{
                 "surah_number": 1,
-                "surah_englishName": "Al-Faatiha"
+                "surah_englishName": "Al-Faatiha",
+                "limit": 7
             }},
             {{
                 "surah_number": 12,
                 "surah_englishName": "Yusuf",
-                "verse_number": 10
+                "verse_number": 10,
+                "limit: 1
             }}
         ]
     }}
@@ -633,7 +678,8 @@ standard_system_instructions = """
         "args": [
             {{
                 "surah_englishName": "Al-Falaq",
-                "query": "Harm caused by created things"
+                "query": "Harm caused by created things",
+                "limit": 1
             }}
         ]
     }}
@@ -648,7 +694,8 @@ standard_system_instructions = """
             {{
                 "surah_englishName": "Al-An'aam",
                 "verse_number_min": 1,
-                "verse_number_max": 10
+                "verse_number_max": 10,
+                "limit": 10
             }}
         ]
     }}
@@ -982,8 +1029,8 @@ standard_system_instructions = """
     When calling get_verse_image or get_Quran_Audio:
     1. Never display the raw links or metadata (audio links, verse images links, ruku, juz, etc.) in the response.
     2. Only respond with a simple acknowledgment, e.g.:
-    - "The verse images are ready."
-    - "The audio data is available."
+    - "Following are the verse images for your requested verses."
+    - "Following are the audio players for your requested verses."
     3. Do not describe or expand on the tool output in any way.
     4. If the tool returns empty or null, mention that the data is not available.
 

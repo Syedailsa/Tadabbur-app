@@ -3,7 +3,7 @@ import { ChatContext } from "@/app/context/chatbot/ChatContext";
 import { motion } from "framer-motion";
 import DownArrow from "../../../../icons/arrow-down-head.svg";
 import AttachIcon from "../../../../icons/attach_icon.svg";
-import PlusIcon from "../../../../icons/plus-icon.svg";
+import PlusIcon from "../../../../icons/plus-icon-black.svg";
 import StoryIcon from "../../../../icons/story_telling_icon.svg";
 import MicIcon from "../../../../icons/mic_icon.svg";
 import { retryOperation, wsSendAsync } from "@/app/utils/retryOpernation";
@@ -92,16 +92,16 @@ const BottomOptions = () => {
 
       // 1. Dispatch event to tell ChatPage to show loading state
       window.dispatchEvent(new Event("tadabbur-transcription-start"));
-    const data = await retryOperation(async () => {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/transcribe`, {
-        method: "POST",
-        body: formData,
-      });
+      const data = await retryOperation(async () => {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/transcribe`, {
+          method: "POST",
+          body: formData,
+        });
 
-      if (!response.ok) throw new Error("Transcription failed");
+        if (!response.ok) throw new Error("Transcription failed");
 
-      return await response.json();
-    },8,1000)
+        return await response.json();
+      }, 8, 1000)
 
       const text = data.text;
 

@@ -8,14 +8,15 @@ from fastapi.websockets import WebSocketState
 from pydantic import BaseModel
 from typing import List
 import asyncio 
-from file_service import process_uploaded_file
-from models import OutputSchema, SurahForAudio, SurahForImage
-from langchain.messages import ToolMessage
+from models import NormalOutputSchema, SurahForAudio, SurahForImage, StoryParagraph, StoryOutputSchema
+from langchain.messages import ToolMessage, SystemMessage, HumanMessage
 from collections import defaultdict
 import agent as agent_module
+from generators.image_generator import generate_image, pil_to_base64, save_image_local
 from contextlib import asynccontextmanager
 from story_agent import story_agent
 from utils.handle_feedback import handle_feedback
+from builders.prompt_builder import prompt_builder, prompt_builder_instructions
 from utils.generate_title_description import generate_title_description
 from utils.generate_uuid import generate_uuid
 from utils.report_rule import insert_report_rule, delete_report_rule
@@ -28,7 +29,8 @@ from murf import Murf
 from database import init_db_pool, close_db_pool
 from quran_api import quran_router , parah_router, story_router
 from reset_password_api import password_reset_router
-from fastapi import UploadFile, File, Form
+from fastapi import UploadFile, File, Form, HTTPException
+from file_service import process_uploaded_file
 from reflection_api import reflection_router
 from api import (
     auth_router,
@@ -146,9 +148,9 @@ def get_chat_messages(session_id: str, user_id: str, supabase_client) -> List[st
         print("Session id or supabase client none, so returning...")
         return []
 
-    chat_messages = supabase_client.table('chat_messages').select('message_id', 'user_id', 'role', 'content', 'reply_to_message_id', 'feedback', 'audio_url', 'has_verse_audio', 'audio_data', 'has_verse_image', 'verse_images').in_("role", ["user", "assistant"]).eq('session_id', session_id).eq('user_id', user_id).order('created_at').execute().data
+    chat_messages = supabase_client.table('chat_messages').select('message_id', 'user_id', 'role', 'content', 'reply_to_message_id', 'feedback', 'audio_url', 'has_verse_audio', 'audio_data', 'has_verse_image', 'verse_images', 'story_data').in_("role", ["user", "assistant"]).eq('session_id', session_id).eq('user_id', user_id).order('created_at').execute().data
 
-    
+    print(chat_messages)
     if chat_messages:
         return chat_messages
     else:
@@ -313,11 +315,13 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
     current_session_id = None
     initialized = False
 
+    current_mode = "normal"
     # ====== SESSION CODE START ======
     session_id = None
     session_model_key: str = "gpt-oss-20b"
     active_agent = agent_module.main_agent
     current_agent_name = active_agent.name
+    initialized = False
     try:
         while True:
             if websocket.client_state == WebSocketState.DISCONNECTED:
@@ -334,7 +338,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     try:
                         await websocket.send_json({"type": "pong"})
                     except Exception:
-                        pass 
+                        pass # Socket might have closed just now
                 continue
 
             if data.get("type") == "tts_request":
@@ -365,7 +369,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             variation = 1
                         )
                         if res.audio_file:
-                            print("Audio url", res.audio_file)
                             try:
                                 asyncio.create_task(asyncio.to_thread(
                                     lambda: supabase_client.table('chat_messages').update({
@@ -432,6 +435,11 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
             # SESSION INIT
             if data.get("type") == "session-init":
                     requested_session_id = data.get("session_id", "").strip()
+                    mode = data.get("mode", "normal")
+                    current_mode = mode
+                    # set the active agent
+                    active_agent = agent_module.main_agent if current_mode == "normal" else story_agent
+                    logger.info(f"Session mode: {mode}")
 
                     if not initialized or requested_session_id != current_session_id:
                         current_session_id = requested_session_id
@@ -465,20 +473,15 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                     msgs = supabase_client.table('chat_messages').select('message_id').eq('session_id', session_id).execute()
                                     unique_message_ids = [m['message_id'] for m in msgs.data] if msgs.data else []
                                     
-                                    # await websocket.send_json({
-                                    #     "type": "session_id", "status": "acknowledged", 
-                                    #     "session_id": session_id, "message_ids": unique_message_ids
-                                    # })
                                     try:
                                         await ws_send(websocket, {
                                             "type": "session_id", "status": "acknowledged", 
-                                            "session_id": session_id, "message_ids": unique_message_ids
+                                            "session_id": session_id, "message_ids": unique_message_ids, "mode": mode
                                         }, label="session_init")
                                     except WSDisconnectedError:
                                         break
                                 else:
-                                    # await websocket.send_json({"type": "session_id", "status": "error", "error": "Unauthorized"})
-                                    await ws_send(websocket, {"type": "session_id", "status": "error", "error": "Unauthorized"}, label="session_init_error")
+                                    await ws_send(websocket, {"type": "session_id", "status": "Not_acknowledged", "error": "Unauthorized"}, label="session_init_error")
                                     continue
                             else:
                                 logger.info(f"🆕 Generated ID for potential new session: {session_id}")
@@ -486,16 +489,12 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                 conversation_history = []
                                 unique_message_ids = []
                                 
-                                # await websocket.send_json({
-                                #     "type": "session_id", "status": "acknowledged",
-                                #     "session_id": session_id, "current_agent": current_agent_name,
-                                #     "message_ids": []
-                                # })
                                 try:
                                     await ws_send(websocket, {
                                         "type": "session_id", "status": "acknowledged",
                                         "session_id": session_id, "current_agent": current_agent_name,
-                                        "message_ids": []
+                                        "message_ids": [],
+                                        "mode": mode
                                     }, label="session_init")
                                 
                                 except WSDisconnectedError:
@@ -504,7 +503,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         except Exception as e:
                             logger.error(f"Session Init Error: {e}")
                             # await websocket.send_json({"type": "session_id", "status": "error", "error": str(e)})
-                            await ws_send(websocket, {"type": "session_id", "status": "error", "error": str(e)}, label="session_init_error")
+                            await ws_send(websocket, {"type": "session_id", "status": "Not_acknowledeged", "error": str(e)}, label="session_init_error")
                         
                         continue
             
@@ -517,11 +516,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         .order('created_at', desc=True)\
                         .execute().data
 
-                    # await websocket.send_json({
-                    #     "type": "chat_history",
-                    #     "status":"acknowledged",
-                    #     "chat_history": chat_sessions
-                    # })
                     try:
                         await ws_send(websocket, {
                             "type": "chat_history",
@@ -534,11 +528,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     logger.info(f"Sent {len(chat_sessions)} sessions to frontend for user {user_id}")
                 except Exception as e:
                     logger.error(f"Error fetching chat history: {e}")
-                    # await websocket.send_json({
-                    #     "type": "chat_history",
-                    #     "status": "error",
-                    #     "error": str(e)
-                    # })
+              
                     try:
                         await ws_send(websocket, {
                         "type": "chat_history",
@@ -551,19 +541,35 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
             if data.get("type") == "get_chat":
                 requested_session_id = data.get("session_id", "")
-
                 logger.info(f"📥 get_chat request for session: {requested_session_id}")
+                if not requested_session_id:
+                    print("No session id present, can't proceed")
+                    await websocket.send_json({
+                        "type": "get_chat", 
+                        "status": "not-acknowledged",
+                        "error": "No session ID present"
+                    })
+                    continue
                 try:
-                    def fetch_files():
-                        return supabase_client.table('session_files')\
-                            .select('file_id, file_name, file_type, message_id, file_content')\
-                            .eq("user_id", user_id).eq('session_id', requested_session_id)\
-                            .order('created_at').execute()
-                    
                     chat_history = await asyncio.to_thread(get_chat_messages, requested_session_id, user_id, supabase_client)
-                    files_res = await asyncio.to_thread(fetch_files)
-                    files_response = files_res.data
+                    files_response = await asyncio.to_thread(
+                        lambda: supabase_client.table('session_files')
+                        .select('file_id, file_name, file_type, message_id, file_content')
+                        .eq("user_id", user_id).eq('session_id', requested_session_id)
+                        .order('created_at').execute()
+                    )
+                    session_response = supabase_client.table("chat_sessions").select("mode").eq("session_id", requested_session_id).limit(1).maybe_single().execute()
+                    session = session_response.data if session_response else None
 
+                    # Then handle the None case
+                    if session is None:
+                        current_mode = "normal"  # or handle appropriately
+                    else:
+                        current_mode = session.get("mode", "normal")
+                    # set the active agent
+                    active_agent = agent_module.main_agent if current_mode == "normal" else story_agent
+                    print("Session mode", current_mode)
+                    files_response = files_response.data
                     combined_file_content = ""
                     files_by_message = defaultdict(list)
                     for f in (files_response or []):
@@ -584,28 +590,17 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     conversation_history = chat_history
                     unique_message_ids = [msg['message_id'] for msg in conversation_history]
 
-                    await asyncio.sleep(0.6)
-
                     if websocket.client_state == WebSocketState.CONNECTED:
-                        # try:
-                        #     await websocket.send_json({
-                        #         "type": "get_chat", 
-                        #         "status": "acknowledged",
-                        #         "session_id": session_id, 
-                        #         "chat_history": chat_history
-                        #     })
-                        # except Exception as e:
-                        #     logger.error(f"Failed to send history (Socket closed?): {e}")
                         try:
-                            await ws_send(websocket, {
+                            await websocket.send_json({
                                 "type": "get_chat", 
                                 "status": "acknowledged",
                                 "session_id": session_id, 
-                                "chat_history": chat_history
-                            }, label="get_chat_history")
-                        except WSDisconnectedError:
-                            logger.error(f"Disconnected while sending chat history for session {session_id}")
-                            break
+                                "chat_history": chat_history,
+                                "mode": current_mode
+                            })
+                        except Exception as e:
+                            logger.error(f"Failed to send history {e}")
                 except Exception as e:
                     logger.error(f"Error loading chat: {e}")
                 continue
@@ -615,11 +610,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 session_id_to_delete = data.get("session_id", "")
 
                 if not session_id_to_delete:
-                    # await websocket.send_json({
-                    #     "type": "delete_session",
-                    #     "status": "error",
-                    #     "error": "session_id is required"
-                    # })
+                   
                     try:
                         await ws_send(websocket, {
                             "type": "delete_session",
@@ -634,12 +625,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 try:
                     success = await delete_user_session(user_id, session_id_to_delete)
                     if success:
-                        # await websocket.send_json({
-                        #     "type": "delete_session",
-                        #     "status": "success",
-                        #     "session_id": session_id_to_delete
-                        # })
-                        # logger.info(f"Deleted session {session_id_to_delete} for user {user_id}")
                         try:
                             await ws_send(websocket, {
                             "type": "delete_session",
@@ -650,11 +635,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             logger.error("Failed to send delete_session success response (Socket closed?)")
                             break
                     else:
-                        # await websocket.send_json({
-                        #     "type": "delete_session",
-                        #     "status": "error",
-                        #     "error": "Session not found or access denied"
-                        # })
                         try:
                             await ws_send(websocket, {
                             "type": "delete_session",
@@ -666,11 +646,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             break
                 except Exception as e:
                     logger.error(f"Error deleting session: {e}")
-                    # await websocket.send_json({
-                    #     "type": "delete_session",
-                    #     "status": "error",
-                    #     "error": str(e)
-                    # })
                     try:
                         await ws_send(websocket, {
                         "type": "delete_session",
@@ -687,10 +662,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 try:
                     success = await delete_all_user_sessions(user_id)
                     if success:
-                        # await websocket.send_json({
-                        #     "type": "delete_all_sessions",
-                        #     "status": "success"
-                        # })
                         try:
                             await ws_send(websocket, {
                             "type": "delete_all_sessions",
@@ -700,11 +671,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             logger.error("Failed to send delete_all_sessions success response (Socket closed?)")
                             break
                     else:
-                        # await websocket.send_json({
-                        #     "type": "delete_all_sessions",
-                        #     "status": "error",
-                        #     "error": "Failed to delete sessions"
-                        # })
                         try:
                             await ws_send(websocket, {
                             "type": "delete_all_sessions",
@@ -716,11 +682,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             break
                 except Exception as e:
                     logger.error(f"Error deleting all sessions: {e}")
-                    # await websocket.send_json({
-                    #     "type": "delete_all_sessions",
-                    #     "status": "error",
-                    #     "error": str(e)
-                    # })
                     try:
                         await ws_send(websocket, {
                         "type": "delete_all_sessions",
@@ -766,18 +727,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         )
                     else:
                         print(f"⚠️ Model pref saved as {session_model_key}, but not applied immediately because user is in {current_agent_name} mode.")
-
-                    # await websocket.send_json({
-                    #     "type": "model-selection",
-                    #     "status": "acknowledged",
-                    #     "model": requested_model,
-                    #     "display_name": display_name
-                    # })
-                    
-                    # await websocket.send_json({
-                    #     "type": "loading_message",
-                    #     "content": f"Switched to **{display_name}**"
-                    # })
                     
                     try:
                         await ws_send(websocket, {
@@ -802,13 +751,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     logger.info(f"Model preference updated to: {display_name}")
                 
                 else:
-                    # await websocket.send_json({
-                    #     "type": "model-selection",
-                    #     "status": "not-acknowledged",
-                    #     "model": requested_model,
-                    #     "error": "This model is not supported.",
-                    #     "available": list(agent_module.SUPPORTED_CHAT_MODELS.keys())
-                    # })
                     try:
                         await ws_send(websocket, {
                         "type": "model-selection",
@@ -832,12 +774,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 try:
                     # delete hard rule in a different thread for optimization
                     await asyncio.to_thread(delete_report_rule, supabase_client, message_id, user_id)
-                    # await websocket.send_json({
-                    #     "type": "undo-report",
-                    #     "status": "acknowledged",
-                    #     "message_id": message_id,
-                    #     "user_id": user_id
-                    # })
                     await ws_send(websocket, {
                         "type": "undo-report",
                         "status": "acknowledged",
@@ -848,10 +784,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     logger.info("Failed to send undo-report acknowledgment (Socket closed?)")
                     break
                 except Exception as e:
-                    # await websocket.send_json({
-                    #     "type": "undo-report",
-                    #     "status": "not-acknowledged"
-                    # })
                     try:
                         await ws_send(websocket, {
                         "type": "undo-report",
@@ -873,10 +805,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     
                     if not message_id or not feedback:
                         print("No variant/message ID/feedback, can't proceed to report content")
-                    #     await websocket.send_json({
-                    #     "type": "report",
-                    #     "status": "not-acknowledged"
-                    # })
                         try:
                             await ws_send(websocket,{
                             "type": "report",
@@ -900,12 +828,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
                             print("Report response", response)
                             if not response:
-                                # await websocket.send_json({
-                                #     "type": "report",
-                                #     "user_id": user_id,
-                                #     "message_id": message_id,
-                                #     "status": "not-acknowledged"
-                                # })
                                 try:
                                     await ws_send(websocket, {
                                         "type": "report",
@@ -926,10 +848,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                     break
                         
                         except Exception as e:
-                            # await websocket.send_json({
-                            # "type": "report",
-                            # "status": "not-acknowledged"
-                            # })
                             try:
                                 await ws_send(websocket, {
                                 "type": "report",
@@ -948,10 +866,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 except Exception as e:
                     print(f"An error occured while reporting the assistant's response {message_id}")    
                     if not ack_sent:
-                    #     await websocket.send_json({
-                    #     "type": "report",
-                    #     "status": "not-acknowledged"
-                    # })
                         try:
                             await ws_send(websocket, {
                                 "type": "report",
@@ -985,6 +899,14 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 resend_message_id = data.get("resend_message_id")
                 new_file_text = data.get("new_file_context")
                 
+                # generate a message id for response message
+                response_message_id = generate_uuid()
+                while response_message_id in unique_message_ids:
+                    response_message_id = generate_uuid()
+                unique_message_ids.append(response_message_id)
+
+                user_message_id = user_message_id if not resend_flag else resend_message_id
+                    
                 if new_file_text:
                     logger.info(f"💾 Committing new file context to session {session_id}")
                     existing_context = session_file_context.get(session_id, "")
@@ -999,11 +921,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         )
                     except DBRetryError as e:
                         logger.error(f"Failed to save file context after retries: {e}")
-                        # await websocket.send_json({
-                        #     "type": "error",
-                        #     "error_code": "FILE_CONTEXT_SAVE_FAILED",
-                        #     "message": "Failed to save file context. Please try again."
-                        # })
                         try:
                             await ws_send(websocket, {
                             "type": "error",
@@ -1028,16 +945,12 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                 lambda: supabase_client.table("chat_sessions").insert({
                                     'session_id': session_id,
                                     'user_id': user_id,
+                                    'mode': current_mode
                                 }).execute(),
                                 label="create_session"
                             )
                     except DBRetryError as e:
                         logger.error(f"Failed to create session after retries: {e}")
-                        # await websocket.send_json({
-                        #     "type": "error",
-                        #     "error_code": "SESSION_CREATION_FAILED",
-                        #     "message": "Failed to create session. Please try again."
-                        # })
                         try:
                             await ws_send(websocket, {
                             "type": "error",
@@ -1064,11 +977,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         print("✅ User message saved successfully!")
                     except DBRetryError as e:
                         logger.error(f"❌ User message failed to save after retries: {e}")
-                        # await websocket.send_json({
-                        #     "type": "error",
-                        #     "error_code": "MESSAGE_SAVE_FAILED",
-                        #     "message": "Failed to save your message. Please try again."
-                        # })
                         try:
                             await ws_send(websocket, {
                             "type": "error",
@@ -1102,11 +1010,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             print(f"✅ File record '{file_name}' saved to session_files")
                         except DBRetryError as e:
                             logger.error(f"❌ Failed to save file record after retries: {e}")
-                            # await websocket.send_json({
-                            #     "type": "error",
-                            #     "error_code": "FILE_SAVE_FAILED",
-                            #     "message": f"Failed to save file '{file_name}'. Please try again."
-                            # })
                             try:
                                 await ws_send(websocket, {
                                 "type": "error",
@@ -1166,100 +1069,156 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                 raise RuntimeError(f"Agent failed after 3 attempts: {e}")
 
                     messages_array = agent_response['messages']
-                    # Create a new instance of OutputSchema
-                    response_object = OutputSchema(
-                        response=messages_array[-1].content or "",
-                        has_verse_audio=False,
-                        has_verse_image=False,
-                        # by default audio_data and verse_images are an empty list
-                    )
 
-                    # initialize a data array for flags
-                    data_flag = [False, False]
-                    for message in reversed(messages_array):
-                        if data_flag == [True, True]:
-                            break
-                        if isinstance(message, ToolMessage):
-                            if message.name == "get_verse_image" and not data_flag[0]:
-                                data = json.loads(message.content)
-                                verse_images = data.get("verse_images",[]) 
-                                if verse_images:
-                                    response_object.has_verse_image = True
-                                    response_object.verse_images = [
-                                       SurahForImage.model_validate(v) for v in verse_images
-                                    ]
-                                data_flag[0] = True
-                            elif message.name == "get_Quran_Audio" and not data_flag[1]:
-                                data = json.loads(message.content)
-                                audio_data = data.get("audio_data", [])
-                                if audio_data:
-                                    response_object.has_verse_audio = True
-                                    response_object.audio_data = [SurahForAudio.model_validate(v) for v in audio_data]
-                                data_flag[1] = True
+                    # initialize a response object
+                    response_object = None
+                    ai_response = None
+                    if active_agent == agent_module.main_agent:
+                        # Create a new instance of OutputSchema
+                        response_object = NormalOutputSchema(
+                            response=messages_array[-1].content or "",
+                            has_verse_audio=False,
+                            has_verse_image=False,
+                            # by default audio_data and verse_images are an empty list so no need to initialize explicitly
+                        )
 
-                    # generate a message id for response message
-                    response_message_id = generate_uuid()
-                    while response_message_id in unique_message_ids:
-                        response_message_id = generate_uuid()
-                    unique_message_ids.append(response_message_id)
+                        # Assign ai response to the response field
+                        ai_response = response_object.response
+                        # initialize a data array for flags
+                        data_flag = [False, False]
+                        for message in reversed(messages_array):
+                            if data_flag == [True, True]:
+                                break
+                            if isinstance(message, ToolMessage):
+                                if message.name == "get_verse_image" and not data_flag[0]:
+                                    data = json.loads(message.content)
+                                    verse_images = data.get("verse_images",[]) 
+                                    if verse_images:
+                                        response_object.has_verse_image = True
+                                        response_object.verse_images = [
+                                        SurahForImage.model_validate(v) for v in verse_images
+                                        ]
+                                    data_flag[0] = True
+                                elif message.name == "get_Quran_Audio" and not data_flag[1]:
+                                    data = json.loads(message.content)
+                                    audio_data = data.get("audio_data", [])
+                                    if audio_data:
+                                        response_object.has_verse_audio = True
+                                        response_object.audio_data = [SurahForAudio.model_validate(v) for v in audio_data]
+                                    data_flag[1] = True
+                        
+                        try:
+                            await db_retry(
+                                lambda:supabase_client.table('chat_messages').insert({
+                                    "message_id": response_message_id,
+                                    "session_id": session_id,
+                                    "user_id": user_id,
+                                    "role": "assistant",
+                                    "content": ai_response,
+                                    "reply_to_message_id": user_message_id,
+                                    "has_verse_audio": response_object.has_verse_audio,
+                                    "audio_data": [surah.model_dump() for surah in response_object.audio_data],
+                                    "has_verse_image": response_object.has_verse_image,
+                                    "verse_images": [surah.model_dump() for surah in response_object.verse_images]
+                                }).execute(),
+                                label="insert_assistant_message"
+                            )
+                            print("✅ Assistant message saved successfully!")
+                        except DBRetryError as e:
+                            logger.error(f"❌ Assistant message failed to save after retries: {e}")
+                            raise
+                        except Exception as e:
+                            logger.error(f"Some error occured while inserting assistant messages: {e}")
+                            raise
+                    elif active_agent == story_agent:
+                        response_object = StoryOutputSchema(
+                            response = messages_array[-1].content or ""
+                        )
+                        ai_response = response_object.response                   
+                        data_flag = False
+                        for message in reversed(messages_array):
+                            if data_flag:
+                                break
+                            if isinstance(message, ToolMessage):
+                                if message.name == "story_structure":
+                                    data = json.loads(message.content)
+                                    # initialize the story data array to store results
+                                    story_data: List[StoryParagraph] = []
+                                    await websocket.send_json({
+                                        "type": "loading_message",
+                                        "content": "Preparing your story"
+                                    })
+                                    for i, story_chunk in enumerate(data, start = 1):
+                                        story_paragraph = story_chunk.get("story_paragraph")
+                                        paragraph_title = story_chunk.get("paragraph_title")
+                                        scene_summary = story_chunk.get("scene_summary")
+                                        important_characters = story_chunk.get("important_characters")
+                                        important_objects = story_chunk.get("important_objects")
+                                        forbidden_elements = story_chunk.get("forbidden_elements")
 
-                    user_message_id = user_message_id if not resend_flag else resend_message_id
-                    ai_response = response_object.response
+                                        if None in (scene_summary, important_characters, important_objects, forbidden_elements, paragraph_title, story_paragraph):
+                                            continue
+                                        # build the pipeline
+
+                                        # build the AI Prompt builder's prompt                                       
+                                        prompt_builder_prompt = [
+                                            SystemMessage(content = prompt_builder_instructions),
+                                            HumanMessage(content=f"""
+                                            Scene Summary: {scene_summary} \n\n 
+                                            Important Characters: {important_characters}\n\n 
+                                            Important Objects: {important_objects} \n\n 
+                                            Forbidden Elements: {forbidden_elements}
+                                            """)
+                                        ]
+                                        response = prompt_builder.invoke(prompt_builder_prompt)
+                                        image_prompt = response.image_prompt
+                                        # print(f"Image prompt for image {i}: {image_prompt}")
+                                        # pass the image prompt to the AI image generator
+                                        if not image_prompt:
+                                            continue
+                                        for try_number in range(8):
+                                            try:
+                                                # initialize a counter for saving images
+                                                image_counter = 1
+                                                image = generate_image(image_prompt)
+                                                base64image = pil_to_base64(image)
+                                                save_image_local(image, image_counter)
+                                                # print("Base 64 image", base64image)
+                                                story_data.append(StoryParagraph(story_paragraph = story_paragraph, paragraph_title = paragraph_title, image = base64image))
+                                                # print(f"Image pipeline successfully completed for image {i}")
+                                                break
+                                            except Exception as e:
+                                                print(f"Image generation pipeline failed for image {i}, error: {e},Try number {try_number + 1}, retrying...")
+                                        else:
+                                            print(f"Image pipeline failed for 8 retries for image {i}")
+                                    response_object.story_segments = story_data
+                                    data_flag = True      
+                        try:
+                            await db_retry(
+                                lambda:supabase_client.table('chat_messages').insert({
+                                    "message_id": response_message_id,
+                                    "session_id": session_id,
+                                    "user_id": user_id,
+                                    "role": "assistant",
+                                    "content": ai_response,
+                                    "reply_to_message_id": user_message_id,
+                                    "story_data": [segment.model_dump() for segment in response_object.story_segments],
+                                }).execute(),
+                                label="insert_assistant_message"
+                            )
+                            print("✅ Assistant message saved successfully!")
+                        except DBRetryError as e:
+                            logger.error(f"❌ Assistant message failed to save after retries: {e}")
+                            raise 
+                        except Exception as e:
+                            print("Some error occured while inserting assistant messages", e)
+                            raise                  
+                    else:
+                        ai_response = ""
+                    print(ai_response)
                     # append assistant message to conversation history
                     conversation_history.append({"role": "assistant", "content": ai_response , "id": response_message_id, "reply_to_message_id": user_message_id})
 
-                    try:
-                        await db_retry(
-                            lambda:supabase_client.table('chat_messages').insert({
-                                "message_id": response_message_id,
-                                "session_id": session_id,
-                                "user_id": user_id,
-                                "role": "assistant",
-                                "content": ai_response,
-                                "reply_to_message_id": user_message_id,
-                                "has_verse_audio": response_object.has_verse_audio,
-                                "audio_data": [surah.model_dump() for surah in response_object.audio_data],
-                                "has_verse_image": response_object.has_verse_image,
-                                "verse_images": [surah.model_dump() for surah in response_object.verse_images]
-                            }).execute(),
-                            label="insert_assistant_message"
-                        )
-                        print("✅ Assistant message saved successfully!")
-                    except DBRetryError as e:
-                        logger.error(f"❌ Assistant message failed to save after retries: {e}")
-                        # await websocket.send_json({
-                        #     "type": "assistance_response",
-                        #     "message_id": response_message_id,
-                        #     "content": response_object.model_dump(mode = "json"),
-                        #     "reply_to_message_id": user_message_id,
-                        #     "db_saved" : False,
-                        #     "final": True
-                        # })
-
-                        # await websocket.send_json({"type": "streaming_end"})
-                        # await websocket.send_json({"type": "run_complete"})   
-                        try:
-                            await ws_send(websocket, {
-                            "type": "assistance_response",
-                            "message_id": response_message_id,
-                            "content": response_object.model_dump(mode = "json"),
-                            "reply_to_message_id": user_message_id,
-                            "db_saved" : False,
-                            "final": True
-                        }, label="assistance_response_db_save_failed")
-                        except WSDisconnectedError:
-                            logger.info("Failed to send assistance response with DB save failure flag (Socket closed?)")
-                            break
-
-                        try:
-                            await ws_send(websocket, {"type": "streaming_end"}, label="streaming_end_after_db_failure")
-                            await ws_send(websocket, {"type": "run_complete"}, label="run_complete_after_db_failure")
-
-                        except WSDisconnectedError:
-                            logger.info("Failed to send streaming_end or run_complete after DB save failure (Socket closed?)")
-                            break    
-
-                        continue
                     # generate title and description for the current chat history if there are 2 user/assistant messages each
                     # run the below logic in a seperate thread
                     asyncio.create_task(
@@ -1272,14 +1231,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     )
 
                     if response_object:
-                        # await websocket.send_json({
-                        #     "type": "assistance_response",
-                        #     "message_id": response_message_id,
-                        #     "content": response_object.model_dump(mode = "json"),
-                        #     "resend_flag": resend_flag,
-                        #     "reply_to_message_id": user_message_id,
-                        #     "final": True
-                        # })
                         try:
                             await ws_send(websocket, {
                             "type": "assistance_response",
@@ -1287,21 +1238,15 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             "content": response_object.model_dump(mode = "json"),
                             "resend_flag": resend_flag,
                             "reply_to_message_id": user_message_id,
+                            "db_saved" : False,
                             "final": True
-                        }, label="assistance_response")
+                        }, label="assistance_response_db_save_failed")
                         except WSDisconnectedError:
-                            logger.info("Failed to send assistance response (Socket closed?)")
+                            logger.info("Failed to send assistance response with DB save failure flag (Socket closed?)")
+                            break   
+                        except Exception as e:
+                            logger.error(f"Failed to send assistance response after DB save failure: {e}")
                             break
-
-                    # await websocket.send_json({"type": "streaming_end"})
-                    # await websocket.send_json({"type": "run_complete"})
-                    try:
-                        await ws_send(websocket, {"type": "streaming_end"}, label="streaming_end")
-                        await ws_send(websocket, {"type": "run_complete"}, label="run_complete")
-                    except WSDisconnectedError:
-                        logger.info("Failed to send streaming_end or run_complete (Socket closed?)")
-                        break
-
 
                 except WebSocketDisconnect:
                     logger.info("Client disconnected")
@@ -1314,20 +1259,16 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     logger.error(f"Error during agent execution: {e}")
                     if conversation_history and conversation_history[-1].get("role") == "assistant":
                         conversation_history.pop() 
+                
+                try:
+                    await ws_send(websocket, {"type": "assistance_response", "content": "Connection lost. I will retry once you are back online."}, label="assistance_response_error")
+                
+                except WSDisconnectedError:
+                    logger.info("Failed to send error messages (Socket closed?)")
+                continue
 
-                    # await websocket.send_json({"type": "assistance_response", "content": "Sorry, something went wrong."})
-                    # await websocket.send_json({"type": "streaming_end"})
-                    # await websocket.send_json({"type": "run_complete"})
-                    # raise
-                    try:
-                        await ws_send(websocket, {"type": "assistance_response", "content": "Connection lost. I will retry once you are back online."}, label="assistance_response_error")
-                        await ws_send(websocket, {"type": "streaming_end"}, label="streaming_end_error")
-                        await ws_send(websocket, {"type": "run_complete"}, label="run_complete_error")
-                    
-                    except WSDisconnectedError:
-                        logger.info("Failed to send error messages (Socket closed?)")
-                    continue
-
+            continue
+                                 
 
     except WebSocketDisconnect:
         logger.info(f"WebSocket closed for user {user_id}")

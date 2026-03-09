@@ -210,6 +210,7 @@ export interface SessionInitMessage extends BaseOutgoingMessage {
   session_id: string;
   user_id: string | null;
   model: string;
+  mode:string | null;
 }
 
 // User message

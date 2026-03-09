@@ -5,25 +5,14 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { ReactNode, useEffect, useRef, useState, CSSProperties, HTMLAttributes, Suspense } from "react";
-import Image from "next/image"
-import QuranPic from "../../../images/Quran.jpg"
-import QuranReading from "../../../images/QuranReading.jpg"
-import DesertPic from "../../../images/Desert.jpg"
-import ArkPic from "../../../images/OldArk.png"
 import ChatProvider from "@/app/providers/chatbot/ChatProvider";
-
 import DisclaimerIcon from "../../../icons/disclaimer.svg";
 import CrossIcon from "../../../icons/cross_icon.svg"
 import TextFileIcon from "../../../icons/text-file-icon.svg"
 import SendIcon from "../../../icons/send_icon.svg";
 import PdfFileIcon from "../../../icons/pdf-file-icon.svg"
-import PlusIcon from "../../../icons/plus-icon-white.svg"
-import TadabburFontWhite from "../../../images/tadabbur-font-white.png"
-import TadabburFontBlack from "../../../images/tadabbur-font-black.jpeg"
-import EngagingIcon from "../../../icons/engage_icon.svg"
-import ArrowLeft from "../../../icons/arrow-left-bold.svg"
 import UndoArrow from "../../../icons/refresh.svg";
-import { AssistantMessage, Attachment, StoryParagraph } from "@/app/components/chatbot/interfaces/ChatMessage";
+import { AssistantMessage, Attachment } from "@/app/components/chatbot/interfaces/ChatMessage";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { dracula } from "react-syntax-highlighter/dist/esm/styles/prism";
 import {
@@ -31,15 +20,12 @@ import {
   easeInOut,
   AnimatePresence,
   useAnimationControls,
-  animate,
-  useMotionValue
 } from "framer-motion";
 import ProtectedRoute from "@/app/utils/ProtectedRoutes";
 import RegistrationForm from "@/app/components/chatbot/UI/ReactForm";
 import { ModelList } from "@/static/data";
 import BottomOptions from "../../components/chatbot/UI/BottomOptions";
 import ExtraOptions from "../../components/chatbot/UI/ExtraOptions";
-import MicStoryMode from "@/app/components/chatbot/UI/MicStoryMode";
 // import PromptSuggestion from ".../icons/prompt_suggestion.svg";
 import { defaultPrompts } from "@/static/data";
 import ModelBox from "../../components/chatbot/UI/ModelBox";
@@ -51,7 +37,6 @@ import { SurahForAudios, SurahForVerseImages } from "@/app/components/chatbot/in
 import ReportContentDialogueBox from "../../components/chatbot/UI/ReportContentDialogueBox";
 import { ChatMessage } from "../../components/chatbot/interfaces/ChatMessage";
 import QuranDialogBox from "@/app/components/chatbot/UI/QuranDialogBox";
-import StoryContainer from "@/app/components/chatbot/UI/StoryContainer";
 import groupChatMessages from "@/utils/groupChatMessages";
 import WaveForm from "../../components/chatbot/UI/WaveForm";
 import hidePromptExtraOptionsModelBoxArray from "@/app/components/chatbot/interfaces/hidePromptExtraOptionsModelBoxArray";
@@ -62,12 +47,6 @@ import {
   ChatRecordType,
 } from "../../utils/types";
 import { retryOperation, wsSendAsync } from "@/app/utils/retryOpernation";
-import HamBurger from "@/app/components/chatbot/UI/HamBurger";
-import ChatHistoryCupboard from "@/app/components/chatbot/UI/ChatHistoryCupboard";
-import FullStoryViewContainer from "@/app/components/chatbot/UI/FullStoryViewContainer";
-import StoryModeExtraOptions from "@/app/components/chatbot/UI/StoryModeExtraOptions";
-
-
 
 function ChatContent() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -78,12 +57,11 @@ function ChatContent() {
   const [greeting, setGreeting] = useState<string | null>(
     "Assalam O Alaykum, I am Tadabbur, how may I help you today?",
   );
-
   const wsRef = useRef<WebSocket | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
   const [placeholder, setPlaceholder] = useState<string | null>(
-    "Ask me a Quranic Story",
+    "Let's learn about the Quran",
   );
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -91,11 +69,11 @@ function ChatContent() {
   const [streamingMessageIndex, setStreamingMessageIndex] = useState<
     number | null
   >(null);
+
   const currentPlayableAudio = useRef<{ user_message_id: string, response_message_id: string, state: "loading" | "playing" | "paused" | "ended" | null } | null>(null);
   const [messageIDs, setMessageIDs] = useState<(string | null)[] | null>(null);
   const [chatHistory, setChatHistory] = useState<ChatRecordType[] | null>(null);
   const messageScrollFlag = useRef<boolean | null>(false);
-  const [active, setActive] = useState<boolean[]>([false, false, false]);
   const committedTextRef = useRef<string>("");
   const tempSpeechRef = useRef<string>("");
   const [showPersonalizationForm, setShowPersonalizationForm] = useState<boolean>(false)
@@ -104,21 +82,20 @@ function ChatContent() {
   const [hideReportContentDialogueBox, setHideReportContentDialogueBox] =
     useState<boolean | null>(true);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [isCancelled, setIsCancelled] = useState<boolean>(false)
   const [fileContext, setFileContext] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false);
   const currentMessageIDRef = useRef<string | null>(null);
   const [reportedMessageIDs, setReportedMessageIDs] = useState<string[] | null>(
     [],
   );
-  const [currentMode, setCurrentMode] = useState<"normal" | "story" | null>("normal");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [openStoryModeExtraOptions, setOpenStoryModeExtraOptions] = useState<boolean>(false)
-  const currentStreamingMsgRef = useRef<{
+    const currentStreamingMsgRef = useRef<{
     message_id: string;
     reply_to_message_id: string;
   } | null>(null);
-  const streamingContentRef = useRef<string>("");
-  const stopStreamRef = useRef<(() => void) | null>(null);
+    const streamingContentRef = useRef<string>("");
+    const stopStreamRef = useRef<(() => void) | null>(null);
 
   const searchParams = useSearchParams()
   const oldMessagesRef = useRef<AssistantMessage[]>([]);
@@ -136,72 +113,16 @@ function ChatContent() {
     target_session_id: string | null;
     timestamp: number | null;
   } | null>(null);
+  const [openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox] = useState<boolean | null>(false);
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
   const lastPongRef = useRef<number>(Date.now());
   const reconnectAttemptRef = useRef(0);
   const urlSessionId = searchParams.get("session_id");
   const totalReconnectAttempts = useRef(0);
   const [showOfflineToast, setShowOfflineToast] = useState(false);
-  const [reconnectTrigger, setReconnectTrigger] = useState<number>(0);
+  const [reconnectTrigger, setReconnectTrigger] = useState(0);
   const MAX_RECONNECT_TRIES = 5;
-  const [openFullStoryView, setOpenFullStoryView] = useState<boolean>(false)
-  const [storyData, setStoryData] = useState<StoryParagraph[]>([])
   const router = useRouter()
-  const [openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox] = useState<
-    boolean
-  >(false);
-
-  const x = useMotionValue(0)
-  const animationRef = useRef<any>(null)
-
-  const startAnimation = () => {
-    animationRef.current = animate(x, -1000, {
-      duration: 15,
-      ease: "linear",
-      repeat: Infinity,
-      repeatType: "loop"
-    })
-  }
-
-  const isStoryMode = active[1]
-
-  useEffect(() => {
-    if (!isStoryMode || !wsRef.current) return
-
-    const initializeStoryMode = async () => {
-      const user = localStorage.getItem("user");
-      let user_id = null;
-      if (user) {
-        try {
-          const userData = JSON.parse(user);
-          user_id = userData.id;
-        } catch (e) {
-          console.error("Error parsing user data:", e);
-        }
-      }
-      const sessionInit: SessionInitMessage = {
-        type: "session-init",
-        session_id: "",
-        user_id: user_id,
-        model: "",
-        mode: "story"
-      };
-
-      try {
-        await wsSendAsync(
-          wsRef.current,
-          sessionInit,
-          8,
-          500
-        );
-      }
-      catch (error) {
-        console.error("❌ Failed to initialize WebSocket session:", error);
-      }
-    }
-    initializeStoryMode()
-
-  }, [isStoryMode])
 
   useEffect(() => {
   const savedPrompt = localStorage.getItem("tadabbur_pending_prompt");
@@ -527,7 +448,6 @@ function ChatContent() {
           session_id: urlSessionId || "",
           user_id: user_id,
           model: "kimi-k2-instruct-0905",
-          mode: currentMode
         };
 
         try {
@@ -592,16 +512,17 @@ function ChatContent() {
         websocket.close();
       };
 
-
       wsRef.current.onmessage = (event) => {
+        lastPongRef.current = Date.now();
         const data = JSON.parse(event.data);
-        console.log("Data from websocket", event.data);
+        // console.log("Data from websocket", event.data);
 
         const type = data.type;
         switch (type) {
           case "pong":
-              console.log("Pong received - connection alive");
-              break;
+            console.log("Pong received - connection alive");
+            break;
+
           case "undo-report":
             const id = data.message_id;
             if (id) {
@@ -617,7 +538,6 @@ function ChatContent() {
             const tts_message_id = data.message_id;
             const user_message_id = data.user_id
             if (audio_url && tts_message_id && user_message_id) {
-              // logic here
               try {
                 // store the audio_url for next playback
                 setMessages(prev => prev.map(m => m.message_id === user_message_id ? { ...m, responses: m.responses.map(r => r.message_id === tts_message_id ? { ...r, audio_link: audio_url } : r) } : m))
@@ -635,23 +555,24 @@ function ChatContent() {
             break;
 
           case "session_id":
-            setCurrentMode(null)
             const session_id = data.session_id;
             const session_status = data.status;
             const message_ids = data.message_ids;
-            const session_mode: "story" | "normal" = data.mode || "normal"
             if (session_status === "acknowledged") {
               setSessionID(session_id);
               const currentUrlId = searchParams.get("session_id");
-              if (!currentUrlId || currentUrlId === "" || currentMode != session_mode) {
+              if (!currentUrlId || currentUrlId === "" || currentUrlId !== session_id) {
                 router.replace(`/pages/chatbot?session_id=${session_id}`, { scroll: false });
               }
               setMessages([]);
-              setActive([false, false, false])
-              setCurrentMode(session_mode)
+              setMessages((prevMessages) => {
+                if (prevMessages && prevMessages.length > 0) {
+                  return [];
+                }
+                return prevMessages; 
+              });
               setHidePromptExtraOptionsModelBoxArray([])
               setMessageIDs(message_ids);
-
             }
             break;
 
@@ -663,6 +584,7 @@ function ChatContent() {
             }
 
             break;
+
           case "chat_history":
             const chat_history = data.chat_history;
             const history_status = data.status;
@@ -764,15 +686,13 @@ function ChatContent() {
 
           case "get_chat":
             const status = data.status;
-            const mode: "story" | "normal" = data.mode;
             if (status === "acknowledged") {
               const messageIDs = data.unique_message_ids;
               const session_id = data.session_id
-              const chat_history = groupChatMessages(data.chat_history);
+              const chat_history = groupChatMessages(data.chat_history || []);
               setMessages(chat_history);
               setMessageIDs(messageIDs);
-              setConnectionStatus("connected")
-              setCurrentMode(mode)
+              setConnectionStatus("connected"); 
               setLoading(false);
 
               const saved = localStorage.getItem("tadabbur_pending_prompt");
@@ -824,7 +744,6 @@ function ChatContent() {
                 }
               }, 1500);
 
-              // initialize an emtpy array for hidePromptExtraOptionsModelBoxArray
               const array: hidePromptExtraOptionsModelBoxArray[] = [];
               if (data.chat_history.length > 0) {
                 for (const record of data.chat_history) {
@@ -849,7 +768,7 @@ function ChatContent() {
             const resend_flag = data.resend_flag;
             const audio_data: SurahForAudios[] = data.content.audio_data || []
             const verse_images: SurahForVerseImages[] = data.content.verse_images || []
-            const story_data: StoryParagraph[] = data.content.story_segments ?? []
+
             // check if oldMessages is present with resend flag
             if (resend_flag) {
               if (
@@ -908,8 +827,7 @@ function ChatContent() {
                   has_verse_audio: has_verse_audio,
                   verse_audio_data: audio_data,
                   has_verse_image: has_verse_image,
-                  verse_images: verse_images,
-                  story_data: story_data
+                  verse_images: verse_images
                 });
 
                 // set the number of active message index
@@ -924,11 +842,11 @@ function ChatContent() {
             setLoading(false);
             setLoadingMessage(null);
             setIsGenerating(true);
-            streamingContentRef.current = "";
-            currentStreamingMsgRef.current = {
-              message_id: message_id,
-              reply_to_message_id: reply_to_message_id || ""
-            };
+              streamingContentRef.current = "";
+              currentStreamingMsgRef.current = {
+                message_id: message_id,
+                reply_to_message_id: reply_to_message_id || ""
+              };
             const tokens = reply.split(/(\s+)/);
 
             let stopFlag = false;
@@ -942,43 +860,43 @@ function ChatContent() {
                 await new Promise((resolve) => setTimeout(resolve, 2));
 
                 if (stopFlag) break;
-
+                
 
                 setMessages((prev) => {
-                  if (!prev || prev.length === 0) return prev;
-                  const updated = [...prev];
-                  const streamIndex = streamingMessageIndex ?? updated.length - 1;
+                    if (!prev || prev.length === 0) return prev;
+                    const updated = [...prev];
+                    const streamIndex = streamingMessageIndex ?? updated.length - 1;
 
-                  if (streamIndex >= 0 && streamIndex < updated.length) {
-                    const lastMsg = updated[streamIndex];
-                    const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
+                    if (streamIndex >= 0 && streamIndex < updated.length) {
+                      const lastMsg = updated[streamIndex];
+                      const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
 
-                    updated[streamIndex].responses[lastResIdx].content =
-                      (updated[streamIndex].responses[lastResIdx].content || "") +
-                      chunk;
-                    streamingContentRef.current = updated[streamIndex].responses[lastResIdx].content;
-                  }
-                  return updated;
-                });
+                      updated[streamIndex].responses[lastResIdx].content =
+                        (updated[streamIndex].responses[lastResIdx].content || "") +
+                        chunk;
+                        streamingContentRef.current = updated[streamIndex].responses[lastResIdx].content;
+                    }
+                    return updated;
+                  });
               }
             })().then(() => {
               setStreamingMessageIndex(null);
               stopStreamRef.current = null;
-              setStreamingMessageIndex(null);
-              setIsGenerating(false);
-              currentStreamingMsgRef.current = null;
-              streamingContentRef.current = "";
+                setStreamingMessageIndex(null);
+                setIsGenerating(false);
+                currentStreamingMsgRef.current = null;
+                streamingContentRef.current = "";
             });
             break;
 
-          case "stop_acknowledged":
-            // reset states related to streaming
-            setIsGenerating(false);
-            setStreamingMessageIndex(null);
-            setLoading(false);
-            currentStreamingMsgRef.current = null;
-            streamingContentRef.current = "";
-            break;
+            case "stop_acknowledged":
+              // reset states related to streaming
+              setIsGenerating(false);
+              setStreamingMessageIndex(null);
+              setLoading(false);
+              currentStreamingMsgRef.current = null;
+              streamingContentRef.current = "";
+              break;
 
           case "agent":
             const agent_type = data.agent;
@@ -1001,8 +919,7 @@ function ChatContent() {
             break;
           case "loading_message":
             const message = data.content ?? "Thinking to enhance response";
-            setLoading(false)
-            setLoadingMessage(message);
+            // setLoadingMessage(message);
             break;
           case "report":
             const report_status = data.status;
@@ -1018,10 +935,14 @@ function ChatContent() {
             }
 
               break;
-        default:
-          break;
-      }
-     }
+            // case "streaming_end":
+            //   audioScheduler.flush();
+            //   break;
+
+            default:
+              break;
+          }
+        };
     };
 
     connect();
@@ -1036,7 +957,7 @@ function ChatContent() {
         wsRef.current = null;
       } 
     };
-  //  @ts-ignore
+
   }, [reconnectTrigger]);
 
   useEffect(() => {
@@ -1210,8 +1131,7 @@ function ChatContent() {
           has_verse_audio: false,
           verse_audio_data: [],
           has_verse_image: false,
-          verse_images: [],
-          story_data: [],
+          verse_images: []
         },
       ],
     };
@@ -1281,20 +1201,6 @@ function ChatContent() {
     }
   };
 
-  const sendPrompt = () => {
-    if (!inputRef.current) return;
-    if (attachedFile && isUploading) {
-      alert("File is still uploading, please wait a moment...");
-      return;
-
-    }
-
-    const input = inputRef.current?.innerText;
-    if (input.trim() != "" || fileContext) {
-      ask(input.trim());
-    }
-  }
-
   useEffect(() => {
     if (messageScrollFlag.current) return;
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1318,7 +1224,7 @@ function ChatContent() {
   if (isCheckingPersonalization) {
     return (
       <ProtectedRoute>
-        <div className="w-screen flex items-center justify-center bg-gray-50">
+        <div className="w-screen h-screen flex items-center justify-center bg-gray-50">
           <div className="flex flex-col items-center gap-y-4">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-black"></div>
             <p className="switzer-500 text-gray-600">Loading your profile...</p>
@@ -1347,14 +1253,7 @@ function ChatContent() {
           }}
         />
       ) : (
-        <motion.div
-          animate={{
-            background: currentMode === "normal"
-              ? "#F9FAFB"
-              : "#000000",
-          }}
-          transition={{ duration: 0.3 }}
-          className="relative w-screen h-screen flex flex-col items-center">
+        <div className="relative w-screen h-screen bg-gray-50 flex flex-col items-center">
           {/* --- UI STATUS INDICATOR --- */}
           <AnimatePresence>
             {showDeleteSuccess && (
@@ -1396,15 +1295,6 @@ function ChatContent() {
               )}
             </AnimatePresence>
           </div>
-          
-          <div className="absolute -top-2 right-4">
-            {currentMode === "story" ? (
-              <Image className="w-16 h-auto object-cover object-top" src={TadabburFontWhite}
-                alt="tadabbur-font-white" />
-            ) : (<Image className="w-16 h-auto object-cover object-top" src={TadabburFontBlack}
-              alt="tadabbur-font-black" />)}
-          </div>
-          
           <ChatProvider
             chatHistory={chatHistory}
             setChatHistory={setChatHistory}
@@ -1423,180 +1313,98 @@ function ChatContent() {
             setHideReportContentDialogueBox={setHideReportContentDialogueBox}
             hidePromptExtraOptionsModelBoxArray={hidePromptExtraOptionsModelBoxArray}
             setHidePromptExtraOptionsModelBoxArray={setHidePromptExtraOptionsModelBoxArray}
-            active={active}
-            setActive={setActive}
-            currentMode={currentMode}
-            setCurrentMode={setCurrentMode}
-            setOpenFullStoryView={setOpenFullStoryView}
-            setStoryData={setStoryData}
-            openStoryModeExtraOptions={openStoryModeExtraOptions}
-            setOpenStoryModeExtraOptions={setOpenStoryModeExtraOptions}
           >
-            {/* renders only when open chat history dialogue box is true */}
-            {/* <ChatHisoryDialogueBox /> */}
+            <ChatHisoryDialogueBox />
 
-            <AnimatePresence>
-              {openChatHistoryDialogueBox && (
-                <ChatHistoryCupboard />
-              )}
-            </AnimatePresence>
-            <AnimatePresence>
-              {openFullStoryView && (
-                <FullStoryViewContainer story_data={storyData} />
-              )}
-            </AnimatePresence>
-
-            <div className={`w-full h-full flex flex-col items-center z-10 ${currentMode === "normal" ? "" : "black-scrollbar"} overflow-y-auto`}>
+            <div className="w-full h-full flex flex-col items-center overflow-y-auto">
               <div className="absolute top-0 p-2 w-full">
-                {/* 
-              <div className="pointer-events-auto">
-                <Controls wsRef={wsRef} />
-              </div> */}
-
-
+                <div className="pointer-events-auto">
+                  <Controls wsRef={wsRef} connectionStatus={connectionStatus}/>
+                </div>
                 <button
                   onClick={handleLogout}
-                  className="cursor-pointer ml-16 mt-2 px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm font-medium rounded-md shadow-md transition-colors"
+                  className="pointer-events-auto mr-2 mt-2 px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm font-medium rounded-md shadow-md transition-colors"
                 >
                   Logout
                 </button>
               </div>
-              <HamBurger />
               <div
-                id="chat-bot"
-                className={`w-full ${messages && messages?.length > 0 ? "h-max mt-16" : "h-full items-center mt-12"} px-4 lg:w-2/3 flex flex-col gap-y-4 ${!messages ? "justify-center" : ""}`}
+                id="chat-box-messages"
+                className={`w-full ${messages && messages?.length > 0 ? "h-max" : "h-full"} px-4 mt-12 lg:w-2/3 flex flex-col gap-y-4 ${!messages ? "justify-center items-center" : ""}`}
               >
                 <AnimatePresence>
-
                   {messages?.length === 0 && (
                     <motion.div
-                      className="w-full flex flex-col gap-y-4 items-center self-center"
+                      className="flex flex-col gap-y-4 items-center self-center"
                     >
-                      {currentMode === "story" && (
-                        <motion.div whileHover={{ backgroundColor: "#ffffff0d" }} className="w-max py-2 px-4 rounded-full border border-white/10 cursor-pointer flex items-center gap-x-1 scale-90 sm:scale-100">
-                          <div className="rounded-md py-0.5 px-1 shadow-md bg-red-400 flex justify-center items-center mr-1">
-                            <span className="poppins-semibold text-[0.5rem] text-white">NEW</span>
-                          </div>
-                          <p className="switzer-500 tracking-tight text-[0.8rem] text-white">Introducing Story Mode</p>
-                          <ArrowLeft className="w-3 h-3 fill-current rotate-180 text-white" />
-                        </motion.div>
-                      )}
-
-                      <motion.p
-                        initial={false}
-                        animate={{
-                          color: currentMode === "normal" ? "#000000E6" : "#FFFFFF"
-                        }}
-                        transition={{ duration: 0.3 }}
-                        className={`text-center px-6 ${currentMode === "normal" ? "switzer-500 text-4xl tracking-tight" : "inter-600 text-[2.6rem] sm:text-[2.8rem] tracking-tighter lg:text-[3.2rem] leading-9 lg:leading-11 subpixel-antialiased"}`}
+                      <motion.div
+                        key="greeting"
+                        transition={{ duration: 0.4, ease: easeInOut }}
                       >
-                        {currentMode === "story" ? (
-                          <>
-                            QURANIC STORIES EXPLAINED WITH <span className="text-cyan-300">POWERFUL</span>,
-                            <span className="flex gap-x-1 justify-center items-center text-green-300"><span className="rounded-full border-2 border-dotted border-red-400 p-1.5"><EngagingIcon className="md:w-10 md:h-10 w-8 h-8" /></span> CREATIVE</span> VISUALS.
-                          </>
-                        ) : (
-                          greeting
-                        )}
-                      </motion.p>
-
-                      {currentMode === "story" && (
-                        <div id="default-prompts-box-story" className="w-full relative overflow-x-clip">
-                          <motion.div
-                            style={{ x }}
-                            onMouseEnter={() => animationRef.current?.pause()}
-                            onMouseLeave={() => animationRef.current?.play()}
-                            onViewportEnter={startAnimation}
-
-                            className="w-max flex gap-x-2">
-                            {Array.from({ length: 3 }).map((_, i) => (
-                              <motion.div key={i} id="carousel-default-prompts-story" className="w-1/2">
-                                <div className="grid grid-cols-4 grid-rows-1 gap-x-4 w-full">
-                                  <motion.div whileHover={{ scale: 1.02 }} transition={{ duration: 0.5, ease: easeInOut }} className="cursor-pointer w-max flex flex-col gap-y-1 p-1.5 rounded-lg border border-white/10">
-                                    <Image className="rounded-md md:w-36 md:h-34 w-34 h-30 object-cover object-top" alt="smiling-boy" src={QuranReading} />
-                                    <p className="switzer-500 text-white/80 w-36">Generate the story of the people of the Cave.</p>
-                                  </motion.div>
-                                  <motion.div whileHover={{ scale: 1.02 }} transition={{ duration: 0.3, ease: easeInOut }} className="cursor-pointer w-max flex flex-col gap-y-1 p-1.5 rounded-lg border border-white/10">
-                                    <Image className="rounded-md md:w-36 md:h-34 w-34 h-30 object-cover object-top" alt="smiling-boy" src={QuranPic} />
-                                    <p className="switzer-500 text-white/80 w-36">Narrate the occasion of first revelation.</p>
-                                  </motion.div>
-                                  <motion.div whileHover={{ scale: 1.02 }} transition={{ duration: 0.3, ease: easeInOut }} className="cursor-pointer w-max flex flex-col gap-y-1 p-1.5 rounded-lg border border-white/10">
-                                    <Image className="rounded-md md:w-36 md:h-34 w-34 h-30 object-cover object-top" alt="smiling-boy" src={DesertPic} />
-                                    <p className="switzer-500 text-white/80 w-36">Generate the story of Prophet Yusuf عليه السلام.</p>
-                                  </motion.div>
-                                  <motion.div whileHover={{ scale: 1.02 }} transition={{ duration: 0.3, ease: easeInOut }} className="cursor-pointer w-max flex flex-col gap-y-1 p-1.5 rounded-lg border border-white/10">
-                                    <Image className="rounded-md md:w-36 md:h-34 w-34 h-30 object-cover object-top" alt="old-ark" src={ArkPic} />
-                                    <p className="switzer-500 text-white/80 w-36">Generate the story of Prophet Noah عليه السلام and his people.</p>
-                                  </motion.div>
-                                </div>
-                              </motion.div>
-                            ))}
-
-                          </motion.div>
-                        </div>
-                      )}
-                      {currentMode === "normal" && (
-                        <div className="default-prompts-box-normal w-full relative overflow-x-clip">
-                          <motion.div
-                            animate={controls}
-                            transition={{
-                              duration: 25,
-                              ease: easeInOut,
-                              repeat: Infinity,
-                              repeatType: "loop",
-                            }}
-                            className="w-[1200%] md:w-[600%] flex gap-x-2"
-                          >
-                            {Array.from({ length: 2 }).map((_, i) => (
-                              <motion.div key={i} id="carousel-default-prompts-normal" className="carousel w-1/2">
-                                <div className="carousel-controls-slider flex">
-                                  <div className="h-max grid grid-cols-6 grid-rows-1 rounded-md gap-4 w-full">
-                                    {defaultPrompts.map((prompt, index) => (
-                                      <motion.div
-                                        key={index}
-                                        whileHover={{ scale: 1.01 }}
-                                        transition={{
-                                          duration: 0.5,
-                                          ease: easeInOut,
-                                        }}
-                                        onMouseOver={() => {
-                                          controls.stop();
-                                        }}
-                                        onMouseLeave={() => {
-                                          controls.start({ x: "-60%" });
-                                        }}
-                                        onClick={() => {
-                                          ask(
-                                            `${prompt.title} ${prompt.description}`,
-                                          );
-                                        }}
-                                        className="bg-white rounded-md shadow-sm backdrop-blur-md cursor-pointer"
-                                      >
-                                        <div className="w-full flex flex-col px-3 pt-3 pb-6 gap-y-1">
-                                          <div className="flex gap-x-3">
-                                            <div className="default-prompt-text-box">
-                                              <div className="heading-text">
-                                                <p className="switzer-600 tracking-tight text-black/80">
-                                                  {prompt.title}
-                                                </p>
-                                              </div>
-                                              <div className="system-instructions text-[0.9rem] switzer-500 text-black/80 ">
-                                                <p className="">
-                                                  {prompt.description}
-                                                </p>
-                                              </div>
+                        <p className="switzer-500 text-center tracking-tight text-4xl px-6 text-black/90">
+                          {greeting}
+                        </p>
+                      </motion.div>
+                      <div className="default-prompts-box w-full relative overflow-x-clip">
+                        <motion.div
+                          animate={controls}
+                          transition={{
+                            duration: 25,
+                            ease: easeInOut,
+                            repeat: Infinity,
+                            repeatType: "loop",
+                          }}
+                          className="w-[1200%] md:w-[600%] flex gap-x-2"
+                        >
+                          {Array.from({ length: 2 }).map((_, i) => (
+                            <motion.div key={i} className="carousel w-1/2">
+                              <div className="carousel-controls-slider flex">
+                                <div className="h-max grid grid-cols-6 grid-rows-1 rounded-md gap-4 w-full">
+                                  {defaultPrompts.map((prompt, index) => (
+                                    <motion.div
+                                      key={index}
+                                      whileHover={{ scale: 1.01 }}
+                                      transition={{
+                                        duration: 0.5,
+                                        ease: easeInOut,
+                                      }}
+                                      onMouseOver={() => {
+                                        controls.stop();
+                                      }}
+                                      onMouseLeave={() => {
+                                        controls.start({ x: "-60%" });
+                                      }}
+                                      onClick={() => {
+                                        ask(
+                                          `${prompt.title} ${prompt.description}`,
+                                        );
+                                      }}
+                                      className="bg-white rounded-md shadow-sm backdrop-blur-md cursor-pointer"
+                                    >
+                                      <div className="w-full flex flex-col px-3 pt-3 pb-6 gap-y-1">
+                                        <div className="flex gap-x-3">
+                                          <div className="default-prompt-text-box">
+                                            <div className="heading-text">
+                                              <p className="switzer-600 tracking-tight text-black/80">
+                                                {prompt.title}
+                                              </p>
+                                            </div>
+                                            <div className="system-instructions text-[0.9rem] switzer-500 text-black/80 ">
+                                              <p className="">
+                                                {prompt.description}
+                                              </p>
                                             </div>
                                           </div>
                                         </div>
-                                      </motion.div>
-                                    ))}
-                                  </div>
+                                      </div>
+                                    </motion.div>
+                                  ))}
                                 </div>
-                              </motion.div>
-                            ))}
-                          </motion.div>
-                        </div>
-                      )}
+                              </div>
+                            </motion.div>
+                          ))}
+                        </motion.div>
+                      </div>
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -1633,7 +1441,7 @@ function ChatContent() {
                           })
                         )}
                         <div>
-                          <p className={`ml-auto w-max min-w-40 max-w-[20rem] rounded-md switzer-500 py-2 shadow-md px-3 text-white ${currentMode === "normal" ? "border bg-neutral-900 border-black/5" : "bg-linear-to-b from-[#570900] to-[#8A0F00]"}`}>
+                          <p className="ml-auto w-max min-w-40 max-w-[20rem] bg-neutral-900 text-white switzer-500 py-2 px-3 rounded-md shadow-md border border-black/5">
                             {record.content}
                           </p>
                         </div>
@@ -1658,13 +1466,11 @@ function ChatContent() {
                               }}
                               className="w-3 h-3 rounded-full bg-black"
                             ></motion.div>
-                          ) : !loading && loadingMessage && !ai_msg.content ? (
-                            <p key={ai_msg_idx} id="loading-message" className={`switzer-500 animate-pulse ${currentMode === "normal" ? "" : "text-white/80"}`}>{loadingMessage}</p>
                           ) : reportedMessageIDs &&
                             !reportedMessageIDs.includes(ai_msg?.message_id) &&
                             ai_msg_idx === record.active_message_index ? (
                             <div key={ai_msg_idx}>
-                              <div className={`w-max min-w-40 max-w-full switzer-500 mt-2 rounded-md px-3 ${currentMode === "normal" ? "bg-white shadow-md py-2" : ""}`}>
+                              <div className="w-max min-w-40 max-w-full switzer-500 mt-2 py-2 px-3 rounded-md bg-white shadow-md">
                                 <ReactMarkdown
                                   remarkPlugins={[remarkGfm]}
                                   rehypePlugins={[rehypeRaw]}
@@ -1692,7 +1498,7 @@ function ChatContent() {
                                     // PARAGRAPH
                                     p: ({ node, ...props }) => (
                                       <p
-                                        className={`leading-7 my-2 ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
+                                        className="leading-7 my-2 text-gray-800"
                                         {...props}
                                       />
                                     ),
@@ -1855,9 +1661,7 @@ function ChatContent() {
                                   />
                                 </>
                               )}
-                              {ai_msg.story_data?.length > 0 && streamingMessageIndex != record_index && (
-                                <StoryContainer story_data={ai_msg.story_data} />
-                              )}
+                              {/* Place it here, inside the div */}
                               {streamingMessageIndex != record_index &&
                                 reportedMessageIDs &&
                                 !reportedMessageIDs.includes(
@@ -1932,11 +1736,11 @@ function ChatContent() {
                       </div>
                     );
                   })}
-                </AnimatePresence >
+                </AnimatePresence>
 
                 <div ref={messagesEndRef}></div>
-              </div >
-            </div >
+              </div>
+            </div>
 
             <AnimatePresence>
               {isRecording && (
@@ -1961,12 +1765,11 @@ function ChatContent() {
               )}
             </AnimatePresence>
 
-            <motion.div animate={{ paddingTop: currentMode === "normal" ? 16 : 20, paddingBottom: currentMode === "normal" ? 16 : 28 }} className={`mr-1.5 px-4 ${currentMode === "normal" ? "w-full lg:w-2/3 mt-4" : "w-[95%] sm:w-[70%] lg:w-1/2 mt-2 flex gap-x-2 items-center"} input-box`}>
-
+            <div className="mr-1.5 py-4 mt-4 px-4 rounded-md w-full lg:w-2/3 input-box">
               <motion.div
-                animate={{ height: currentMode === "normal" ? attachedFile ? 200 : 160 : 42 }}
+                animate={{ height: attachedFile ? 200 : 160 }}
                 transition={{ duration: 0.2, ease: easeInOut }}
-                className={`flex relative shadow-md py-2 border gap-x-1 ${currentMode === "normal" ? "bg-white rounded-lg shadow-md px-3 border-black/10 flex-col" : "bg-[##001e1e] rounded-full px-2 border border-white/15 shadow-md justify-between items-center w-full"} `}
+                className={`flex flex-col relative border border-black/10 px-3 py-2 rounded-lg shadow-md bg-white`}
               >
                 {attachedFile && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative w-max bg-white border border-black/10 px-3 py-2 rounded-md text-xs flex items-center gap-x-2 z-10">
@@ -1990,13 +1793,6 @@ function ChatContent() {
                     </div>
                   </motion.div>
                 )}
-                {currentMode === "story" && (
-                  <motion.div onClick={() => {
-                    setOpenStoryModeExtraOptions(prev => !prev)
-                  }} whileHover={{ backgroundColor: "#FFFFFF1A" }} className="p-1.5 rounded-full cursor-pointer">
-                    <PlusIcon className="w-5 h-5" />
-                  </motion.div>
-                )}
                 <div
                   ref={inputRef}
                   onInput={(e) => {
@@ -2008,16 +1804,17 @@ function ChatContent() {
                     handleInput(e);
                   }}
                   contentEditable
-                  className={`switzer-500 focus:outline-none ${currentMode === "normal" ? attachedFile ? "pt-[0.3rem] text-black h-2/3 overflow-y-auto" : "text-black h-2/3 overflow-y-auto" : "text-white pt-[0.02rem]"} overflow-hidden w-full h-full`}
+                  className={`h-2/3 switzer-500 ${attachedFile ? "pt-[0.3rem]" : ""} focus:outline-none overflow-y-auto`}
                 ></div>
+
                 {showPlaceholder && (
                   <span
-                    className={`absolute ${currentMode === "normal" ? attachedFile ? "top-16 text-black" : "top-2 text-black" : "top-1.8 text-white/70 left-11 text-[15px]"} pointer-events-none placeholder-input-box switzer-500`}
+                    className={`absolute ${attachedFile ? "top-16" : "top-2"} pointer-events-none placeholder-input-box switzer-500 text-black`}
                   >
                     {placeholder}
                   </span>
                 )}
-                {currentMode === "normal" && (
+
                 <div className="flex justify-end mb-10 items-center gap-x-2">
                   {isGenerating ? (
                     <button
@@ -2047,34 +1844,14 @@ function ChatContent() {
                     </button>
                   )}
                 </div>
-                )}
 
                 <div className={`transition-opacity duration-300 ${connectionStatus !== "connected" ? "pointer-events-none opacity-50" : "opacity-100"}`}>
-                  {currentMode === "normal" && (
-                    <>
-                      <BottomOptions />
-                      <ExtraOptions />
-                      <ModelBox modelList={ModelList} />
-                    </>
-                  )}
-                  {currentMode === "story" && (
-                    <>
-                      <MicStoryMode />
-                      <AnimatePresence>
-                        {openStoryModeExtraOptions && (
-                          <StoryModeExtraOptions />
-                        )}
-                      </AnimatePresence>
-                    </>
-                  )}
-                  {currentMode === "story" && (
-                    <motion.div onClick={sendPrompt} style={{ cursor: showPlaceholder ? "default" : "pointer" }} animate={{ backgroundColor: showPlaceholder ? "#FFFFFFCC" : "#FFFFFF" }} className="p-[5px] rounded-full bg-white">
-                      <SendIcon className="w-5 h-5 fill-current text-black" />
-                    </motion.div>
-                  )}
+                  <BottomOptions />
+                  <ExtraOptions />
+                  <ModelBox modelList={ModelList} />
                 </div>
               </motion.div>
-            </motion.div>
+            </div>
 
             <ReportContentDialogueBox
               hideReportContentDialogueBox={hideReportContentDialogueBox}
@@ -2082,10 +1859,10 @@ function ChatContent() {
             />
 
             <audio className="hidden" controls ref={audioRef} />
-          </ChatProvider >
-        </motion.div >
+          </ChatProvider>
+        </div>
       )}
-    </ProtectedRoute >
+    </ProtectedRoute>
   )
 }
 

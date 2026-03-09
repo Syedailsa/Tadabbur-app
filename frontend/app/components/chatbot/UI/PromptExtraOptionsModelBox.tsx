@@ -23,10 +23,12 @@ const PromptExtraOptionsModelBox = ({
   assistant_index,
 }: PromptExtraOptionsModelBoxProps) => {
 
-  const { wsRef, sessionID, messages, setMessages, setReportedMessageID, audioRef, currentPlayableAudio, setHidePromptExtraOptionsModelBoxArray, setHideReportContentDialogueBox, } = useContext(ChatContext)!
+  const { wsRef, sessionID, messages, setMessages, setReportedMessageID, audioRef, currentPlayableAudio, setHidePromptExtraOptionsModelBoxArray, setHideReportContentDialogueBox, currentMode } = useContext(ChatContext)!
   const overlayRef = useRef<HTMLDivElement | null>(null);
 
   const audio_state = messages?.find((m: ChatMessage) => m.message_id === reply_to_message_id)?.responses.find((r: AssistantMessage) => r.message_id === message_id)?.audio_state
+  const backgroundTheme = currentMode === "normal" ? "white" : "black"
+  const fontTheme = currentMode === "normal" ? "black" : "white"
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -104,134 +106,57 @@ const PromptExtraOptionsModelBox = ({
     }
   };
 
-  useEffect(() => {
-  const audio = audioRef.current;
-  if (!audio) return;
-
-  const handlePlay = () => {
-    if (currentPlayableAudio.current?.response_message_id !== message_id) return;
-
-    setMessages((prev: ChatMessage[]) =>
-      prev.map((m) =>
-        m.message_id === reply_to_message_id
-          ? {
-              ...m,
-              responses: m.responses.map((r) =>
-                r.message_id === message_id ? { ...r, audio_state: "playing" } : r
-              ),
-            }
-          : m
-      )
-    );
-  };
-
-  const handlePause = () => {
-    setMessages((prev: ChatMessage[]) =>
-      prev.map((m) =>
-        m.message_id === reply_to_message_id
-          ? {
-              ...m,
-              responses: m.responses.map((r) =>
-                r.message_id === message_id ? { ...r, audio_state: "paused" } : r
-              ),
-            }
-          : m
-      )
-    );
-  };
-
-  const handleEnded = () => {
-    setMessages((prev: ChatMessage[]) =>
-      prev.map((m) =>
-        m.message_id === reply_to_message_id
-          ? {
-              ...m,
-              responses: m.responses.map((r) =>
-                r.message_id === message_id ? { ...r, audio_state: "ended" } : r
-              ),
-            }
-          : m
-      )
-    );
-  };
-
-  audio.addEventListener("play", handlePlay);
-  audio.addEventListener("pause", handlePause);
-  audio.addEventListener("ended", handleEnded);
-
-  return () => {
-    audio.removeEventListener("play", handlePlay);
-    audio.removeEventListener("pause", handlePause);
-    audio.removeEventListener("ended", handleEnded);
-  };
-}, [message_id, reply_to_message_id, audioRef, setMessages]);
-
   return (
     <motion.div
       ref={overlayRef}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="absolute bottom-12 left-36 w-42 h-max rounded-xl bg-white shadow-md overflow-clip border border-black/5 px-1 pt-1 pb-2"
+      className={`absolute bottom-12 left-36 w-42 h-max border rounded-xl ${backgroundTheme} ${backgroundTheme === "white" ? "border-black/5 bg-white" : "bg-black/80 border-white/10 backdrop-blur-md"} shadow-md overflow-clip px-1 p-2`}
     >
+
       <div className="w-full h-full flex flex-col items-center">
         {audio_state === "loading" ? (
-          <div className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-not-allowed">
-            <motion.div 
-              animate={{ rotate: 360 }} 
-              transition={{ duration: 0.6, repeat: Infinity, ease: "linear" }} 
-              className="ml-2 w-4 h-4 border-2 border-black/10 border-t-black/50 rounded-full"
-            />
-            <p className="ml-2 switzer-500 text-black/50 text-[0.94rem]">Loading...</p>
+          <div className={`w-full flex rounded-md items-center p-1 ${backgroundTheme === "white" ? "hover:bg-black/5" : "hover:bg-neutral-700/80"} cursor-pointer`}>
+            <motion.div style={{
+              borderLeftWidth: '2px',
+              borderRightWidth: '2px',
+              borderColor: fontTheme === "black" ? 'rgba(0,0,0,0.5)' : 'white'
+            }} animate={{ rotate: 360 }} transition={{ duration: 0.6, repeat: Infinity, repeatType: "loop" }} className={`ml-2 w-4 h-4 rounded-full fill-current`}></motion.div>
+            <p className={`ml-2 switzer-500 text-${fontTheme === "black" ? "black/50" : "white"} text-[0.94rem]`}>
+              Loading
+            </p>
           </div>
-        ) : (audio_state === "playing") ? (
-          <div 
-            onClick={() => audioRef?.current?.pause()} 
-            className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-pointer"
-          >
-            <Pause className="ml-2 w-5 h-5 fill-current text-black/80" />
-            <p className="ml-2 switzer-500 text-[0.94rem]">Pause</p>
+        ) : (audio_state === "ended" || !audio_state) ? (
+          <div className={`w-full flex rounded-md items-center p-1 ${backgroundTheme === "white" ? "hover:bg-black/5" : "hover:bg-neutral-700/80"} cursor-pointer`}
+            onClick={() => handleOptionClick({ type: "read_aloud" })}>
+            <ReadAloud className={`ml-2 w-5 h-5 fill-current ${fontTheme === "black" ? "text-black/80" : "text-white"}`} />
+            <p className={`ml-2 switzer-500 text-[0.94rem] text-${fontTheme}`}>Read aloud</p>
           </div>
-        ) : (audio_state === "paused") ? (
-          <div 
-            onClick={() => {
-              const audio = audioRef.current;
-              const audio_link = messages?.find((m: ChatMessage) => m.message_id === reply_to_message_id)
-                                ?.responses.find((r: AssistantMessage) => r.message_id === message_id)?.audio_link;
+        ) : audio_state === "playing" ? (
+          <div onClick={() => {
+            audioRef?.current?.pause()
 
-              if (audio && audio_link) {
-                if (!audio.src.includes(audio_link)) {
-                  audio.src = audio_link;
-                  audio.load();
-                }
-                audio.play();
-                currentPlayableAudio.current = { 
-                  user_message_id: reply_to_message_id, 
-                  response_message_id: message_id, 
-                  state: "playing" 
-                };
-              }
-            }} 
-            className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-pointer"
-          >
-            <Play className="ml-2 w-5 h-5 fill-current text-black/80" />
-            <p className="ml-2 switzer-500 text-[0.94rem]">Resume</p>
+          }} className={`w-full flex rounded-md items-center p-1 ${backgroundTheme === "white" ? "hover:bg-black/5" : "hover:bg-neutral-700/80"} cursor-pointer`}>
+            <Pause className={`ml-2 w-5 h-5 fill-current ${fontTheme === "black" ? "text-black/80" : "text-white"}`} />
+            <p className={`ml-2 switzer-500 text-[0.94rem] text-${fontTheme}`}>Pause</p>
           </div>
-        ) : (
-          <div 
-            onClick={() => handleOptionClick({ type: "read_aloud" })} 
-            className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-pointer"
-          >
-            <ReadAloud className="ml-2 w-5 h-5 fill-current text-black/80" />
-            <p className="ml-2 switzer-500 text-[0.94rem]">Read aloud</p>
+        ) : audio_state === "paused" ? (
+          <div onClick={() => {
+            audioRef?.current?.play()
+          }} className={`w-full flex rounded-md items-center p-1 ${backgroundTheme === "white" ? "hover:bg-black/5" : "hover:bg-neutral-700/80"} cursor-pointer`}>
+            <Play className={`ml-2 w-5 h-5 fill-current ${fontTheme === "black" ? "text-black/80" : "text-white"}`} />
+            <p className={`ml-2 switzer-500 text-[0.94rem] text-${fontTheme}`}>Play</p>
           </div>
-        )}
+
+        ) : (null)}
+
       </div>
       <div
         onClick={() => handleOptionClick({ type: "report" })}
-        className="w-full flex rounded-md items-center p-1.5 hover:bg-black/5 cursor-pointer"
+        className={`w-full flex rounded-md items-center p-1 ${backgroundTheme === "white" ? "hover:bg-black/5" : "hover:bg-neutral-700/80"} cursor-pointer`}
       >
-        <Flag className="ml-2 w-5 h-5 " />
-        <p className="ml-2 switzer-500 text-[0.94rem]">Report Content</p>
+        <Flag className={`ml-2 w-5 h-5 fill-current text-${fontTheme}`} />
+        <p className={`ml-2 switzer-500 text-[0.94rem] text-${fontTheme}`}>Report Content</p>
       </div>
     </motion.div>
   );

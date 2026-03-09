@@ -17,13 +17,14 @@ const formatDateToDMY = (dateString: string | null): string => {
 
 const ChatHisoryDialogueBox = () => {
   const {
+    wsRef,
     chatHistory,
     setChatHistory,
     setSelectedSessionID,
     openChatHistoryDialogueBox,
     setOpenChatHistoryDialogueBox,
-    wsRef,
   } = useContext(ChatContext)!;
+
   const [translatePic, setTranslatePic] = useState<boolean | null>(null);
 
   type ToastState = {
@@ -108,6 +109,7 @@ useEffect(() => {
         user_id: user_id,
       });
     }
+
   }, [openChatHistoryDialogueBox, wsRef]);
 
 const handleDeleteSession = (e: React.MouseEvent, chat: ChatRecord) => {
