@@ -43,7 +43,7 @@ class ToolSchemaList(BaseModel):
     "List of surah filters"
     args: List[ToolSchema] = Field(default_factory = list, description = "List of surah filters")
 
-@tool(args_schema = ToolSchemaList)
+# @tool(args_schema = ToolSchemaList)
 def searchAsbabNuzul(
     args: List[ToolSchema] = None
     ) -> List:
@@ -78,6 +78,16 @@ def searchAsbabNuzul(
     3. If the user provides only surah and ayah numbers → pass **only those fields**, leaving others as None.  
     """
     
+
+    if not qdrant_client:
+        response_object = {
+            "success": False,
+            "results": [],
+            "error": "Retreival failed due to database connection errors"
+        }
+        return response_object
+
+    
     results = []
     for row in args:
         query = row.query
@@ -93,15 +103,6 @@ def searchAsbabNuzul(
             "surah_englishName": normalize_surah(row.surah_englishName, surah_name_english_array), 
             "surah_englishNameTranslation": normalize_surah(row.surah_englishNameTranslation, surah_name_english_translation_array),
         }
-
-        if not qdrant_client:
-            response_object = {
-                "success": False,
-                "results": [],
-                "error": "Retreival failed due to database connection errors"
-            }
-            return response_object
-
         # checks if all tool arguments are none
         if not any(verse_tool_args.values()) and not query:
             # all arguments are none so return
