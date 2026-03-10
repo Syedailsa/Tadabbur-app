@@ -7,7 +7,7 @@ from langchain_core.caches import InMemoryCache
 from langchain_core.outputs import Generation
 from pydantic import BaseModel, Field
 from typing import Optional
-from tools.utils import normalize_surah
+from normalizeName import normalize_surah
 from typing import List, Literal
 from langchain.tools import tool
 from threading import Lock

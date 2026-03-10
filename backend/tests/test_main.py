@@ -2,7 +2,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from main import app 
 from utils.generate_uuid import generate_uuid
-from database import init_db_pool 
+from data.database import init_db_pool 
 
 # passed
 @pytest.mark.asyncio

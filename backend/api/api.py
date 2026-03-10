@@ -21,12 +21,12 @@ from utils.authentication import (
     generate_bookmark_id, generate_feedback_id, get_current_user
 )
 from utils.generate_uuid import generate_uuid
-from database import get_db_connection
-from file_service import process_uploaded_file
-from tools.utils import clean_text
+from data.database import get_db_connection
+from tools.file_service import process_uploaded_file
+from tools.normalizeName import clean_text
 import shutil
 import tempfile
-from speech_to_text import SpeechToTextEngine
+from utils.speech_to_text import SpeechToTextEngine
 
 stt_engine = SpeechToTextEngine()
 

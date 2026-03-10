@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from langchain_fireworks import FireworksEmbeddings
 from qdrant_client import QdrantClient, models
-from tools.utils import normalize_surah
+from normalizeName import normalize_surah
 from data.data import surah_name_english_translation_array, surah_name_english_array
 from langchain.tools import tool
 import logging

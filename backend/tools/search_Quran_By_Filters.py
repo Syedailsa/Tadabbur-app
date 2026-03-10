@@ -5,7 +5,7 @@ from data.data import surah_name_english_translation_array, surah_name_english_a
 # from agents import function_tool
 from pydantic import BaseModel, Field
 from typing import Optional
-from tools.utils import normalize_surah
+from normalizeName import normalize_surah
 from langchain.tools import tool
 from typing import List, Literal
 

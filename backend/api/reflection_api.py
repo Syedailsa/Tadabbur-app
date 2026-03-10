@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 import secrets
 import uuid
-from database import get_db_connection
+from data.database import get_db_connection
 from utils.authentication import get_current_user
 
 # ==================== MODELS ====================

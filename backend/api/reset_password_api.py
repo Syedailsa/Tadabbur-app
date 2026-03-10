@@ -3,7 +3,7 @@ from pydantic import BaseModel, EmailStr
 from datetime import datetime, timedelta
 import os
 
-from database import get_db_connection
+from data.database import get_db_connection
 from utils.authentication import hash_password, generate_notification_id, send_otp_email
 import random
 
