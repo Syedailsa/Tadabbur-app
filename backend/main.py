@@ -8,7 +8,7 @@ from fastapi.websockets import WebSocketState
 from pydantic import BaseModel
 from typing import List
 import asyncio 
-from models import NormalOutputSchema, SurahForAudio, SurahForImage, StoryParagraph, StoryOutputSchema
+from models.models import NormalOutputSchema, SurahForAudio, SurahForImage, StoryParagraph, StoryOutputSchema
 from langchain.messages import ToolMessage, SystemMessage, HumanMessage
 from collections import defaultdict
 from generators.image_generator import generate_image, pil_to_img_url
