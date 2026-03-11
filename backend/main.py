@@ -11,9 +11,9 @@ import asyncio
 from models import NormalOutputSchema, SurahForAudio, SurahForImage, StoryParagraph, StoryOutputSchema
 from langchain.messages import ToolMessage, SystemMessage, HumanMessage
 from collections import defaultdict
-import agent as agent_module
 from generators.image_generator import generate_image, pil_to_img_url
 from contextlib import asynccontextmanager
+import tadabbur_agents.agent as agent_module
 from tadabbur_agents.story_agent import story_agent
 from utils.handle_feedback import handle_feedback
 from builders.prompt_builder import prompt_builder, prompt_builder_instructions

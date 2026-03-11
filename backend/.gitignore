@@ -5,8 +5,9 @@ build/
 dist/
 wheels/
 *.egg-info
-
+pyproject.toml
+pytest.ini
+uv.lock
 # Virtual environments
 .venv
 .env
-agent_2.py

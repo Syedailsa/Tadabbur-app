@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain_groq import ChatGroq
 from data.data import QuranMetaData,surah_name_english_array, surah_name_english_translation_array
-from models import StorySchema
+from models.models import StorySchema
 from langchain.tools import tool
 from pydantic import BaseModel
 from typing import List
@@ -14,7 +14,7 @@ load_dotenv()
 GROQ_API_KEY = os.getenv('GROQ_AI_API_KEY')
 story_example = ""
 # Load example story for narrative style
-with open("story_exmp.txt", "r", encoding="utf-8") as f:
+with open("examples/story_exmp.txt", "r", encoding="utf-8") as f:
     story_example = json.load(f)
 
 class StoryOutput(BaseModel):
