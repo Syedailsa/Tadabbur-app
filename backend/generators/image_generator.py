@@ -4,19 +4,39 @@ from PIL import Image
 from io import BytesIO
 from dotenv import load_dotenv
 from huggingface_hub import InferenceClient
-
+import uuid
+from supabase import create_client, Client
 load_dotenv()
 
-def pil_to_base64(image):
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_GENERATED_IMAGES_BUCKET = os.getenv("GENERATED_IMAGES_BUCKET", "generated-images")
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+
+def pil_to_img_url(image: Image.Image) -> str:
     buffer = BytesIO()
     image.save(buffer, format="PNG")
-    buffer.seek(0)
-    img_str = base64.b64encode(buffer.read()).decode("utf-8")
-    return img_str
+    image_bytes = buffer.getvalue()
 
-def save_image_local(image, counter: int):
-    image.save(f"image{counter}.png")
-    counter += 1
+    unique_filename = f"{uuid.uuid4()}.png"
+
+    supabase.storage.from_(SUPABASE_GENERATED_IMAGES_BUCKET).upload(
+        path=unique_filename,
+        file=image_bytes,
+        file_options={"content-type": "image/png", "upsert": "true"}
+    )
+
+    signed = supabase.storage.from_(SUPABASE_GENERATED_IMAGES_BUCKET).create_signed_url(
+        path=unique_filename,
+        expires_in=60 * 60 * 24  
+    )
+
+    url = signed["signedURL"]
+    print(f" Generated image URL: {url}")
+    return url
+
 
 client = InferenceClient(
     provider="fal-ai",

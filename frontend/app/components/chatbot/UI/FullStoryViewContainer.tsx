@@ -64,17 +64,17 @@ const FullStoryViewContainer = ({ story_data }: { story_data: StoryParagraph[] }
 
                             if (activeIndex < idx) {
                                 return (
-                                    <motion.img key={idx} animate={{ width: "100%", maxHeight: "max-content" }} className="rounded-md" src={`data:image/png;base64,${seg.image}`} alt={`image${idx}`} />
+                                    <motion.img key={idx} animate={{ width: "100%", maxHeight: "max-content" }} className="rounded-md" src={seg.image} alt={`image${idx}`} />
                                 )
                             }
                             else if (activeIndex === idx) {
                                 return (
-                                    <motion.img key={idx} animate={{ width: "100%", height: "auto" }} className="rounded-md" src={`data:image/png;base64,${seg.image}`} alt={`image${idx}`} />
+                                    <motion.img key={idx} animate={{ width: "100%", height: "auto" }} className="rounded-md" src={seg.image} alt={`image${idx}`} />
                                 )
                             }
                             else {
                                 return (
-                                    <motion.img key={idx} animate={{ width: "100%", maxHeight: "max-content" }} className="rounded-md" src={`data:image/png;base64,${seg.image}`} alt={`image${idx}`} />
+                                    <motion.img key={idx} animate={{ width: "100%", maxHeight: "max-content" }} className="rounded-md" src={seg.image} alt={`image${idx}`} />
                                 )
                             }
                         })}

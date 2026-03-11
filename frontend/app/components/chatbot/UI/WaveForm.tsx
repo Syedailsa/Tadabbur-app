@@ -1,5 +1,6 @@
-import React, { useEffect, useRef } from "react";
+import React, { useContext, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
+import { ChatContext } from "@/app/context/chatbot/ChatContext";
 
 export default function WaveForm() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -9,6 +10,7 @@ export default function WaveForm() {
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const { currentMode } = useContext(ChatContext)!
 
   useEffect(() => {
     const initAudio = async () => {
@@ -67,8 +69,8 @@ export default function WaveForm() {
 
         const gradient = ctx.createLinearGradient(0, 0, 0, height);
         // all black waveforms
-        gradient.addColorStop(0, "#000000");
-        gradient.addColorStop(1, "#ffffff");
+        gradient.addColorStop(0, currentMode === "normal" ? "#000000" : "#ffffff");
+        gradient.addColorStop(1, currentMode === "normal" ? "#000000" : "#ffffff");
 
         ctx.fillStyle = gradient;
 
@@ -102,7 +104,7 @@ export default function WaveForm() {
       exit={{ opacity: 0, y: 10 }}
       className="w-full flex items-center"
     >
-      <div className="ml-auto mt-auto w-50 bg-white shadow-md rounded-full px-4 py-3">
+      <div className={`ml-auto mt-auto w-50 ${currentMode === "normal" ? "bg-white shadow-md" : "bg-black shadow-sm shadow-red-500"} rounded-full px-4 py-3`}>
         <canvas
           ref={canvasRef}
           width={300}

@@ -80,7 +80,7 @@ const MicStoryMode = () => {
             // 1. Dispatch event to tell ChatPage to show loading state
             window.dispatchEvent(new Event("tadabbur-transcription-start"));
             const data = await retryOperation(async () => {
-                const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/`, {
+                const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/transcribe`, {
                     method: "POST",
                     body: formData,
                 });
@@ -135,9 +135,9 @@ const MicStoryMode = () => {
             });
         }}
             animate={{ backgroundColor: active[2] ? "#ff000020" : "#00000000" }} whileHover={{ backgroundColor: active[2] ? "##ff000020" : "#FFFFFF1A" }}
-            whileTap={{ backgroundColor: "#FFFFFF33" }} className="p-1.5 rounded-full cursor-pointer bg-white/5">
+            whileTap={{ backgroundColor: "#FFFFFF33" }} className="p-2 rounded-full cursor-pointer bg-white/5">
             <MicIcon
-                className={`w-5 h-5 fill-current ${active[2] ? "text-red-600" : "text-white"
+                className={`w-5.5 h-5.5 fill-current ${active[2] ? "text-red-600" : "text-white"
                     }`}
             />
         </motion.div>

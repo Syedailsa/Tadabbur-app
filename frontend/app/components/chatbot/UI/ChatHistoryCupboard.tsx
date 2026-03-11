@@ -54,7 +54,6 @@ const ChatHistoryCupboard = () => {
                 mode: currentMode
             }).catch(() => { })
         setOpenChatHistoryDialogueBox(false)
-
     };
 
 

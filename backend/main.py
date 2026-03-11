@@ -12,7 +12,7 @@ from models import NormalOutputSchema, SurahForAudio, SurahForImage, StoryParagr
 from langchain.messages import ToolMessage, SystemMessage, HumanMessage
 from collections import defaultdict
 import agent as agent_module
-from generators.image_generator import generate_image, pil_to_base64, save_image_local
+from generators.image_generator import generate_image, pil_to_img_url
 from contextlib import asynccontextmanager
 from story_agent import story_agent
 from utils.handle_feedback import handle_feedback
@@ -150,7 +150,6 @@ def get_chat_messages(session_id: str, user_id: str, supabase_client) -> List[st
 
     chat_messages = supabase_client.table('chat_messages').select('message_id', 'user_id', 'role', 'content', 'reply_to_message_id', 'feedback', 'audio_url', 'has_verse_audio', 'audio_data', 'has_verse_image', 'verse_images', 'story_data').in_("role", ["user", "assistant"]).eq('session_id', session_id).eq('user_id', user_id).order('created_at').execute().data
 
-    print(chat_messages)
     if chat_messages:
         return chat_messages
     else:
@@ -342,7 +341,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 continue
 
             if data.get("type") == "tts_request":
-                print("Got tts request, data", data)
                 raw_text = data.get("text")
                 message_id_ref = data.get("message_id")
                 user_message_id = data.get("reply_to_message_id")
@@ -823,10 +821,8 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     if reported_assistant_message:
                         try: 
                             # insert hard rule in a different thread for optimization
-                            print("Reported assistant message", reported_assistant_message['content'] )
                             response = await asyncio.to_thread(insert_report_rule, supabase_client, message_id, feedback, user_id)
 
-                            print("Report response", response)
                             if not response:
                                 try:
                                     await ws_send(websocket, {
@@ -1037,7 +1033,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     )
 
                     logger.info(f"✅ Injected file context into prompt for {session_id}")
-                # print("Dynamic system instructions", dynamic_system_instruction["text"])
                 try:
                     # Prepare messages
                     base_messages = (
@@ -1178,13 +1173,9 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                             continue
                                         for try_number in range(8):
                                             try:
-                                                # initialize a counter for saving images
-                                                image_counter = 1
                                                 image = generate_image(image_prompt)
-                                                base64image = pil_to_base64(image)
-                                                save_image_local(image, image_counter)
-                                                # print("Base 64 image", base64image)
-                                                story_data.append(StoryParagraph(story_paragraph = story_paragraph, paragraph_title = paragraph_title, image = base64image))
+                                                image_url = pil_to_img_url(image)
+                                                story_data.append(StoryParagraph(story_paragraph = story_paragraph, paragraph_title = paragraph_title, image = image_url))
                                                 # print(f"Image pipeline successfully completed for image {i}")
                                                 break
                                             except Exception as e:
@@ -1215,7 +1206,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             raise                  
                     else:
                         ai_response = ""
-                    print(ai_response)
+
                     # append assistant message to conversation history
                     conversation_history.append({"role": "assistant", "content": ai_response , "id": response_message_id, "reply_to_message_id": user_message_id})
 
@@ -1260,14 +1251,14 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     if conversation_history and conversation_history[-1].get("role") == "assistant":
                         conversation_history.pop() 
                 
-                try:
-                    await ws_send(websocket, {"type": "assistance_response", "content": "Connection lost. I will retry once you are back online."}, label="assistance_response_error")
+                # try:
+                #     await ws_send(websocket, {"type": "assistance_response", "content": "Connection lost. I will retry once you are back online."}, label="assistance_response_error")
                 
-                except WSDisconnectedError:
-                    logger.info("Failed to send error messages (Socket closed?)")
-                continue
+                # except WSDisconnectedError:
+                #     logger.info("Failed to send error messages (Socket closed?)")
+                # continue
 
-            continue
+                continue
                                  
 
     except WebSocketDisconnect:
