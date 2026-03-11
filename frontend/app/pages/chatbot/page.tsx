@@ -37,13 +37,13 @@ import ExtraOptions from "../../components/chatbot/UI/ExtraOptions";
 import MicStoryMode from "@/app/components/chatbot/UI/MicStoryMode";
 import ModelBox from "../../components/chatbot/UI/ModelBox";
 import PromptExtraOptions from "../../components/chatbot/UI/PrompExtraOptions";
-import generateUUID from "@/utils/generateShortId";
+import generateUUID from "@/app/utils/generateShortId";
 import { SurahForAudios, SurahForVerseImages } from "@/app/components/chatbot/interfaces/Surah";
 import ReportContentDialogueBox from "../../components/chatbot/UI/ReportContentDialogueBox";
 import { ChatMessage } from "../../components/chatbot/interfaces/ChatMessage";
 import QuranDialogBox from "@/app/components/chatbot/UI/QuranDialogBox";
 import StoryContainer from "@/app/components/chatbot/UI/StoryContainer";
-import groupChatMessages from "@/utils/groupChatMessages";
+import groupChatMessages from "@/app/utils/groupChatMessages";
 import WaveForm from "../../components/chatbot/UI/WaveForm";
 import hidePromptExtraOptionsModelBoxArray from "@/app/components/chatbot/interfaces/hidePromptExtraOptionsModelBoxArray";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -540,19 +540,6 @@ function ChatContent() {
             setConnectionStatus("connected");
           }
 
-          // if (heartbeatRef.current) clearInterval(heartbeatRef.current);
-
-          // heartbeatRef.current = setInterval(() => {
-          //   if (websocket.readyState === WebSocket.OPEN) {
-          //     websocket.send(JSON.stringify({ type: "ping" }));
-          //     const timeSinceLastMessage = Date.now() - lastPongRef.current;
-          //     if (timeSinceLastMessage > 60000) {
-          //       console.warn(" Zombie connection detected. Force closing...");
-          //       websocket.close();
-          //     }
-          //   }
-          // }, 50000);
-
         } catch (error) {
           console.error("❌ Failed to initialize WebSocket session:", error);
           setConnectionStatus("disconnected");
@@ -636,6 +623,8 @@ function ChatContent() {
               const currentUrlId = searchParams.get("session_id");
               if (!currentUrlId || currentUrlId === "" || currentMode != session_mode) {
                 router.replace(`/pages/chatbot?session_id=${session_id}`, { scroll: false });
+              } else {
+                router.push(`/pages/chatbot?session_id=${session_id}`, { scroll: false });
               }
               setMessages([]);
               setActive([false, false, false])
@@ -781,7 +770,8 @@ function ChatContent() {
                       pendingData.guidelines,
                       pendingData.resend_flag,
                       pendingData.resend_message_id,
-                      pendingData.old_responses_attachments
+                      pendingData.old_responses_attachments,
+                      true
                     );
 
                     localStorage.removeItem("tadabbur_pending_prompt");
@@ -796,11 +786,12 @@ function ChatContent() {
               setTimeout(() => {
                 if (!chat_history || chat_history.length === 0) return;
 
-                const lastMsg = chat_history[chat_history.length - 1];
+                const userMessages = chat_history.filter(m => m.role === "user");
+                const lastMsg = userMessages[userMessages.length - 1];
                 if (!lastMsg) return;
 
                 const hasNoResponse = !lastMsg.responses || lastMsg.responses.length === 0;
-                const hasEmptyResponse = lastMsg.responses?.[0]?.content === "";
+                const hasEmptyResponse = lastMsg.responses?.every((r: { content: string; }) => r.content === "");
 
                 if (lastMsg && lastMsg.role === "user" && (hasNoResponse || hasEmptyResponse)) {
                   console.log("🤖 Orphaned user message detected. Regenerating...");
@@ -810,7 +801,8 @@ function ChatContent() {
                     null,
                     true,
                     lastMsg.message_id,
-                    { responses: [], attachments: lastMsg.attachments || [] }
+                    { responses: [], attachments: lastMsg.attachments || [] },
+                    true
                   );
                 }
               }, 1500);
@@ -855,7 +847,6 @@ function ChatContent() {
             messageScrollFlag.current = false;
             setLoadingMessage(null);
 
-            // add a new object for the upcoming assistant's message
             setHidePromptExtraOptionsModelBoxArray((prev) => {
               return [
                 ...(prev || []),
@@ -863,7 +854,6 @@ function ChatContent() {
               ];
             });
 
-            console.log("message id", message_id)
             // Add a new assistant message
             setMessages((prev) => {
               if (!prev || prev.length == 0) {
@@ -882,13 +872,10 @@ function ChatContent() {
                   lastUserMessage.number_of_responses += 1;
                 }
 
-                // initialize a new responses array if resend flag is false otherwise assign to oldMessages
-
                 lastUserMessage.responses = resend_flag
                   ? oldMessagesRef.current
                   : [];
 
-                // assign message_id and reply_to_message_id this time
                 lastUserMessage.responses.push({
                   role: "assistant",
                   message_id: message_id,
@@ -904,7 +891,6 @@ function ChatContent() {
                   story_data: story_data
                 });
 
-                // set the number of active message index
                 lastUserMessage.active_message_index =
                   lastUserMessage.number_of_responses - 1;
               }
@@ -945,7 +931,7 @@ function ChatContent() {
                     const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
 
                     updated[streamIndex].responses[lastResIdx].content =
-                      (updated[streamIndex].responses[lastResIdx].content || "") +
+                      (updated[streamIndex].responses[lastResIdx]?.content || "") +
                       chunk;
                     streamingContentRef.current = updated[streamIndex].responses[lastResIdx].content;
                   }
@@ -1027,7 +1013,6 @@ function ChatContent() {
         wsRef.current = null;
       }
     };
-    //  @ts-ignore
   }, [reconnectTrigger]);
 
   useEffect(() => {
@@ -1105,7 +1090,8 @@ function ChatContent() {
     guidelines: string | null = null,
     resend_flag: boolean = false,
     resend_message_id: string | null = null,
-    old_responses_attachments: { responses: AssistantMessage[], attachments: Attachment[] } | null = null
+    old_responses_attachments: { responses: AssistantMessage[], attachments: Attachment[] } | null = null,
+    bypassCheck: boolean = false
   ) => {
     if (streamingMessageIndex !== null || (!input.trim() && !fileContext)) return;
 
@@ -1157,7 +1143,7 @@ function ChatContent() {
 
     }
 
-    if (connectionStatus !== "connected") {
+    if (connectionStatus !== "connected" && !bypassCheck) {
       console.log("📡 Socket not ready. Saving prompt to pending queue.");
       const pendingData = {
         input,

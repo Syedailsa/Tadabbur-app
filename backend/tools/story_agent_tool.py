@@ -1,5 +1,5 @@
 from langchain.tools import tool
-from story_agent import story_agent
+from tadabbur_agents.story_agent import story_agent
 
 @tool
 def story_agent_tool(query: str) -> str:

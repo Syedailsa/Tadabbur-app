@@ -14,7 +14,7 @@ from collections import defaultdict
 import agent as agent_module
 from generators.image_generator import generate_image, pil_to_img_url
 from contextlib import asynccontextmanager
-from story_agent import story_agent
+from tadabbur_agents.story_agent import story_agent
 from utils.handle_feedback import handle_feedback
 from builders.prompt_builder import prompt_builder, prompt_builder_instructions
 from utils.generate_title_description import generate_title_description
@@ -22,17 +22,15 @@ from utils.generate_uuid import generate_uuid
 from utils.report_rule import insert_report_rule, delete_report_rule
 from utils.refresh_instructions import refresh_system_instructions
 from utils.authentication import generate_session_id, get_user_from_token
-from Clean_text import clean_text_with_groq
+from utils.Clean_text import clean_text_with_groq
 import logging
-from speech_to_text import SpeechToTextEngine
+from utils.speech_to_text import SpeechToTextEngine
 from murf import Murf
-from database import init_db_pool, close_db_pool
-from quran_api import quran_router , parah_router, story_router
-from reset_password_api import password_reset_router
+from data.database import init_db_pool, close_db_pool
+from api.reset_password_api import password_reset_router
 from fastapi import UploadFile, File, Form, HTTPException
-from file_service import process_uploaded_file
-from reflection_api import reflection_router
-from api import (
+from tools.file_service import process_uploaded_file
+from api.api import (
     auth_router,
     notif_router,
     bookmark_router,
@@ -42,11 +40,10 @@ from api import (
     file_router,
     transcribe_audio_router
 )
-from quran_api import quran_router , parah_router, story_router
-from reflection_api import reflection_router
-from database import init_db_pool, close_db_pool, delete_all_user_sessions, delete_user_session
+from api.quran_api import quran_router , parah_router, story_router
+from api.reflection_api import reflection_router
+from data.database import init_db_pool, close_db_pool, delete_all_user_sessions, delete_user_session
 from fastapi.openapi.utils import get_openapi
-from speech_to_text import SpeechToTextEngine
 from config.db import get_supabase_client
 from utils.db_retry import db_retry, DBRetryError
 from utils.ws_retry import ws_send, WSDisconnectedError
@@ -566,7 +563,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         current_mode = session.get("mode", "normal")
                     # set the active agent
                     active_agent = agent_module.main_agent if current_mode == "normal" else story_agent
-                    print("Session mode", current_mode)
+                    # print("Session mode", current_mode)
                     files_response = files_response.data
                     combined_file_content = ""
                     files_by_message = defaultdict(list)
@@ -1231,7 +1228,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             "reply_to_message_id": user_message_id,
                             "db_saved" : False,
                             "final": True
-                        }, label="assistance_response_db_save_failed")
+                        }, label="assistance_response")
                         except WSDisconnectedError:
                             logger.info("Failed to send assistance response with DB save failure flag (Socket closed?)")
                             break   
@@ -1242,7 +1239,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 except WebSocketDisconnect:
                     logger.info("Client disconnected")
                     print("Closing websocket...")
-                    await websocket.close()
                     break
 
 
@@ -1250,13 +1246,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     logger.error(f"Error during agent execution: {e}")
                     if conversation_history and conversation_history[-1].get("role") == "assistant":
                         conversation_history.pop() 
-                
-                # try:
-                #     await ws_send(websocket, {"type": "assistance_response", "content": "Connection lost. I will retry once you are back online."}, label="assistance_response_error")
-                
-                # except WSDisconnectedError:
-                #     logger.info("Failed to send error messages (Socket closed?)")
-                # continue
 
                 continue
                                  
