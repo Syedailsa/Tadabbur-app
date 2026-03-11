@@ -11,28 +11,28 @@ class WSDisconnectedError(Exception):
     pass
 
 
-async def ws_ping(websocket: WebSocket, timeout: float = 1.0) -> bool:
-    """
-    Quick ping to check if WebSocket connection is alive.
+# async def ws_ping(websocket: WebSocket, timeout: float = 1.0) -> bool:
+#     """
+#     Quick ping to check if WebSocket connection is alive.
     
-    Returns True if connection is healthy, False otherwise.
-    This helps detect disconnection before attempting to send large payloads.
-    """
-    if websocket.client_state != WebSocketState.CONNECTED:
-        return False
+#     Returns True if connection is healthy, False otherwise.
+#     This helps detect disconnection before attempting to send large payloads.
+#     """
+#     if websocket.client_state != WebSocketState.CONNECTED:
+#         return False
     
-    try:
-        # Send a ping and wait for pong (with timeout)
-        await asyncio.wait_for(
-            websocket.send_json({"type": "ping"}),
-            timeout=timeout
-        )
-        return True
-    except asyncio.TimeoutError:
-        logger.warning("⚠️ WS ping timeout - connection may be stale")
-        return False
-    except Exception:
-        return False
+#     try:
+#         # Send a ping and wait for pong (with timeout)
+#         await asyncio.wait_for(
+#             websocket.send_json({"type": "ping"}),
+#             timeout=timeout
+#         )
+#         return True
+#     except asyncio.TimeoutError:
+#         logger.warning("⚠️ WS ping timeout - connection may be stale")
+#         return False
+#     except Exception:
+#         return False
 
 
 async def ws_send(
@@ -55,11 +55,6 @@ async def ws_send(
     - After exhausting retries → raises WSDisconnectedError.
     - No hardcoded keywords — version-proof and future-proof.
 
-    Usage:
-        try:
-            await ws_send(websocket, {"type": "pong"}, label="pong")
-        except WSDisconnectedError:
-            break
 
     Args:
         websocket : FastAPI WebSocket instance.
@@ -67,17 +62,17 @@ async def ws_send(
         retries   : Max attempts for transient errors (default 3).
         delay     : Seconds between retries (default 0.3).
         label     : Tag used in log messages for easy debugging.
-        check_first: If True, do a quick health check before sending (default True).
+        
     """
     # Quick health check before first attempt (optional, can be disabled)
-    if check_first and not await ws_ping(websocket, timeout=0.5):
-        logger.warning(
-            f"🔌 [{label}] Connection health check failed before send - "
-            f"state: {websocket.client_state}"
-        )
-        raise WSDisconnectedError(
-            f"[{label}] Connection health check failed: {websocket.client_state}"
-        )
+    # if check_first and not await ws_ping(websocket, timeout=5.0):
+    #     logger.warning(
+    #         f"🔌 [{label}] Connection health check failed before send - "
+    #         f"state: {websocket.client_state}"
+    #     )
+    #     raise WSDisconnectedError(
+    #         f"[{label}] Connection health check failed: {websocket.client_state}"
+    #     )
 
     for attempt in range(1, retries + 1):
 

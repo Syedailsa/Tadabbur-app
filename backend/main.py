@@ -11,6 +11,7 @@ import asyncio
 from models.models import NormalOutputSchema, SurahForAudio, SurahForImage, StoryParagraph, StoryOutputSchema
 from langchain.messages import ToolMessage, SystemMessage, HumanMessage
 from collections import defaultdict
+import agent as agent_module
 from generators.image_generator import generate_image, pil_to_img_url
 from contextlib import asynccontextmanager
 import tadabbur_agents.agent as agent_module
@@ -1138,7 +1139,8 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                     story_data: List[StoryParagraph] = []
                                     await websocket.send_json({
                                         "type": "loading_message",
-                                        "content": "Preparing your story"
+                                        "content": "Preparing your story",
+                                        "paragraph_count": len(data)
                                     })
                                     for i, story_chunk in enumerate(data, start = 1):
                                         story_paragraph = story_chunk.get("story_paragraph")
@@ -1172,6 +1174,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                             try:
                                                 image = generate_image(image_prompt)
                                                 image_url = pil_to_img_url(image)
+                                                # print("Base 64 image", base64image)
                                                 story_data.append(StoryParagraph(story_paragraph = story_paragraph, paragraph_title = paragraph_title, image = image_url))
                                                 # print(f"Image pipeline successfully completed for image {i}")
                                                 break
@@ -1226,7 +1229,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             "content": response_object.model_dump(mode = "json"),
                             "resend_flag": resend_flag,
                             "reply_to_message_id": user_message_id,
-                            "db_saved" : False,
+                            "db_saved" :True,
                             "final": True
                         }, label="assistance_response")
                         except WSDisconnectedError:
@@ -1239,6 +1242,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 except WebSocketDisconnect:
                     logger.info("Client disconnected")
                     print("Closing websocket...")
+                    
                     break
 
 

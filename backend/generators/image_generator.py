@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 from huggingface_hub import InferenceClient
 import uuid
 from supabase import create_client, Client
+import uuid
+
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -14,6 +16,12 @@ SUPABASE_GENERATED_IMAGES_BUCKET = os.getenv("GENERATED_IMAGES_BUCKET", "generat
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# def pil_to_base64(image: Image.Image) -> str:
+#     buffer = BytesIO()
+#     image.save(buffer, format="PNG")
+#     buffer.seek(0)
+#     img_str = base64.b64encode(buffer.read()).decode("utf-8")
+#     return img_str
 
 def pil_to_img_url(image: Image.Image) -> str:
     buffer = BytesIO()

@@ -100,7 +100,7 @@ function ChatContent() {
   const currentMessageIDRef = useRef<string | null>(null);
   const [reportedMessageIDs, setReportedMessageIDs] = useState<string[] | null>(
     [],
-  );
+  ); 
   const [currentMode, setCurrentMode] = useState<"normal" | "story" | null>("normal");
   const [isGenerating, setIsGenerating] = useState(false);
   const [openStoryModeExtraOptions, setOpenStoryModeExtraOptions] = useState<boolean>(false)
@@ -118,6 +118,8 @@ function ChatContent() {
     useState<hidePromptExtraOptionsModelBoxArray[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected">("disconnected");
   const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
+  const [paragraphCount, setParagraphCount] = useState<number>(3);
+
   const pendingPromptRef = useRef<{
     input: string;
     guidelines: string | null;
@@ -262,7 +264,6 @@ function ChatContent() {
     localStorage.clear();
     router.push('/pages/auth');
   };
-
 
   useEffect(() => {
     const audioEl = audioRef.current;
@@ -708,7 +709,7 @@ function ChatContent() {
               localStorage.setItem("tadabbur_pending_deletes", JSON.stringify(updated));
 
             } else {
-              alert("Error deleting chat session: " + data.error);
+              
             }
             break;
 
@@ -738,7 +739,7 @@ function ChatContent() {
                 model: "kimi-k2-instruct-0905",
               });
             } else {
-              alert("Error deleting chat sessions: " + data.error);
+              alert("Error deleting sessions: " + data.error);
             }
             break;
 
@@ -928,6 +929,7 @@ function ChatContent() {
                   const streamIndex = streamingMessageIndex ?? updated.length - 1;
                   if (streamIndex >= 0 && streamIndex < updated.length) {
                     const lastMsg = updated[streamIndex];
+                    if (!lastMsg.responses || lastMsg.responses.length === 0) return prev;
                     const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
 
                     updated[streamIndex].responses[lastResIdx].content =
@@ -980,6 +982,7 @@ function ChatContent() {
             const message = data.content ?? "Thinking to enhance response";
             setLoading(false)
             setLoadingMessage(message);
+            setParagraphCount(data.paragraph_count ?? 3);
             break;
           case "report":
             const report_status = data.status;
@@ -1013,6 +1016,7 @@ function ChatContent() {
         wsRef.current = null;
       }
     };
+  
   }, [reconnectTrigger]);
 
   useEffect(() => {
@@ -1575,7 +1579,7 @@ function ChatContent() {
                     </motion.div>
                   )}
                 </AnimatePresence>
-
+                
                 <AnimatePresence mode="popLayout">
                   {messages && messages.length > 0 && (
                     messages.map((record, record_index) => {
@@ -1613,56 +1617,69 @@ function ChatContent() {
                             </p>
                           </div>
 
-                          {/* PromptExtraOptions */}
-                          <div>
-                            <PromptExtraOptions message_id={record.message_id} reply_to_message_id={null} parent_index={record_index} assistant_index={null} messageType="user" />
-                          </div>
-                          {record?.responses?.map((ai_msg, ai_msg_idx) => {
-                            // loading circle logic here
-                            return loading &&
-                              !loadingMessage &&
-                              !ai_msg.content ? (
-                              <motion.div
-                                key={ai_msg_idx}
-                                animate={{ scale: [1, 1.2, 1] }}
-                                transition={{
-                                  duration: 0.4,
-                                  ease: easeInOut,
-                                  repeat: Infinity,
-                                  repeatType: "loop",
-                                }}
-                                className={`w-3 h-3 rounded-full ${currentMode === "normal" ? "bg-black" : "bg-white"}`}
-                              ></motion.div>
-                            ) : !loading && loadingMessage && !ai_msg.content ? (
-                              <p key={ai_msg_idx} id="loading-message" className={`switzer-500 animate-pulse ${currentMode === "normal" ? "" : "text-white/80"}`}>{loadingMessage}</p>
-                            ) : reportedMessageIDs &&
-                              !reportedMessageIDs.includes(ai_msg?.message_id) &&
-                              ai_msg_idx === record.active_message_index ? (
-                              <div key={ai_msg_idx}>
-                                <div className={`w-max min-w-40 max-w-full switzer-500 mt-2 rounded-md px-3 ${currentMode === "normal" ? "bg-white shadow-md py-2" : ""}`}>
-                                  <ReactMarkdown
-                                    remarkPlugins={[remarkGfm]}
-                                    rehypePlugins={[rehypeRaw]}
-                                    components={{
-                                      // HEADERS
-                                      h1: ({ node, ...props }) => (
-                                        <h1
-                                          className={`text-3xl font-bold ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
-                                          {...props}
-                                        />
-                                      ),
-                                      h2: ({ node, ...props }) => (
-                                        <h2
-                                          className={`text-2xl font-semibold ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
-                                          {...props}
-                                        />
-                                      ),
-                                      h3: ({ node, ...props }) => (
-                                        <h3
-                                          className={`text-xl font-semibold ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
-                                          {...props}
-                                        />
-                                      ),
+                        {/* PromptExtraOptions */}
+                        <div>
+                          <PromptExtraOptions message_id={record.message_id} reply_to_message_id={null} parent_index={record_index} assistant_index={null} messageType="user" />
+                        </div>
+                        {record?.responses?.map((ai_msg, ai_msg_idx) => {
+                          // loading circle logic here
+                          return loading &&
+                            !loadingMessage &&
+                            !ai_msg.content ? (
+                            <motion.div
+                              key={ai_msg_idx}
+                              animate={{ scale: [1, 1.2, 1] }}
+                              transition={{
+                                duration: 0.4,
+                                ease: easeInOut,
+                                repeat: Infinity,
+                                repeatType: "loop",
+                              }}
+                              className="w-3 h-3 rounded-full bg-black"
+                            ></motion.div>
+                          ) : !loading && loadingMessage && !ai_msg.content ? (
+                              <div key={ai_msg_idx} className="flex flex-col gap-y-6 mt-4 w-full">
+                                  <p className="switzer-500 text-white/60 text-sm animate-pulse mb-2">{loadingMessage}</p>
+                                  {Array.from({ length: paragraphCount }).map((_, i) => (
+                                      <div key={i} className="flex flex-col gap-y-3">
+                                          <div className="h-4 w-36 rounded-md bg-gradient-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
+                                          <div className="flex flex-col gap-y-2">
+                                              <div className="h-3 w-full rounded-md bg-gradient-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
+                                              <div className="h-3 w-[85%] rounded-md bg-gradient-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
+                                              <div className="h-3 w-[70%] rounded-md bg-gradient-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
+                                          </div>
+                                          <div className="w-[80%] sm:w-[50%] md:w-[45%] lg:w-[30%] aspect-video rounded-md bg-gradient-to-br from-white/5 via-white/10 to-white/5 animate-pulse border border-white/5" />
+                                      </div>
+                                  ))}
+                              </div>
+                          ) : reportedMessageIDs &&
+                            !reportedMessageIDs.includes(ai_msg?.message_id) &&
+                            ai_msg_idx === record.active_message_index ? (
+                            <div key={ai_msg_idx}>
+                              <div className={`w-max min-w-40 max-w-full switzer-500 mt-2 rounded-md px-3 ${currentMode === "normal" ? "bg-white shadow-md py-2" : ""}`}>
+                                <ReactMarkdown
+                                  remarkPlugins={[remarkGfm]}
+                                  rehypePlugins={[rehypeRaw]}
+                                  components={{
+                                    // HEADERS
+                                    h1: ({ node, ...props }) => (
+                                      <h1
+                                        className="text-3xl font-bold"
+                                        {...props}
+                                      />
+                                    ),
+                                    h2: ({ node, ...props }) => (
+                                      <h2
+                                        className="text-2xl font-semibold"
+                                        {...props}
+                                      />
+                                    ),
+                                    h3: ({ node, ...props }) => (
+                                      <h3
+                                        className="text-xl font-semibold"
+                                        {...props}
+                                      />
+                                    ),
 
                                       // PARAGRAPH
                                       p: ({ node, ...props }) => (
