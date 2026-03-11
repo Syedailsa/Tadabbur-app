@@ -147,7 +147,7 @@ def get_chat_messages(session_id: str, user_id: str, supabase_client) -> List[st
 
     chat_messages = supabase_client.table('chat_messages').select('message_id', 'user_id', 'role', 'content', 'reply_to_message_id', 'feedback', 'audio_url', 'has_verse_audio', 'audio_data', 'has_verse_image', 'verse_images', 'story_data').in_("role", ["user", "assistant"]).eq('session_id', session_id).eq('user_id', user_id).order('created_at').execute().data
 
-    print(chat_messages)
+    # print(chat_messages)
     if chat_messages:
         return chat_messages
     else:
@@ -565,7 +565,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         current_mode = session.get("mode", "normal")
                     # set the active agent
                     active_agent = agent_module.main_agent if current_mode == "normal" else story_agent
-                    print("Session mode", current_mode)
+                    # print("Session mode", current_mode)
                     files_response = files_response.data
                     combined_file_content = ""
                     files_by_message = defaultdict(list)

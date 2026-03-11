@@ -45,14 +45,14 @@ import { defaultPrompts } from "@/static/data";
 import ModelBox from "../../components/chatbot/UI/ModelBox";
 import Controls from "../../components/chatbot/UI/Controls";
 import PromptExtraOptions from "../../components/chatbot/UI/PrompExtraOptions";
-import generateUUID from "@/utils/generateShortId";
+import generateUUID from "@/app/utils/generateShortId";
 import { ChatHisoryDialogueBox } from "../../components/chatbot/UI/ChatHistoryDialogueBox";
 import { SurahForAudios, SurahForVerseImages } from "@/app/components/chatbot/interfaces/Surah";
 import ReportContentDialogueBox from "../../components/chatbot/UI/ReportContentDialogueBox";
 import { ChatMessage } from "../../components/chatbot/interfaces/ChatMessage";
 import QuranDialogBox from "@/app/components/chatbot/UI/QuranDialogBox";
 import StoryContainer from "@/app/components/chatbot/UI/StoryContainer";
-import groupChatMessages from "@/utils/groupChatMessages";
+import groupChatMessages from "@/app/utils/groupChatMessages";
 import WaveForm from "../../components/chatbot/UI/WaveForm";
 import hidePromptExtraOptionsModelBoxArray from "@/app/components/chatbot/interfaces/hidePromptExtraOptionsModelBoxArray";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -856,7 +856,6 @@ function ChatContent() {
             messageScrollFlag.current = false;
             setLoadingMessage(null);
 
-            // add a new object for the upcoming assistant's message
             setHidePromptExtraOptionsModelBoxArray((prev) => {
               return [
                 ...(prev || []),
@@ -864,7 +863,6 @@ function ChatContent() {
               ];
             });
 
-            // Add a new assistant message
             setMessages((prev) => {
               if (!prev || prev.length == 0) {
                 return prev;
@@ -882,13 +880,10 @@ function ChatContent() {
                   lastUserMessage.number_of_responses += 1;
                 }
 
-                // initialize a new responses array if resend flag is false otherwise assign to oldMessages
-
                 lastUserMessage.responses = resend_flag
                   ? oldMessagesRef.current
                   : [];
 
-                // assign message_id and reply_to_message_id this time
                 lastUserMessage.responses.push({
                   role: "assistant",
                   message_id: message_id,
@@ -904,7 +899,6 @@ function ChatContent() {
                   story_data: story_data
                 });
 
-                // set the number of active message index
                 lastUserMessage.active_message_index =
                   lastUserMessage.number_of_responses - 1;
               }

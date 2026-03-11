@@ -1,10 +1,9 @@
 import requests
 import operator
 from data.data import reciters_name_array, surah_name_english_array, surah_name_english_translation_array
-from normalizeName import normalize_reciter_name
+from tools.normalizeName import normalize_reciter_name, normalize_surah
 from pydantic import BaseModel, Field
 from typing import Optional
-from backend.tools.normalizeName import normalize_surah
 from langchain.tools import tool
 from typing import List, Literal
 from langchain.tools import tool
