@@ -76,7 +76,7 @@ export default function QuranDialogBox(props: AudioDialogProps) {
 
   return (
     <div className="">
-      <div className={`flex gap-x-4 justify-center`}>
+      <div>
         {surahs?.map((surah, surah_index) =>
           surah_index === activeSurahIndex ? (
             <div className="border border-black/10 inset-shadow-2xs inset-shadow-black/5 rounded-md p-3 w-[95%] max-w-120" key={surah_index}>

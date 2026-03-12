@@ -174,11 +174,19 @@ def searchAsbabNuzul(
                         )
                     )
         query_embeddings = None
+        logger.info(f"Query: {query}")
         if query:
             query_embeddings = embeddings.embed_query(query)
 
         if not query_embeddings and not must:
-            return "No query or filters provided"
+            response_obj = {
+            "success": True,
+            "results": [],
+            "error": "No query or filters provided" 
+            }
+
+            return response_obj
+
 
         similar_points = qdrant_client.query_points(
             collection_name = COLLECTION_NAME,
@@ -196,13 +204,14 @@ def searchAsbabNuzul(
             "results": serializable,
             "error": "" 
         }
+        print(serializable)
         ASBAB_NUZUL_CACHE.update(
             prompt=cache_key,
             llm_string=llm_string,
             return_val=[Generation(text=json.dumps(serializable))]
         )
         logger.info("Cache updated with new Asbab Nuzul result")
-        print(response_obj)
+        
         return response_obj
     else:
         logger.warning("No results found for the user's query")

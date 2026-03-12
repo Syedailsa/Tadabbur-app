@@ -1,14 +1,26 @@
 import { useContext, useEffect, useRef } from "react";
-import { motion } from "framer-motion"
+import { AnimatePresence, motion } from "framer-motion"
 import { ChatContext, ChatRecord } from "@/app/context/chatbot/ChatContext";
 import { wsSendAsync } from "@/app/utils/retryOpernation";
 import NewChatIcon from "../../../../icons/new_chat_icon.svg"
 import { X } from "lucide-react";
+import { useState, useCallback } from "react";
+import { AlertTriangle, Trash2 } from "lucide-react";
 
 const ChatHistoryCupboard = () => {
 
     const { wsRef, openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox, setSelectedSessionID, chatHistory, currentMode } = useContext(ChatContext)!
     const cupBoardRef = useRef<HTMLDivElement>(null)
+
+    const [toasts, setToasts] = useState<{id: number; message: string}[]>([])
+    const [confirmState, setConfirmState] = useState<{sessionId: string; title: string; userId: string | null} | null>(null)
+    const toastCounter = useRef(0)
+
+    const showToast = useCallback((message: string) => {
+        const id = ++toastCounter.current;
+        setToasts(prev => [...prev, { id, message }]);
+        setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
+    }, []);
 
     const backgroundTheme = currentMode === "normal" ? "white" : "black"
     const fontTheme = currentMode === "normal" ? "black" : "white"
@@ -54,11 +66,12 @@ const ChatHistoryCupboard = () => {
                 mode: currentMode
             }).catch(() => { })
         setOpenChatHistoryDialogueBox(false)
-
     };
 
 
     return (
+        <>
+
         <motion.div ref={cupBoardRef} transition={{ duration: 0.3, ease: "linear" }} initial={{ x: "-100%" }}
             animate={{ x: "0%" }}
             exit={{ x: "-100%" }} className={`h-screen p-2 absolute left-0 z-20 border-r bg-${backgroundTheme} border-${fontTheme}/10 min-w-60 w-max max-w-60 md:w-70`}>
@@ -108,28 +121,43 @@ const ChatHistoryCupboard = () => {
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    if (window.confirm(`Are you sure you want to delete "${chat.title}"?`)) {
-                                        const user = sessionStorage.getItem('user');
-                                        let user_id = null;
-                                        if (user) {
-                                            try {
-                                                const userData = JSON.parse(user);
-                                                user_id = userData.id;
-                                            } catch (e) {
-                                                console.error("Error parsing user data:", e);
-                                            }
-                                        }
-                                        wsSendAsync(wsRef.current, {
-                                            type: "delete_session",
-                                            user_id: user_id,
-                                            session_id: chat.session_id,
-                                        });
+                                    const user = sessionStorage.getItem('user');
+                                    let user_id = null;
+                                    if (user) {
+                                        try{user_id = JSON.parse(user).id;}
+                                        catch(err) {console.error(err);}
                                     }
+                                    setConfirmState({ sessionId: chat.session_id, title: chat.title, userId: user_id });
                                 }}
                                 className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-red-500 hover:bg-red-600 text-white rounded-full p-1"
                             >
                                 <X size={12} />
                             </button>
+
+                            <AnimatePresence>
+                                {confirmState?.sessionId === chat.session_id && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+                                        transition={{ duration: 0.15 }}
+                                        onClick={e => e.stopPropagation()}
+                                        className="mt-1 flex items-center gap-2 bg-red-950/60 border border-red-500/30 rounded-md px-2 py-1.5"
+                                    >
+                                        <Trash2 size={11} className="text-red-500 shrink-0" />
+                                        <span className="switzer-500 text-[11px] text-red-300 flex-1">Delete {confirmState.title}?</span>
+                                        <button onClick={() => {
+                                            if (!wsRef.current) { showToast("Connection lost. Please refresh."); setConfirmState(null); return; }
+                                            wsSendAsync(wsRef.current, {
+                                                type: "delete_session",
+                                                user_id: confirmState.userId,
+                                                session_id: confirmState.sessionId,
+                                            }).catch(() => showToast(`Error deleting "${confirmState.title}". Please try again.`));
+                                            setConfirmState(null);
+                                        }} className="text-[11px] switzer-600 text-red-400 hover:text-red-300 px-1">Yes</button>
+                                        <button onClick={e => { e.stopPropagation(); setConfirmState(null); }}
+                                            className="text-[11px] switzer-600 text-white/40 hover:text-white/70 px-1">No</button>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                         </motion.div>
                     ))
                 ) : (
@@ -142,8 +170,26 @@ const ChatHistoryCupboard = () => {
                     </motion.div>
                 )}
             </motion.div>
+            
+                  
 
         </motion.div>
+        <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+            <AnimatePresence>
+                {toasts.map(toast => (
+                    <motion.div key={toast.id}
+                        initial={{ opacity: 0, x: 60 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 60 }}
+                        className="pointer-events-auto flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg shadow-xl border bg-zinc-900 border-red-500/30 text-white max-w-xs"
+                    >
+                        <AlertTriangle size={14} className="text-red-400 shrink-0" />
+                        <p className="switzer-500 text-[13px] flex-1">{toast.message}</p>
+                        <button onClick={() => setToasts(p => p.filter(t => t.id !== toast.id))} className="text-white/30 hover:text-white/70"><X size={12} /></button>
+                    </motion.div>
+                ))}
+            </AnimatePresence>
+        </div>
+        </>
+        
     )
 
 }

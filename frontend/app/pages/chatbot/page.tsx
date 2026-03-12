@@ -6,12 +6,7 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { ReactNode, useEffect, useRef, useState, CSSProperties, HTMLAttributes, Suspense } from "react";
 import Image from "next/image"
-import QuranPic from "../../../images/Quran.jpg"
-import QuranReading from "../../../images/QuranReading.jpg"
-import DesertPic from "../../../images/Desert.jpg"
-import ArkPic from "../../../images/OldArk.png"
 import ChatProvider from "@/app/providers/chatbot/ChatProvider";
-
 import DisclaimerIcon from "../../../icons/disclaimer.svg";
 import CrossIcon from "../../../icons/cross_icon.svg"
 import TextFileIcon from "../../../icons/text-file-icon.svg"
@@ -19,7 +14,7 @@ import SendIcon from "../../../icons/send_icon.svg";
 import PdfFileIcon from "../../../icons/pdf-file-icon.svg"
 import PlusIcon from "../../../icons/plus-icon-white.svg"
 import TadabburFontWhite from "../../../images/tadabbur-font-white.png"
-import TadabburFontBlack from "../../../images/tadabbur-font-black.jpeg"
+import TadabburFontBlack from "../../../images/tadabbur-font-black-cropped.jpeg"
 import EngagingIcon from "../../../icons/engage_icon.svg"
 import ArrowLeft from "../../../icons/arrow-left-bold.svg"
 import UndoArrow from "../../../icons/refresh.svg";
@@ -36,17 +31,13 @@ import {
 } from "framer-motion";
 import ProtectedRoute from "@/app/utils/ProtectedRoutes";
 import RegistrationForm from "@/app/components/chatbot/UI/ReactForm";
-import { ModelList } from "@/static/data";
+import { defaultPromptsNormalMode, defaultPromptsStoryMode, ModelList } from "@/static/data";
 import BottomOptions from "../../components/chatbot/UI/BottomOptions";
 import ExtraOptions from "../../components/chatbot/UI/ExtraOptions";
 import MicStoryMode from "@/app/components/chatbot/UI/MicStoryMode";
-// import PromptSuggestion from ".../icons/prompt_suggestion.svg";
-import { defaultPrompts } from "@/static/data";
 import ModelBox from "../../components/chatbot/UI/ModelBox";
-import Controls from "../../components/chatbot/UI/Controls";
 import PromptExtraOptions from "../../components/chatbot/UI/PrompExtraOptions";
 import generateUUID from "@/app/utils/generateShortId";
-import { ChatHisoryDialogueBox } from "../../components/chatbot/UI/ChatHistoryDialogueBox";
 import { SurahForAudios, SurahForVerseImages } from "@/app/components/chatbot/interfaces/Surah";
 import ReportContentDialogueBox from "../../components/chatbot/UI/ReportContentDialogueBox";
 import { ChatMessage } from "../../components/chatbot/interfaces/ChatMessage";
@@ -132,6 +123,8 @@ function ChatContent() {
     setStreamingMessageIndex(val);
   };
   const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
+  const [paragraphCount, setParagraphCount] = useState<number>(3);
+
   const pendingPromptRef = useRef<{
     input: string;
     guidelines: string | null;
@@ -209,19 +202,19 @@ function ChatContent() {
   }, [isStoryMode])
 
   useEffect(() => {
-  const savedPrompt = localStorage.getItem("tadabbur_pending_prompt");
-  if (savedPrompt) {
+    const savedPrompt = localStorage.getItem("tadabbur_pending_prompt");
+    if (savedPrompt) {
       try {
         const parsed = JSON.parse(savedPrompt);
         const isExpired = Date.now() - (parsed.timestamp || 0) > 3600000;
-      
-      if (isExpired) {
-        console.log(" Pending prompt expired, clearing from storage.");
-        localStorage.removeItem("tadabbur_pending_prompt");
-      } else {
-        pendingPromptRef.current = parsed;
-        console.log(" Recovered a valid pending message.");
-      }
+
+        if (isExpired) {
+          console.log(" Pending prompt expired, clearing from storage.");
+          localStorage.removeItem("tadabbur_pending_prompt");
+        } else {
+          pendingPromptRef.current = parsed;
+          console.log(" Recovered a valid pending message.");
+        }
       } catch (e) {
         localStorage.removeItem("tadabbur_pending_prompt");
       }
@@ -276,7 +269,6 @@ function ChatContent() {
     localStorage.clear();
     router.push('/pages/auth');
   };
-
 
   useEffect(() => {
     const audioEl = audioRef.current;
@@ -501,7 +493,7 @@ function ChatContent() {
     const connect = () => {
       if (totalReconnectAttempts.current >= MAX_RECONNECT_TRIES) {
         console.log(" Max reconnect attempts reached. Waiting for manual user action.");
-        setConnectionStatus("disconnected"); 
+        setConnectionStatus("disconnected");
         return;
       }
 
@@ -563,15 +555,15 @@ function ChatContent() {
 
       wsRef.current.onclose = () => {
         if (heartbeatRef.current) {
-            clearInterval(heartbeatRef.current);
-            heartbeatRef.current = null;
+          clearInterval(heartbeatRef.current);
+          heartbeatRef.current = null;
         }
         setConnectionStatus("disconnected");
         totalReconnectAttempts.current += 1;
         const delay = Math.min(1000 * Math.pow(2, reconnectAttemptRef.current), 30000);
-      
+
         console.log(`❌ Socket closed. Retrying in ${delay / 1000}s...`);
-        
+
         reconnectTimeout = setTimeout(() => {
           reconnectAttemptRef.current += 1;
           connect();
@@ -592,8 +584,8 @@ function ChatContent() {
         const type = data.type;
         switch (type) {
           case "pong":
-              console.log("Pong received - connection alive");
-              break;
+            console.log("Pong received - connection alive");
+            break;
           case "undo-report":
             const id = data.message_id;
             if (id) {
@@ -668,7 +660,7 @@ function ChatContent() {
             }
             break;
 
-          case "delete_session": 
+          case "delete_session":
             const delete_status = data.status;
             if (delete_status === "success") {
               window.dispatchEvent(new CustomEvent("tadabbur-session-deleted", {
@@ -683,10 +675,10 @@ function ChatContent() {
                 setHidePromptExtraOptionsModelBoxArray([]);
                 setLoading(false);
                 setIsGenerating(false);
-                
+
                 const u = localStorage.getItem("user");
                 let uid = null;
-                try { uid = u ? JSON.parse(u).id : null; } catch {}
+                try { uid = u ? JSON.parse(u).id : null; } catch { }
 
                 wsSendAsync(wsRef.current, {
                   type: "session-init",
@@ -696,16 +688,16 @@ function ChatContent() {
                 });
               }
 
-              
-              const user = localStorage.getItem("user");
-              let user_id: string = "" ;
 
-                try {
-                  const userData = JSON.parse(user || "{}");
-                  user_id = userData.id;
-                } catch (e) {
-                  console.error("Error parsing user data:", e);
-                
+              const user = localStorage.getItem("user");
+              let user_id: string = "";
+
+              try {
+                const userData = JSON.parse(user || "{}");
+                user_id = userData.id;
+              } catch (e) {
+                console.error("Error parsing user data:", e);
+
               }
 
               if (user_id) {
@@ -722,10 +714,10 @@ function ChatContent() {
               localStorage.setItem("tadabbur_pending_deletes", JSON.stringify(updated));
 
             } else {
-              alert("Error deleting chat session: " + data.error);
+
             }
-            break; 
-            
+            break;
+
           case "delete_all_sessions":
             const delete_all_status = data.status;
             if (delete_all_status === "success") {
@@ -739,7 +731,7 @@ function ChatContent() {
               setMessageIDs([]);
               setHidePromptExtraOptionsModelBoxArray([]);
               router.push('/pages/chatbot', { scroll: false });
-              
+
               wsSendAsync(wsRef.current, {
                 type: "session-init",
                 session_id: "",
@@ -752,7 +744,7 @@ function ChatContent() {
                 model: "kimi-k2-instruct-0905",
               });
             } else {
-              alert("Error deleting chat sessions: " + data.error);
+              alert("Error deleting sessions: " + data.error);
             }
             break;
 
@@ -775,20 +767,20 @@ function ChatContent() {
                   const pendingData = JSON.parse(saved);
                   // Only auto-send if it belongs to this session or session is new
                   const isCorrectSession = !pendingData.target_session_id || pendingData.target_session_id === session_id;
-                  
+
                   if (isCorrectSession && pendingData.input) {
                     console.log("🚀 Connection restored. Sending pending prompt from localStorage...");
-                    
+
                     ask(
-                      pendingData.input, 
-                      pendingData.guidelines, 
-                      pendingData.resend_flag, 
-                      pendingData.resend_message_id, 
+                      pendingData.input,
+                      pendingData.guidelines,
+                      pendingData.resend_flag,
+                      pendingData.resend_message_id,
                       pendingData.old_responses_attachments,
                       true,
                       null
                     );
-                    
+
                     localStorage.removeItem("tadabbur_pending_prompt");
                     pendingPromptRef.current = null;
                   }
@@ -845,6 +837,7 @@ function ChatContent() {
               ];
             });
 
+            // Add a new assistant message
             setMessages((prev) => {
               if (!prev || prev.length == 0) {
                 return prev;
@@ -925,9 +918,9 @@ function ChatContent() {
                   if (!prev || prev.length === 0) return prev;
                   const updated = [...prev];
                   const streamIndex = streamingMessageIndex ?? updated.length - 1;
-
                   if (streamIndex >= 0 && streamIndex < updated.length) {
                     const lastMsg = updated[streamIndex];
+                    if (!lastMsg.responses || lastMsg.responses.length === 0) return prev;
                     const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
 
                     updated[streamIndex].responses[lastResIdx].content =
@@ -979,6 +972,7 @@ function ChatContent() {
             const message = data.content ?? "Thinking to enhance response";
             setLoading(false)
             setLoadingMessage(message);
+            setParagraphCount(data.paragraph_count ?? 3);
             break;
           case "regenerate_required":
             const orphanMsgId = data.message_id;
@@ -1017,11 +1011,11 @@ function ChatContent() {
               ]);
             }
 
-              break;
-        default:
-          break;
+            break;
+          default:
+            break;
+        }
       }
-     }
     };
 
     connect();
@@ -1030,12 +1024,13 @@ function ChatContent() {
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
       if (wsRef.current) {
-        wsRef.current.onclose = null; 
+        wsRef.current.onclose = null;
         wsRef.current.onmessage = null;
         wsRef.current.close();
         wsRef.current = null;
-      } 
+      }
     };
+
   }, [reconnectTrigger]);
 
   useEffect(() => {
@@ -1142,7 +1137,7 @@ function ChatContent() {
       // generate a message ID for the user message if its not a resend message
       messageID = message_id || generateUUID();
       while (messageIDs?.includes(messageID)) {
-        messageID = generateUUID(); 
+        messageID = generateUUID();
       }
       setMessageIDs((prev) => {
         return [...(prev || []), messageID];
@@ -1169,14 +1164,14 @@ function ChatContent() {
 
     if (connectionStatus !== "connected" && !bypassCheck) {
       console.log("📡 Socket not ready. Saving prompt to pending queue.");
-      const pendingData = { 
-          input, 
-          guidelines, 
-          resend_flag, 
-          resend_message_id: messageID, 
-          old_responses_attachments,
-          target_session_id: urlSessionId,
-          timestamp: Date.now() 
+      const pendingData = {
+        input,
+        guidelines,
+        resend_flag,
+        resend_message_id: messageID,
+        old_responses_attachments,
+        target_session_id: urlSessionId,
+        timestamp: Date.now()
       };
       pendingPromptRef.current = pendingData;
       try {
@@ -1188,7 +1183,7 @@ function ChatContent() {
       setShowOfflineToast(true);
       setTimeout(() => setShowOfflineToast(false), 4000); // 4 seconds
 
-      return; 
+      return;
     }
 
     const userMessage: ChatMessage = {
@@ -1242,7 +1237,7 @@ function ChatContent() {
         resend_flag: resend_flag,
         resend_message_id: resend_message_id || "",
         new_file_context: fileContext,
-      }); 
+      });
       localStorage.removeItem("tadabbur_pending_prompt");
       setFileContext(null);
       if (inputRef.current) {
@@ -1253,10 +1248,10 @@ function ChatContent() {
       console.error("Failed to send message:", err);
       setConnectionStatus("disconnected");
       // Also save to pending if the actual send fails
-      const pendingData = { 
-          input, guidelines, resend_flag, resend_message_id, old_responses_attachments, 
-          target_session_id: urlSessionId,
-          timestamp: Date.now() 
+      const pendingData = {
+        input, guidelines, resend_flag, resend_message_id, old_responses_attachments,
+        target_session_id: urlSessionId,
+        timestamp: Date.now()
       };
       pendingPromptRef.current = pendingData;
       localStorage.setItem("tadabbur_pending_prompt", JSON.stringify(pendingData));
@@ -1371,15 +1366,15 @@ function ChatContent() {
           </AnimatePresence>
           <div className="fixed top-4 right-4 z-9999 flex flex-col items-end gap-y-2 pointer-events-none">
             <AnimatePresence mode="wait">
-              {connectionStatus === "disconnected" && (
-                <motion.span 
+              {/* {connectionStatus === "disconnected" && (
+                <motion.span
                   key="offline"
                   initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
                   className="bg-red-500 text-white px-3 py-1.5 rounded-full text-[0.7rem] switzer-600 shadow-lg animate-pulse"
                 >
-                  OFFLINE - TRYING TO RECONNECT 
+                  OFFLINE - TRYING TO RECONNECT
                 </motion.span>
-              )}
+              )} */}
               {showOfflineToast && (
                 <motion.div
                   initial={{ opacity: 0, y: 50 }}
@@ -1397,15 +1392,30 @@ function ChatContent() {
               )}
             </AnimatePresence>
           </div>
-          
-          <div className="absolute -top-2 right-4">
-            {currentMode === "story" ? (
-              <Image className="w-16 h-auto object-cover object-top" src={TadabburFontWhite}
-                alt="tadabbur-font-white" />
-            ) : (<Image className="w-16 h-auto object-cover object-top" src={TadabburFontBlack}
-              alt="tadabbur-font-black" />)}
+          {/* navbar for top options background */}
+          <div id="navbar" className={`absolute w-full h-14 bg-${currentMode === "normal" ? "white" : "black"} z-20 flex px-2`}>
+            <div className="self-center mr-4">
+              <HamBurger wsRef={wsRef} openChatHistoryDialogueBox={openChatHistoryDialogueBox} setOpenChatHistoryDialogueBox={setOpenChatHistoryDialogueBox} currentMode={currentMode} />
+            </div>
+            <div className="absolute top-4 right-4">
+              {currentMode === "story" ? (
+                <Image className="w-16 h-auto object-cover object-center" src={TadabburFontWhite}
+                  alt="tadabbur-font-white" />
+              ) : (<Image className="w-16 h-auto object-cover object-center" src={TadabburFontBlack}
+                alt="tadabbur-font-black" />)}
+            </div>
+
+            <div>
+              <button
+                onClick={handleLogout}
+                className="cursor-pointer mt-2 px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm font-medium rounded-md shadow-md transition-colors"
+              >
+                Logout
+              </button>
+            </div>
+
           </div>
-          
+
           <ChatProvider
             chatHistory={chatHistory}
             setChatHistory={setChatHistory}
@@ -1433,8 +1443,6 @@ function ChatContent() {
             openStoryModeExtraOptions={openStoryModeExtraOptions}
             setOpenStoryModeExtraOptions={setOpenStoryModeExtraOptions}
           >
-            {/* renders only when open chat history dialogue box is true */}
-            {/* <ChatHisoryDialogueBox /> */}
 
             <AnimatePresence>
               {openChatHistoryDialogueBox && (
@@ -1448,24 +1456,10 @@ function ChatContent() {
             </AnimatePresence>
 
             <div className={`w-full h-full flex flex-col items-center z-10 ${currentMode === "normal" ? "" : "black-scrollbar"} overflow-y-auto`}>
-              <div className="absolute top-0 p-2 w-full">
-                {/* 
-              <div className="pointer-events-auto">
-                <Controls wsRef={wsRef} />
-              </div> */}
 
-
-                <button
-                  onClick={handleLogout}
-                  className="cursor-pointer ml-16 mt-2 px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm font-medium rounded-md shadow-md transition-colors"
-                >
-                  Logout
-                </button>
-              </div>
-              <HamBurger />
               <div
                 id="chat-bot"
-                className={`w-full ${messages && messages?.length > 0 ? "h-max mt-16" : "h-full items-center mt-12"} px-4 lg:w-2/3 flex flex-col gap-y-4 ${!messages ? "justify-center" : ""}`}
+                className={`w-full ${messages && messages?.length > 0 ? "h-max mt-16" : "items-center mt-12"} px-4 lg:w-2/3 flex flex-col gap-y-4 ${!messages ? "justify-center" : ""}`}
               >
                 <AnimatePresence>
 
@@ -1513,22 +1507,19 @@ function ChatContent() {
                             {Array.from({ length: 3 }).map((_, i) => (
                               <motion.div key={i} id="carousel-default-prompts-story" className="w-1/2">
                                 <div className="grid grid-cols-4 grid-rows-1 gap-x-4 w-full">
-                                  <motion.div whileHover={{ scale: 1.02 }} transition={{ duration: 0.5, ease: easeInOut }} className="cursor-pointer w-max flex flex-col gap-y-1 p-1.5 rounded-lg border border-white/10">
-                                    <Image className="rounded-md md:w-36 md:h-34 w-34 h-30 object-cover object-top" alt="smiling-boy" src={QuranReading} />
-                                    <p className="switzer-500 text-white/80 w-36">Generate the story of the people of the Cave.</p>
-                                  </motion.div>
-                                  <motion.div whileHover={{ scale: 1.02 }} transition={{ duration: 0.3, ease: easeInOut }} className="cursor-pointer w-max flex flex-col gap-y-1 p-1.5 rounded-lg border border-white/10">
-                                    <Image className="rounded-md md:w-36 md:h-34 w-34 h-30 object-cover object-top" alt="smiling-boy" src={QuranPic} />
-                                    <p className="switzer-500 text-white/80 w-36">Narrate the occasion of first revelation.</p>
-                                  </motion.div>
-                                  <motion.div whileHover={{ scale: 1.02 }} transition={{ duration: 0.3, ease: easeInOut }} className="cursor-pointer w-max flex flex-col gap-y-1 p-1.5 rounded-lg border border-white/10">
-                                    <Image className="rounded-md md:w-36 md:h-34 w-34 h-30 object-cover object-top" alt="smiling-boy" src={DesertPic} />
-                                    <p className="switzer-500 text-white/80 w-36">Generate the story of Prophet Yusuf عليه السلام.</p>
-                                  </motion.div>
-                                  <motion.div whileHover={{ scale: 1.02 }} transition={{ duration: 0.3, ease: easeInOut }} className="cursor-pointer w-max flex flex-col gap-y-1 p-1.5 rounded-lg border border-white/10">
-                                    <Image className="rounded-md md:w-36 md:h-34 w-34 h-30 object-cover object-top" alt="old-ark" src={ArkPic} />
-                                    <p className="switzer-500 text-white/80 w-36">Generate the story of Prophet Noah عليه السلام and his people.</p>
-                                  </motion.div>
+                                  {defaultPromptsStoryMode.map((record, index) => {
+                                    return (
+                                      <motion.div key={index} whileHover={{ scale: 1.02 }} transition={{ duration: 0.5, ease: easeInOut }}
+                                        onClick={() => {
+                                          ask(
+                                            `${record.prompt}`,
+                                          );
+                                        }} className="cursor-pointer w-max flex flex-col gap-y-1 p-1.5 rounded-lg border border-white/10">
+                                        <Image className="rounded-md md:w-36 md:h-34 w-34 h-30 object-cover object-top" alt="smiling-boy" src={record.imageSrc} />
+                                        <p className="switzer-500 text-white/80 w-36">{record.prompt}</p>
+                                      </motion.div>
+                                    )
+                                  })}
                                 </div>
                               </motion.div>
                             ))}
@@ -1546,13 +1537,19 @@ function ChatContent() {
                               repeat: Infinity,
                               repeatType: "loop",
                             }}
+                            onMouseOver={() => {
+                              controls.stop();
+                            }}
+                            onMouseLeave={() => {
+                              controls.start({ x: "-60%" });
+                            }}
                             className="w-[1200%] md:w-[600%] flex gap-x-2"
                           >
                             {Array.from({ length: 2 }).map((_, i) => (
                               <motion.div key={i} id="carousel-default-prompts-normal" className="carousel w-1/2">
                                 <div className="carousel-controls-slider flex">
                                   <div className="h-max grid grid-cols-6 grid-rows-1 rounded-md gap-4 w-full">
-                                    {defaultPrompts.map((prompt, index) => (
+                                    {defaultPromptsNormalMode.map((prompt, index) => (
                                       <motion.div
                                         key={index}
                                         whileHover={{ scale: 1.01 }}
@@ -1560,12 +1557,7 @@ function ChatContent() {
                                           duration: 0.5,
                                           ease: easeInOut,
                                         }}
-                                        onMouseOver={() => {
-                                          controls.stop();
-                                        }}
-                                        onMouseLeave={() => {
-                                          controls.start({ x: "-60%" });
-                                        }}
+
                                         onClick={() => {
                                           ask(
                                             `${prompt.title} ${prompt.description}`,
@@ -1603,340 +1595,352 @@ function ChatContent() {
                 </AnimatePresence>
 
                 <AnimatePresence mode="popLayout">
-                  {/* first render user messages */}
-                  {messages?.map((record, record_index) => {
-                    return (
-                      <div key={record_index}>
-                        {record?.attachments?.length > 0 && (
-                          record.attachments.map((attachment, attachment_index) => {
-                            return (
-                              <div key={attachment_index} id="chatbot-messages-box" className="w-max min-w-60 max-w-70 border border-black/5 ml-auto px-3 py-3 rounded-md text-xs flex items-center gap-x-2 my-2 relative">
-                                {attachment.attachmentType === "text/plain" ? (
-                                  <div className="p-1 border border-[#FFA800]/10 shadow-[0.1rem] rounded-md bg-[#FFA800]/10">
-                                    <TextFileIcon className="fill-current text-blue-400 w-8 h-8" />
+                  {messages && messages.length > 0 && (
+                    messages.map((record, record_index) => {
+                      return (
+                        <div key={record_index}>
+                          {record?.attachments?.length > 0 && (
+                            record.attachments.map((attachment, attachment_index) => {
+                              return (
+                                <div key={attachment_index} id="chatbot-messages-box" className="w-max min-w-60 max-w-70 border border-black/5 ml-auto px-3 py-3 rounded-md text-xs flex items-center gap-x-2 my-2 relative">
+                                  {attachment.attachmentType === "text/plain" ? (
+                                    <div className="p-1 border border-[#FFA800]/10 shadow-[0.1rem] rounded-md bg-[#FFA800]/10">
+                                      <TextFileIcon className="fill-current text-blue-400 w-8 h-8" />
+                                    </div>
+                                  ) : attachment.attachmentType === "application/pdf" ? (
+                                    <PdfFileIcon className="fill-current text-blue-400 w-8 h-8" />
+                                  ) : (null)}
+                                  <div className="absolute border border-black/5 rounded-md w-max px-2 py-0.5 poppins-semibold -top-3 z-10 -right-2 shadow-2xs fill-current text-black/30 bg-gray-50 subpixel-antialiased">
+                                    <p>ATTACHED</p>
                                   </div>
-                                ) : attachment.attachmentType === "application/pdf" ? (
-                                  <PdfFileIcon className="fill-current text-blue-400 w-8 h-8" />
-                                ) : (null)}
-                                <div className="absolute border border-black/5 rounded-md w-max px-2 py-0.5 poppins-semibold -top-3 z-10 -right-2 shadow-2xs fill-current text-black/30 bg-gray-50 subpixel-antialiased">
-                                  <p>ATTACHED</p>
+                                  <div className="flex flex-col gap-y-0.5">
+                                    <p className="roboto-600 text-[0.9rem]">{attachment.attachmentName}</p>
+                                    <p className="subpixel-antialiased text-black/70" style={{ fontStyle: "italic" }}>
+                                      {attachment.attachmentType && attachment.attachmentType === "text/plain" ? "Text"
+                                        : attachment.attachmentType === "application/pdf" ? "PDF"
+                                          : "File"} File
+                                    </p>
+                                  </div>
                                 </div>
-                                <div className="flex flex-col gap-y-0.5">
-                                  <p className="roboto-600 text-[0.9rem]">{attachment.attachmentName}</p>
-                                  <p className="subpixel-antialiased text-black/70" style={{ fontStyle: "italic" }}>
-                                    {attachment.attachmentType && attachment.attachmentType === "text/plain" ? "Text"
-                                      : attachment.attachmentType === "application/pdf" ? "PDF"
-                                        : "File"} File
-                                  </p>
-                                </div>
-                              </div>
-                            )
-                          })
-                        )}
-                        <div>
-                          <p className={`ml-auto w-max min-w-40 max-w-[20rem] rounded-md switzer-500 py-2 shadow-md px-3 text-white ${currentMode === "normal" ? "border bg-neutral-900 border-black/5" : "bg-linear-to-b from-[#570900] to-[#8A0F00]"}`}>
-                            {record.content}
-                          </p>
-                        </div>
+                              )
+                            })
+                          )}
+                          <div>
+                            <p className={`ml-auto w-max min-w-40 max-w-[20rem] rounded-md switzer-500 py-2 shadow-md px-3 text-white ${currentMode === "normal" ? "border bg-neutral-900 border-black/5" : "bg-linear-to-b from-[#570900] to-[#8A0F00]"}`}>
+                              {record.content}
+                            </p>
+                          </div>
 
-                        {/* PromptExtraOptions */}
-                        <div>
-                          <PromptExtraOptions message_id={record.message_id} reply_to_message_id={null} parent_index={record_index} assistant_index={null} messageType="user" />
-                        </div>
-                        {record?.responses?.map((ai_msg, ai_msg_idx) => {
-                          // loading circle logic here
-                          return loading &&
-                            !loadingMessage &&
-                            !ai_msg.content ? (
-                            <motion.div
-                              key={ai_msg_idx}
-                              animate={{ scale: [1, 1.2, 1] }}
-                              transition={{
-                                duration: 0.4,
-                                ease: easeInOut,
-                                repeat: Infinity,
-                                repeatType: "loop",
-                              }}
-                              className="w-3 h-3 rounded-full bg-black"
-                            ></motion.div>
-                          ) : !loading && loadingMessage && !ai_msg.content ? (
-                            <p key={ai_msg_idx} id="loading-message" className={`switzer-500 animate-pulse ${currentMode === "normal" ? "" : "text-white/80"}`}>{loadingMessage}</p>
-                          ) : reportedMessageIDs &&
-                            !reportedMessageIDs.includes(ai_msg?.message_id) &&
-                            ai_msg_idx === record.active_message_index ? (
-                            <div key={ai_msg_idx}>
-                              <div className={`w-max min-w-40 max-w-full switzer-500 mt-2 rounded-md px-3 ${currentMode === "normal" ? "bg-white shadow-md py-2" : ""}`}>
-                                <ReactMarkdown
-                                  remarkPlugins={[remarkGfm]}
-                                  rehypePlugins={[rehypeRaw]}
-                                  components={{
-                                    // HEADERS
-                                    h1: ({ node, ...props }) => (
-                                      <h1
-                                        className="text-3xl font-bold"
-                                        {...props}
-                                      />
-                                    ),
-                                    h2: ({ node, ...props }) => (
-                                      <h2
-                                        className="text-2xl font-semibold"
-                                        {...props}
-                                      />
-                                    ),
-                                    h3: ({ node, ...props }) => (
-                                      <h3
-                                        className="text-xl font-semibold"
-                                        {...props}
-                                      />
-                                    ),
-
-                                    // PARAGRAPH
-                                    p: ({ node, ...props }) => (
-                                      <p
-                                        className={`leading-7 my-2 ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
-                                        {...props}
-                                      />
-                                    ),
-
-                                    // STRONG ( **bold** )
-                                    strong: ({ node, ...props }) => (
-                                      <strong
-                                        className="font-bold text-black"
-                                        {...props}
-                                      />
-                                    ),
-
-                                    // EMPHASIS ( *italic* )
-                                    em: ({ node, ...props }) => (
-                                      <em
-                                        className="italic text-gray-700"
-                                        {...props}
-                                      />
-                                    ),
-
-                                    // LINE BREAK
-                                    br: ({ node, ...props }) => <br />,
-
-                                    // LINKS
-                                    a: ({ node, ...props }) => (
-                                      <a
-                                        className="text-blue-600 underline wrap-break-word"
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        {...props}
-                                      />
-                                    ),
-
-                                    // LISTS
-                                    ul: ({ node, ...props }) => (
-                                      <ul
-                                        className="list-disc pl-6"
-                                        {...props}
-                                      />
-                                    ),
-                                    ol: ({ node, ...props }) => (
-                                      <ol
-                                        className="list-decimal pl-6"
-                                        {...props}
-                                      />
-                                    ),
-                                    li: ({ node, ...props }) => (
-                                      <li className="my-1" {...props} />
-                                    ),
-                                    blockquote: ({ node, ...props }) => (
-                                      <blockquote
-                                        className="border-l-4 border-gray-400 pl-4 italic my-3"
-                                        {...props}
-                                      />
-                                    ),
-
-                                    // HORIZONTAL RULE
-                                    hr: () => (
-                                      <hr className="my-4 border-gray-300" />
-                                    ),
-
-                                    // IMAGES
-                                    img: ({ node, ...props }) => (
-                                      <img
-                                        className="rounded-md my-2"
-                                        alt=""
-                                        {...props}
-                                      />
-                                    ),
-                                    table: ({ node, ...props }) => (
-                                      <div className="overflow-x-auto my-4 border border-black/20 rounded-lg shadow-sm">
-                                        <table className="min-w-full divide-y divide-gray-200" {...props} />
-                                      </div>
-                                    ),
-                                    thead: ({ node, ...props }) => (
-                                      <thead
-                                        className="bg-gray-50"
-                                        {...props}
-                                      />
-                                    ),
-                                    tbody: ({ node, ...props }) => (
-                                      <tbody
-                                        className="bg-white divide-y divide-gray-200"
-                                        {...props}
-                                      />
-                                    ),
-                                    tr: ({ node, ...props }) => (
-                                      <tr
-                                        className="hover:bg-gray-50"
-                                        {...props}
-                                      />
-                                    ),
-                                    th: ({ node, ...props }) => (
-                                      <th className="px-4 py-3 text-left text-sm font-medium text-black uppercase tracking-wider border-b" {...props} />
-                                    ),
-                                    td: ({ node, ...props }) => (
-                                      <td className="px-4 py-3 text-sm text-gray-700 border-b border-black/20 whitespace-pre-wrap" {...props} />
-                                    ),
-                                    code({
-                                      inline,
-                                      className,
-                                      children,
-                                      ...props
-                                    }: {
-                                      inline?: boolean;
-                                      className?: string;
-                                      children?: ReactNode;
-                                    } & HTMLAttributes<HTMLElement>) {
-                                      const match = /language-(\w+)/.exec(className || '');
-
-                                      if (!inline && match) {
-                                        // Create a clean props object without HTML attributes that conflict
-                                        const syntaxHighlighterProps = {
-                                          language: match[1],
-                                          PreTag: "div" as const,
-                                          className: "rounded-md shadow-sm my-4",
-                                          style: dracula as { [key: string]: CSSProperties }
-                                        };
-
-                                        return (
-                                          <SyntaxHighlighter
-                                            {...syntaxHighlighterProps}
-                                          >
-                                            {String(children).replace(/\n$/, "")}
-                                          </SyntaxHighlighter>
-                                        );
-                                      } else {
-                                        return (
-                                          <code
-                                            className="bg-gray-100 text-red-500 px-1.5 py-0.5 rounded text-sm font-mono"
-                                            {...props}
-                                          >
-                                            {children}
-                                          </code>
-                                        );
-                                      }
-                                    },
+                          {/* PromptExtraOptions */}
+                          <div>
+                            <PromptExtraOptions message_id={record.message_id} reply_to_message_id={null} parent_index={record_index} assistant_index={null} messageType="user" />
+                          </div>
+                          {record?.responses?.map((ai_msg, ai_msg_idx) => {
+                            // loading circle logic here
+                            return loading &&
+                              !loadingMessage &&
+                              !ai_msg.content ? (
+                              <div key={ai_msg_idx}
+                                className="px-3">
+                                <motion.div
+                                  animate={{ scale: [1, 1.2, 1] }}
+                                  transition={{
+                                    duration: 0.4,
+                                    ease: easeInOut,
+                                    repeat: Infinity,
+                                    repeatType: "loop",
                                   }}
-                                >
-                                  {preprocessContent(ai_msg.content)}
-                                </ReactMarkdown>
+                                  className={`w-3 h-3 rounded-full ${currentMode === "normal" ? "bg-black" : "bg-white"}`}
+                                ></motion.div>
                               </div>
-
-                              {ai_msg.has_verse_audio && ai_msg.verse_audio_data.length > 0 && streamingMessageIndex != record_index && (
-                                <>
-                                  <br />
-                                  <QuranDialogBox
-                                    type="audio"
-                                    surahs={ai_msg?.verse_audio_data}
-                                  />
-                                </>
-                              )}
-
-                              {ai_msg.has_verse_image && ai_msg.verse_images.length > 0 && streamingMessageIndex != record_index && (
-                                <>
-                                  <br />
-                                  <QuranDialogBox
-                                    type="read"
-                                    surahs={ai_msg?.verse_images}
-                                  />
-                                </>
-                              )}
-                              {ai_msg.story_data?.length > 0 && streamingMessageIndex != record_index && (
-                                <StoryContainer story_data={ai_msg.story_data} />
-                              )}
-                              {streamingMessageIndex != record_index &&
-                                reportedMessageIDs &&
-                                !reportedMessageIDs.includes(
-                                  ai_msg?.message_id
-                                ) && (
-                                  <div>
-                                    <PromptExtraOptions
-                                      message_id={ai_msg?.message_id}
-                                      reply_to_message_id={
-                                        ai_msg?.reply_to_message_id
-                                      }
-                                      parent_index={record_index}
-                                      assistant_index={ai_msg_idx}
-                                      messageType={"assistant"}
-                                    />
+                            ) : !loading && loadingMessage && !ai_msg.content ? (
+                              <div key={ai_msg_idx} className="flex flex-col gap-y-6 mt-4 w-full">
+                                <p className="switzer-500 text-white/60 text-sm animate-pulse mb-2">{loadingMessage}</p>
+                                {Array.from({ length: paragraphCount }).map((_, i) => (
+                                  <div key={i} className="flex flex-col gap-y-3">
+                                    <div className="h-4 w-36 rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
+                                    <div className="flex flex-col gap-y-2">
+                                      <div className="h-3 w-full rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
+                                      <div className="h-3 w-[85%] rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
+                                      <div className="h-3 w-[70%] rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
+                                    </div>
+                                    <div className="w-[80%] sm:w-[50%] md:w-[45%] lg:w-[30%] h-auto aspect-video rounded-md bg-linear-to-br from-white/5 via-white/10 to-white/5 animate-pulse border border-white/5" />
                                   </div>
+                                ))}
+                              </div>
+                            ) : reportedMessageIDs &&
+                              !reportedMessageIDs.includes(ai_msg?.message_id) &&
+                              ai_msg_idx === record.active_message_index ? (
+                              <div key={ai_msg_idx}>
+                                <div className={`w-max min-w-40 max-w-full switzer-500 mt-2 rounded-md px-3 ${currentMode === "normal" ? "bg-white shadow-md py-2" : ""}`}>
+                                  <ReactMarkdown
+                                    remarkPlugins={[remarkGfm]}
+                                    rehypePlugins={[rehypeRaw]}
+                                    components={{
+                                      // HEADERS
+                                      h1: ({ node, ...props }) => (
+                                        <h1
+                                          className={`text-3xl font-bold ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
+                                          {...props}
+                                        />
+                                      ),
+                                      h2: ({ node, ...props }) => (
+                                        <h2
+                                          className={`text-2xl font-semibold ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
+                                          {...props}
+                                        />
+                                      ),
+                                      h3: ({ node, ...props }) => (
+                                        <h3
+                                          className={`text-xl font-semibold ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
+                                          {...props}
+                                        />
+                                      ),
+
+                                      // PARAGRAPH
+                                      p: ({ node, ...props }) => (
+                                        <p
+                                          className={`leading-7 my-2 ${currentMode === "normal" ? "text-gray-700" : "text-white"} wrap-break-word`}
+                                          {...props}
+                                        />
+                                      ),
+
+                                      // STRONG ( **bold** )
+                                      strong: ({ node, ...props }) => (
+                                        <strong
+                                          className={`font-bold text-black ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
+                                          {...props}
+                                        />
+                                      ),
+
+                                      // EMPHASIS ( *italic* )
+                                      em: ({ node, ...props }) => (
+                                        <em
+                                          className={`italic ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
+                                          {...props}
+                                        />
+                                      ),
+
+                                      // LINE BREAK
+                                      br: ({ node, ...props }) => <br />,
+
+                                      // LINKS
+                                      a: ({ node, ...props }) => (
+                                        <a
+                                          className={`${currentMode === "normal" ? "text-blue-600" : "text-blue-400"}  underline wrap-break-word`}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          {...props}
+                                        />
+                                      ),
+
+                                      // LISTS
+                                      ul: ({ node, ...props }) => (
+                                        <ul
+                                          className={`list-disc pl-6 ${currentMode === "normal" ? "text-black" : "text-white"}`}
+                                          {...props}
+                                        />
+                                      ),
+                                      ol: ({ node, ...props }) => (
+                                        <ol
+                                          className={`list-decimal pl-6 ${currentMode === "normal" ? "text-black" : "text-white"}`}
+                                          {...props}
+                                        />
+                                      ),
+                                      li: ({ node, ...props }) => (
+                                        <li className={`my-1 ${currentMode === "normal" ? "text-black" : "text-white"}`} {...props} />
+                                      ),
+                                      blockquote: ({ node, ...props }) => (
+                                        <blockquote
+                                          className={`border-l-4 border-gray-400 pl-4 italic my-3 ${currentMode === "normal" ? "text-black" : "text-white"}`}
+                                          {...props}
+                                        />
+                                      ),
+
+                                      // HORIZONTAL RULE
+                                      hr: () => (
+                                        <hr className="my-4 border-gray-300" />
+                                      ),
+
+                                      table: ({ node, ...props }) => (
+                                        <div className="overflow-x-auto my-4 border border-black/20 rounded-lg shadow-sm">
+                                          <table className="min-w-full divide-y divide-gray-200" {...props} />
+                                        </div>
+                                      ),
+                                      thead: ({ node, ...props }) => (
+                                        <thead
+                                          className="bg-gray-50"
+                                          {...props}
+                                        />
+                                      ),
+                                      tbody: ({ node, ...props }) => (
+                                        <tbody
+                                          className="bg-white divide-y divide-gray-200"
+                                          {...props}
+                                        />
+                                      ),
+                                      tr: ({ node, ...props }) => (
+                                        <tr
+                                          className="hover:bg-gray-50"
+                                          {...props}
+                                        />
+                                      ),
+                                      th: ({ node, ...props }) => (
+                                        <th className={`px-4 py-3 text-left text-sm font-medium ${currentMode === "normal" ? "text-black" : "text-white"} uppercase tracking-wider border-b`} {...props} />
+                                      ),
+                                      td: ({ node, ...props }) => (
+                                        <td className={`px-4 py-3 text-sm border-b border-black/20 whitespace-pre-wrap ${currentMode === "normal" ? "text-gray-700" : "text-white"}`} {...props} />
+                                      ),
+                                      code({
+                                        inline,
+                                        className,
+                                        children,
+                                        ...props
+                                      }: {
+                                        inline?: boolean;
+                                        className?: string;
+                                        children?: ReactNode;
+                                      } & HTMLAttributes<HTMLElement>) {
+                                        const match = /language-(\w+)/.exec(className || '');
+
+                                        if (!inline && match) {
+                                          // Create a clean props object without HTML attributes that conflict
+                                          const syntaxHighlighterProps = {
+                                            language: match[1],
+                                            PreTag: "div" as const,
+                                            className: "rounded-md shadow-sm my-4",
+                                            style: dracula as { [key: string]: CSSProperties }
+                                          };
+
+                                          return (
+                                            <SyntaxHighlighter
+                                              {...syntaxHighlighterProps}
+                                            >
+                                              {String(children).replace(/\n$/, "")}
+                                            </SyntaxHighlighter>
+                                          );
+                                        } else {
+                                          return (
+                                            <code
+                                              className={`bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono ${currentMode === "normal" ? "text-black" : "text-white"}`}
+                                              {...props}
+                                            >
+                                              {children}
+                                            </code>
+                                          );
+                                        }
+                                      },
+                                    }}
+                                  >
+                                    {preprocessContent(ai_msg.content)}
+                                  </ReactMarkdown>
+                                </div>
+
+                                {ai_msg.has_verse_audio && ai_msg.verse_audio_data.length > 0 && streamingMessageIndex != record_index && (
+                                  <>
+                                    <br />
+                                    <QuranDialogBox
+                                      type="audio"
+                                      surahs={ai_msg?.verse_audio_data}
+                                    />
+                                  </>
                                 )}
 
-                            </div>
-                          ) : reportedMessageIDs &&
-                            reportedMessageIDs.includes(ai_msg?.message_id) ? (
-                            // reportedmessage component here
-                            <div
-                              key={ai_msg_idx}
-                              className="flex flex-col gap-y-1.5 w-[90%] max-w-120 "
-                            >
-                              <div className="h-max rounded-md shadow-md min-h-25 border border-red-200/10 px-2 pt-2 pb-3">
-                                <div className="mb-0.5 w-full flex justify-between">
-                                  <p
-                                    id="report-title"
-                                    className="text-red-800 switzer-500 text-[1.1rem] tracking-[-0.04rem]"
-                                  >
-                                    This response is reported
-                                  </p>
-                                  <DisclaimerIcon className="w-5 h-5 fill-current text-red-700/90" />
-                                </div>
+                                {ai_msg.has_verse_image && ai_msg.verse_images.length > 0 && streamingMessageIndex != record_index && (
+                                  <>
+                                    <br />
+                                    <QuranDialogBox
+                                      type="read"
+                                      surahs={ai_msg?.verse_images}
+                                    />
+                                  </>
+                                )}
+                                {ai_msg.story_data?.length > 0 && streamingMessageIndex != record_index && (
+                                  <StoryContainer story_data={ai_msg.story_data} />
+                                )}
+                                {streamingMessageIndex != record_index &&
+                                  reportedMessageIDs &&
+                                  !reportedMessageIDs.includes(
+                                    ai_msg?.message_id
+                                  ) && (
+                                    <div>
+                                      <PromptExtraOptions
+                                        message_id={ai_msg?.message_id}
+                                        reply_to_message_id={
+                                          ai_msg?.reply_to_message_id
+                                        }
+                                        parent_index={record_index}
+                                        assistant_index={ai_msg_idx}
+                                        messageType={"assistant"}
+                                      />
+                                    </div>
+                                  )}
 
-                                <p
-                                  id="report-description"
-                                  className="switzer-500 text-black/60 tracking-tight"
-                                >
-                                  This response promotes violence or self-harm
-                                  and goes against our community policies.
-                                </p>
                               </div>
-                              <div className="flex items-center gap-x-2 px-1">
-                                <div id="learn-more-box" className="ml-auto">
-                                  <p className="inter-500 text-[0.9rem] text-red-700/80 cursor-pointer hover:text-red-700 tracking-tight">
-                                    Learn More about guidelines
+                            ) : reportedMessageIDs &&
+                              reportedMessageIDs.includes(ai_msg?.message_id) ? (
+                              // reportedmessage component here
+                              <div
+                                key={ai_msg_idx}
+                                className="flex flex-col gap-y-1.5 w-[90%] max-w-120 "
+                              >
+                                <div className="h-max rounded-md shadow-md min-h-25 border border-red-200/10 px-2 pt-2 pb-3">
+                                  <div className="mb-0.5 w-full flex justify-between">
+                                    <p
+                                      id="report-title"
+                                      className="text-red-800 switzer-500 text-[1.1rem] tracking-[-0.04rem]"
+                                    >
+                                      This response is reported
+                                    </p>
+                                    <DisclaimerIcon className="w-5 h-5 fill-current text-red-700/90" />
+                                  </div>
+
+                                  <p
+                                    id="report-description"
+                                    className="switzer-500 text-black/60 tracking-tight"
+                                  >
+                                    This response promotes violence or self-harm
+                                    and goes against our community policies.
                                   </p>
                                 </div>
-                                <div className="ml-1 w-[0.5px] h-3.5 bg-black/40"></div>
-                                <div
-                                  onClick={() => {
-                                    wsSendAsync(wsRef.current, {
-                                      type: "undo-report",
-                                      message_id: ai_msg.message_id,
-                                    });
-                                  }}
-                                  id="undo-report-box"
-                                  className="undo-report-box flex justify-center items-center gap-x-2 flex-row-reverse px-2 py-1 hover:bg-black/5 rounded-md cursor-pointer"
-                                >
-                                  <p className="switzer-500 text-[0.9rem]">
-                                    Undo
-                                  </p>
-                                  <UndoArrow className="w-3.5 h-3.5" />
+                                <div className="flex items-center gap-x-2 px-1">
+                                  <div id="learn-more-box" className="ml-auto">
+                                    <p className="inter-500 text-[0.9rem] text-red-700/80 cursor-pointer hover:text-red-700 tracking-tight">
+                                      Learn More about guidelines
+                                    </p>
+                                  </div>
+                                  <div className="ml-1 w-[0.5px] h-3.5 bg-black/40"></div>
+                                  <div
+                                    onClick={() => {
+                                      wsSendAsync(wsRef.current, {
+                                        type: "undo-report",
+                                        message_id: ai_msg.message_id,
+                                      });
+                                    }}
+                                    id="undo-report-box"
+                                    className="undo-report-box flex justify-center items-center gap-x-2 flex-row-reverse px-2 py-1 hover:bg-black/5 rounded-md cursor-pointer"
+                                  >
+                                    <p className="switzer-500 text-[0.9rem]">
+                                      Undo
+                                    </p>
+                                    <UndoArrow className="w-3.5 h-3.5" />
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          ) : null;
-                        })}
-                      </div>
-                    );
-                  })}
+                            ) : null;
+                          })}
+
+                        </div>
+                      )
+                    })
+                  )}
+
                 </AnimatePresence >
 
                 <div ref={messagesEndRef}></div>
+
               </div >
+
             </div >
 
             <AnimatePresence>
@@ -1954,9 +1958,9 @@ function ChatContent() {
                   exit={{ opacity: 0, y: 10 }}
                   className="w-full px-4 lg:w-2/3 flex"
                 >
-                  <div className="bg-white/90 backdrop-blur-sm border ml-auto border-black/5 shadow-lg rounded-full px-4 py-3 flex items-center gap-x-3">
-                    <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin"></div>
-                    <p className="switzer-500 text-sm text-black/80">Transcribing audio...</p>
+                  <div className={`${currentMode === "normal" ? "bg-white/90" : "bg-black shadow-sm shadow-red-500"} backdrop-blur-sm border ml-auto border-black/5 shadow-lg rounded-full px-4 py-3 flex items-center gap-x-3`}>
+                    <div className={`w-4 h-4 border-2 ${currentMode === "normal" ? "border-black/20" : "border-white"} border-t-black rounded-full animate-spin`}></div>
+                    <p className={`switzer-500 text-sm ${currentMode === "normal" ? "text-black/80" : "text-white"}`}>Transcribing audio</p>
                   </div>
                 </motion.div>
               )}
@@ -1965,9 +1969,9 @@ function ChatContent() {
             <motion.div animate={{ paddingTop: currentMode === "normal" ? 16 : 20, paddingBottom: currentMode === "normal" ? 16 : 28 }} className={`mr-1.5 px-4 ${currentMode === "normal" ? "w-full lg:w-2/3 mt-4" : "w-[95%] sm:w-[70%] lg:w-1/2 mt-2 flex gap-x-2 items-center"} input-box`}>
 
               <motion.div
-                animate={{ height: currentMode === "normal" ? attachedFile ? 200 : 160 : 42 }}
+                animate={{ height: currentMode === "normal" ? attachedFile ? 200 : 160 : 45 }}
                 transition={{ duration: 0.2, ease: easeInOut }}
-                className={`flex relative shadow-md py-2 border gap-x-1 ${currentMode === "normal" ? "bg-white rounded-lg shadow-md px-3 border-black/10 flex-col" : "bg-[##001e1e] rounded-full px-2 border border-white/15 shadow-md justify-between items-center w-full"} `}
+                className={`flex relative shadow-md py-2 border gap-x-1 ${currentMode === "normal" ? "bg-white rounded-lg shadow-md px-3 border-black/10 flex-col" : "bg-[##001e1e] rounded-full px-1 border border-white/15 shadow-md justify-between items-center w-full py-2"} `}
               >
                 {attachedFile && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative w-max bg-white border border-black/10 px-3 py-2 rounded-md text-xs flex items-center gap-x-2 z-10">
@@ -1994,8 +1998,8 @@ function ChatContent() {
                 {currentMode === "story" && (
                   <motion.div onClick={() => {
                     setOpenStoryModeExtraOptions(prev => !prev)
-                  }} whileHover={{ backgroundColor: "#FFFFFF1A" }} className="p-1.5 rounded-full cursor-pointer">
-                    <PlusIcon className="w-5 h-5" />
+                  }} whileHover={{ backgroundColor: "#FFFFFF1A" }} className="p-2 rounded-full cursor-pointer">
+                    <PlusIcon className="w-5.5 h-5.5" />
                   </motion.div>
                 )}
                 <div
@@ -2013,44 +2017,46 @@ function ChatContent() {
                 ></div>
                 {showPlaceholder && (
                   <span
-                    className={`absolute ${currentMode === "normal" ? attachedFile ? "top-16 text-black" : "top-2 text-black" : "top-1.8 text-white/70 left-11 text-[15px]"} pointer-events-none placeholder-input-box switzer-500`}
+                    className={`absolute ${currentMode === "normal" ? attachedFile ? "top-16 text-black" : "top-2 text-black" : "top-1.8 text-white/70 left-12 text-[15px]"} pointer-events-none placeholder-input-box switzer-500`}
                   >
                     {placeholder}
                   </span>
                 )}
                 {currentMode === "normal" && (
-                <div className="flex justify-end mb-10 items-center gap-x-2">
-                  {isGenerating ? (
-                    <button
-                      onClick={stopGeneration}
-                      className="flex items-center gap-x-2 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs rounded-md switzer-500 transition-colors shadow-sm"
-                    >
-                      <div className="w-2 h-2 bg-white rounded-sm"></div>
-                      Stop
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        if (attachedFile && isUploading) {
-                          alert("File is still uploading, please wait a moment...");
-                          return;
-                        }
-                        const input = inputRef.current?.innerText || "";
-                        if (input.trim() !== "" || fileContext) {
-                          ask(input.trim());
-                        }
-                      }}
-                      className={`absolute top-2 right-3 p-2 rounded-md bg-black hover:bg-neutral-800 cursor-pointer"
+                  <div className="flex justify-end mb-10 items-center gap-x-2">
+                    {isGenerating ? (
+                      <button
+                        onClick={stopGeneration}
+                        className="flex items-center gap-x-2 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs rounded-md switzer-500 transition-colors shadow-sm"
+                      >
+                        <div className="w-2 h-2 bg-white rounded-sm"></div>
+                        Stop
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          if (attachedFile && isUploading) {
+                            alert("File is still uploading, please wait a moment...");
+                            return;
+                          }
+                          const input = inputRef.current?.innerText || "";
+                          if (input.trim() !== "" || fileContext) {
+                            ask(input.trim());
+                          }
+                        }}
+                        className={`absolute top-2 right-3"
                       `}
-                      title="Send message"
-                    >
-                      <SendIcon className="w-4.5 h-4.5 text-white"/>
-                    </button>
-                  )}
-                </div>
+
+                      >
+                        <motion.div style={{ cursor: showPlaceholder ? "default" : "pointer" }} animate={{ color: showPlaceholder ? "#000000B3" : "#000000" }} className="cursor-pointer">
+                          <SendIcon className="w-6 h-6 fill-current" />
+                        </motion.div>
+                      </button>
+                    )}
+                  </div>
                 )}
 
-                <div className={`transition-opacity duration-300 ${connectionStatus !== "connected" ? "pointer-events-none opacity-50" : "opacity-100"}`}>
+                <div className={`transition-opacity duration-300 ${connectionStatus !== "connected" ? "pointer-events-none opacity-50" : "opacity-100"} ${currentMode === "story" ? 'flex gap-x-1' : ''}`}>
                   {currentMode === "normal" && (
                     <>
                       <BottomOptions />
@@ -2069,8 +2075,8 @@ function ChatContent() {
                     </>
                   )}
                   {currentMode === "story" && (
-                    <motion.div onClick={sendPrompt} style={{ cursor: showPlaceholder ? "default" : "pointer" }} animate={{ backgroundColor: showPlaceholder ? "#FFFFFFCC" : "#FFFFFF" }} className="p-[5px] rounded-full bg-white">
-                      <SendIcon className="w-5 h-5 fill-current text-black" />
+                    <motion.div onClick={sendPrompt} style={{ cursor: showPlaceholder ? "default" : "pointer" }} animate={{ backgroundColor: showPlaceholder ? "#FFFFFFCC" : "#ffffff" }} className="p-2 rounded-full scale-90">
+                      <SendIcon className="w-5.5 h-5.5 fill-current text-black" />
                     </motion.div>
                   )}
                 </div>
@@ -2085,7 +2091,8 @@ function ChatContent() {
             <audio className="hidden" controls ref={audioRef} />
           </ChatProvider >
         </motion.div >
-      )}
+      )
+      }
     </ProtectedRoute >
   )
 }

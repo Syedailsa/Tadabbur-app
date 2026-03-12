@@ -14,7 +14,7 @@ load_dotenv()
 GROQ_API_KEY = os.getenv('GROQ_AI_API_KEY')
 story_example = ""
 # Load example story for narrative style
-with open("story_exmp.txt", "r", encoding="utf-8") as f:
+with open("examples/story_exmp.txt", "r", encoding="utf-8") as f:
     story_example = json.load(f)
 
 class StoryOutput(BaseModel):
@@ -98,9 +98,7 @@ system_instructions = """
         4. ONLY respond with a short acknowledgment message.
 
         Allowed responses:
-        - "Following is your story with visuals."
-        - "Your story is ready."
-        - "Here is your generated story with images."
+        - <A contextual, brief response acknowledging the generation of story with visuals>
 
         If the tool returns empty, null, or invalid data:
         - Respond with: "The requested story data is currently unavailable."
