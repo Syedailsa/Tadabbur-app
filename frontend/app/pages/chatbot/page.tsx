@@ -125,7 +125,12 @@ function ChatContent() {
   const controls = useAnimationControls();
   const [hidePromptExtraOptionsModelBoxArray, setHidePromptExtraOptionsModelBoxArray] =
     useState<hidePromptExtraOptionsModelBoxArray[]>([]);
-  const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected" >("disconnected");
+  const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected" >("connected");
+  const streamingMessageIndexRef = useRef<number | null>(null);
+  const setStreamingMessageIndexSynced = (val: number | null) => {
+    streamingMessageIndexRef.current = val;
+    setStreamingMessageIndex(val);
+  };
   const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
   const pendingPromptRef = useRef<{
     input: string;
@@ -780,7 +785,8 @@ function ChatContent() {
                       pendingData.resend_flag, 
                       pendingData.resend_message_id, 
                       pendingData.old_responses_attachments,
-                      true
+                      true,
+                      null
                     );
                     
                     localStorage.removeItem("tadabbur_pending_prompt");
@@ -791,30 +797,6 @@ function ChatContent() {
                   localStorage.removeItem("tadabbur_pending_prompt");
                 }
               }
-              
-              setTimeout(() => {
-                if (!chat_history || chat_history.length === 0) return;
-
-                const userMessages = chat_history.filter(m => m.role === "user");
-                const lastMsg = userMessages[userMessages.length - 1];
-                if(!lastMsg) return;
-
-                const hasNoResponse = !lastMsg.responses || lastMsg.responses.length === 0;
-                const hasEmptyResponse = lastMsg.responses?.every((r: { content: string; }) => r.content === "");
-
-                if (lastMsg && lastMsg.role === "user" && (hasNoResponse || hasEmptyResponse)) {
-                  console.log("🤖 Orphaned user message detected. Regenerating...");
-                  
-                  ask(
-                    lastMsg.content, 
-                    null, 
-                    true, 
-                    lastMsg.message_id, 
-                    { responses: [], attachments: lastMsg.attachments || [] },
-                    true
-                  );
-                }
-              }, 1500);
 
               // initialize an emtpy array for hidePromptExtraOptionsModelBoxArray
               const array: hidePromptExtraOptionsModelBoxArray[] = [];
@@ -869,40 +851,49 @@ function ChatContent() {
               }
               const updated = [...(prev || [])];
 
-              // although streamingMessageIndex is already set in ask function, but setting again for safety
-              setStreamingMessageIndex(updated.length - 1);
-              const lastUserMessage = updated.findLast((m) => m.role === "user");
+              const targetIndex = reply_to_message_id
+                ? updated.findIndex((m) => m.message_id === reply_to_message_id)
+                : updated.length - 1;
 
-              if (lastUserMessage) {
-                if (!lastUserMessage.number_of_responses) {
-                  lastUserMessage.number_of_responses = 1;
-                } else {
-                  lastUserMessage.number_of_responses += 1;
-                }
-
-                lastUserMessage.responses = resend_flag
-                  ? oldMessagesRef.current
-                  : [];
-
-                lastUserMessage.responses.push({
-                  role: "assistant",
-                  message_id: message_id,
-                  content: "",
-                  reply_to_message_id: reply_to_message_id,
-                  feedback: null,
-                  audio_link: null,
-                  audio_state: null,
-                  has_verse_audio: has_verse_audio,
-                  verse_audio_data: audio_data,
-                  has_verse_image: has_verse_image,
-                  verse_images: verse_images,
-                  story_data: story_data
-                });
-
-                lastUserMessage.active_message_index =
-                  lastUserMessage.number_of_responses - 1;
+              // If not found, return unchanged
+              if (targetIndex === -1) {
+                console.warn("⚠️ Could not find target message for assistance_response, skipping");
+                return prev;
               }
 
+              setStreamingMessageIndexSynced(targetIndex);
+
+              const targetMessage = updated[targetIndex];
+
+              // Check if already rendered with content
+              const alreadyRendered = targetMessage.responses?.some(
+                (r) => r.message_id === message_id && r.content !== ""
+              );
+              if (alreadyRendered) return prev;
+
+              if (!targetMessage.number_of_responses) {
+                targetMessage.number_of_responses = 1;
+              } else {
+                targetMessage.number_of_responses += 1;
+              }
+
+              targetMessage.responses = resend_flag ? oldMessagesRef.current : [];
+              targetMessage.responses.push({
+                role: "assistant",
+                message_id: message_id,
+                content: "",
+                reply_to_message_id: reply_to_message_id,
+                feedback: null,
+                audio_link: null,
+                audio_state: null,
+                has_verse_audio: has_verse_audio,
+                verse_audio_data: audio_data,
+                has_verse_image: has_verse_image,
+                verse_images: verse_images,
+                story_data: story_data
+              });
+
+              targetMessage.active_message_index = targetMessage.number_of_responses - 1;
               return updated;
             });
 
@@ -948,9 +939,8 @@ function ChatContent() {
                 });
               }
             })().then(() => {
-              setStreamingMessageIndex(null);
               stopStreamRef.current = null;
-              setStreamingMessageIndex(null);
+              setStreamingMessageIndexSynced(null);
               setIsGenerating(false);
               currentStreamingMsgRef.current = null;
               streamingContentRef.current = "";
@@ -960,7 +950,7 @@ function ChatContent() {
           case "stop_acknowledged":
             // reset states related to streaming
             setIsGenerating(false);
-            setStreamingMessageIndex(null);
+            setStreamingMessageIndexSynced(null);
             setLoading(false);
             currentStreamingMsgRef.current = null;
             streamingContentRef.current = "";
@@ -989,6 +979,30 @@ function ChatContent() {
             const message = data.content ?? "Thinking to enhance response";
             setLoading(false)
             setLoadingMessage(message);
+            break;
+          case "regenerate_required":
+            const orphanMsgId = data.message_id;
+            const orphanContent = data.content;
+            if (orphanMsgId && orphanContent) {
+              console.log("🔄 Regenerating orphaned message:", orphanMsgId);
+              setTimeout(() => {
+                streamingMessageIndexRef.current = null;
+                setStreamingMessageIndex(null);
+                setIsGenerating(false);
+                setLoading(false);
+                setMessages(prev => prev.filter(m => m.message_id !== orphanMsgId));
+                
+                ask(
+                  orphanContent,
+                  null,
+                  false,      
+                  null,
+                  null,
+                  true,
+                  orphanMsgId  
+                );
+              }, 500);
+            }
             break;
           case "report":
             const report_status = data.status;
@@ -1081,7 +1095,7 @@ function ChatContent() {
       const msgId = currentStreamingMsgRef.current.message_id;
   
       setIsGenerating(false);
-      setStreamingMessageIndex(null);
+      setStreamingMessageIndexSynced(null);
       setLoading(false);
   
       wsSendAsync(wsRef.current, {
@@ -1100,9 +1114,10 @@ function ChatContent() {
     resend_flag: boolean = false,
     resend_message_id: string | null = null,
     old_responses_attachments: { responses: AssistantMessage[], attachments: Attachment[] } | null = null,
-    bypassCheck: boolean = false
+    bypassCheck: boolean = false,
+    message_id: string | null = null
   ) => {
-    if (streamingMessageIndex !== null || (!input.trim() && !fileContext)) return;
+    if (streamingMessageIndexRef.current !== null || (!input.trim() && !fileContext)) return;
 
     if (resend_flag) {
       if (!old_responses_attachments || old_responses_attachments.responses.length === 0) {
@@ -1125,7 +1140,7 @@ function ChatContent() {
 
     if (!resend_flag) {
       // generate a message ID for the user message if its not a resend message
-      messageID = generateUUID();
+      messageID = message_id || generateUUID();
       while (messageIDs?.includes(messageID)) {
         messageID = generateUUID(); 
       }
@@ -1209,7 +1224,7 @@ function ChatContent() {
         return prev;
       }
       const updated = [...(prev || []), userMessage];
-      setStreamingMessageIndex(updated.length - 1);
+      setStreamingMessageIndexSynced(updated.length - 1);
       return updated;
     });
 
@@ -1228,7 +1243,7 @@ function ChatContent() {
         resend_message_id: resend_message_id || "",
         new_file_context: fileContext,
       }); 
-      // localStorage.removeItem("tadabbur_pending_prompt");
+      localStorage.removeItem("tadabbur_pending_prompt");
       setFileContext(null);
       if (inputRef.current) {
         inputRef.current.innerText = "";

@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain_groq import ChatGroq
 from data.data import QuranMetaData,surah_name_english_array, surah_name_english_translation_array
-from models import StorySchema
+from models.models import StorySchema
 from langchain.tools import tool
 from pydantic import BaseModel
 from typing import List

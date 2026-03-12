@@ -10,3 +10,5 @@ wheels/
 .venv
 .env
 agent_2.py
+pyproject.toml
+pytest.ini

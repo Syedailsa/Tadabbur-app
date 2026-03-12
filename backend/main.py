@@ -8,7 +8,7 @@ from fastapi.websockets import WebSocketState
 from pydantic import BaseModel
 from typing import List
 import asyncio 
-from models import NormalOutputSchema, SurahForAudio, SurahForImage, StoryParagraph, StoryOutputSchema
+from models.models import NormalOutputSchema, SurahForAudio, SurahForImage, StoryParagraph, StoryOutputSchema
 from langchain.messages import ToolMessage, SystemMessage, HumanMessage
 from collections import defaultdict
 import tadabbur_agents.agent as agent_module
@@ -129,6 +129,7 @@ app.add_middleware(
 # === SESSION CODE START ===
 
 session_file_context = {}
+session_agent_running = {}
 supabase_client = None
 TADABBUR_PROJECT_URL = os.getenv("TADABBUR_PROJECT_URL") 
 TADABBUR_API_KEY = os.getenv("TADABBUR_API_KEY")
@@ -324,11 +325,12 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
             if websocket.client_state == WebSocketState.DISCONNECTED:
                break
             message = await websocket.receive()
-            if "text" in message:
-                try:
-                    data = json.loads(message["text"])
-                except json.JSONDecodeError:
-                    continue
+            if "text" not in message:
+                continue
+            try:
+                data = json.loads(message["text"])
+            except json.JSONDecodeError:
+                continue
             
             if data.get("type") == "ping":
                 if websocket.client_state == WebSocketState.CONNECTED:
@@ -586,6 +588,84 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     session_id = requested_session_id
                     conversation_history = chat_history
                     unique_message_ids = [msg['message_id'] for msg in conversation_history]
+
+                    if chat_history:
+                        last_msg = chat_history[-1]
+                        if last_msg.get("role") == "user":
+                            orphan_user_message_id = last_msg.get("message_id")
+                            existing_response = supabase_client.table('chat_messages')\
+                                .select('message_id', 'content', 'has_verse_audio', 'has_verse_image',
+                                        'audio_data', 'verse_images', 'story_data')\
+                                .eq('reply_to_message_id', orphan_user_message_id)\
+                                .eq('role', 'assistant')\
+                                .eq('session_id', requested_session_id)\
+                                .execute()
+                            
+                            if existing_response.data and len(existing_response.data) > 0:
+                                cached = existing_response.data[0]
+                                logger.info(f"📦 Found undelivered cached response for orphaned message {orphan_user_message_id}")
+                                asyncio.create_task(ws_send(websocket, {
+                                    "type": "assistance_response",
+                                    "message_id": cached['message_id'],
+                                    "content": {
+                                        "response": cached['content'],
+                                        "has_verse_audio": cached.get('has_verse_audio', False),
+                                        "has_verse_image": cached.get('has_verse_image', False),
+                                        "audio_data": cached.get('audio_data', []),
+                                        "verse_images": cached.get('verse_images', []),
+                                        "story_segments": cached.get('story_data', []),
+                                    },
+                                    "reply_to_message_id": orphan_user_message_id,
+                                    "resend_flag": False,
+                                    "final": True,
+                                }, label="cached_orphan_response"))
+                            else:
+                                if session_agent_running.get(requested_session_id):
+                                    logger.info(f"⏳ Agent still running for {requested_session_id} — waiting for it to finish")
+                                    # Poll until agent finishes or timeout (max 60s)
+                                    for _ in range(120):
+                                        await asyncio.sleep(0.5)
+                                        # Check if response was saved during our wait
+                                        check = supabase_client.table('chat_messages')\
+                                            .select('message_id', 'content', 'has_verse_audio', 'has_verse_image',
+                                                    'audio_data', 'verse_images', 'story_data')\
+                                            .eq('reply_to_message_id', orphan_user_message_id)\
+                                            .eq('role', 'assistant')\
+                                            .execute()
+                                        if check.data:
+                                            cached = check.data[0]
+                                            logger.info(f"✅ Agent finished while waiting — sending cached response")
+                                            asyncio.create_task(ws_send(websocket, {
+                                                "type": "assistance_response",
+                                                "message_id": cached['message_id'],
+                                                "content": {
+                                                    "response": cached['content'],
+                                                    "has_verse_audio": cached.get('has_verse_audio', False),
+                                                    "has_verse_image": cached.get('has_verse_image', False),
+                                                    "audio_data": cached.get('audio_data', []),
+                                                    "verse_images": cached.get('verse_images', []),
+                                                    "story_segments": cached.get('story_data', []),
+                                                },
+                                                "reply_to_message_id": orphan_user_message_id,
+                                                "resend_flag": False,
+                                                "final": True,
+                                            }, label="cached_orphan_response"))
+                                            break
+                                    else:
+                                        logger.warning(f"⏰ Timeout waiting for agent — signaling frontend to regenerate")
+                                        asyncio.create_task(ws_send(websocket, {
+                                            "type": "regenerate_required",
+                                            "message_id": orphan_user_message_id,
+                                            "content": last_msg.get("content", ""),
+                                        }, label="regenerate_required"))
+                                else:
+                                    # Agent not running and no response saved — signal frontend
+                                    logger.info(f"🔄 No response and no agent running — signaling frontend to regenerate")
+                                    asyncio.create_task(ws_send(websocket, {
+                                        "type": "regenerate_required",
+                                        "message_id": orphan_user_message_id,
+                                        "content": last_msg.get("content", ""),
+                                    }, label="regenerate_required"))
 
                     if websocket.client_state == WebSocketState.CONNECTED:
                         try:
@@ -903,7 +983,42 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 unique_message_ids.append(response_message_id)
 
                 user_message_id = user_message_id if not resend_flag else resend_message_id
-                    
+
+                if user_message_id:
+                    try:
+                        existing_response = supabase_client.table('chat_messages')\
+                            .select('message_id', 'content', 'has_verse_audio', 'has_verse_image', 
+                                    'audio_data', 'verse_images', 'story_data')\
+                            .eq('reply_to_message_id', user_message_id)\
+                            .eq('role', 'assistant')\
+                            .eq('session_id', session_id)\
+                            .execute()
+                        
+                        if existing_response.data and len(existing_response.data) > 0:
+                            existing_msg = existing_response.data[0]
+                            logger.info(f"⚠️ Response already exists for message {user_message_id}, returning cached response")
+                            try:
+                                await ws_send(websocket, {
+                                    "type": "assistance_response",
+                                    "message_id": existing_msg['message_id'],
+                                    "content": {
+                                        "response": existing_msg['content'],
+                                        "has_verse_audio": existing_msg.get('has_verse_audio', False),
+                                        "has_verse_image": existing_msg.get('has_verse_image', False),
+                                        "audio_data": existing_msg.get('audio_data', []),
+                                        "verse_images": existing_msg.get('verse_images', []),
+                                        "story_segments": existing_msg.get('story_data', []),
+                                    },
+                                    "reply_to_message_id": user_message_id,
+                                    "resend_flag": False,
+                                    "final": True,
+                                }, label="assistance_response_cached")
+                            except WSDisconnectedError:
+                                break
+                            continue  
+                    except Exception as e:
+                        logger.warning(f"⚠️ Could not check for existing response: {e}, proceeding with agent call")
+                            
                 if new_file_text:
                     logger.info(f"💾 Committing new file context to session {session_id}")
                     existing_context = session_file_context.get(session_id, "")
@@ -1052,18 +1167,22 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
                     agent_response = None  
 
-                    for attempt in range(3):
-                        try:
-                            agent_response = await asyncio.to_thread(
-                                active_agent.invoke,{"messages": messages},
-                            )
-                            break
-                        except Exception as e:
-                            logger.warning(f"⚠️ Agent invoke attempt {attempt+1}/3 failed: {e}")
-                            if attempt < 2:
-                                await asyncio.sleep(1.5)
-                            else:
-                                raise RuntimeError(f"Agent failed after 3 attempts: {e}")
+                    session_agent_running[session_id] = True
+                    try:
+                        for attempt in range(3): 
+                            try:
+                                agent_response = await asyncio.to_thread(
+                                    active_agent.invoke,{"messages": messages},
+                                )
+                                break
+                            except Exception as e: 
+                                logger.warning(f"⚠️ Agent invoke attempt {attempt+1}/3 failed: {e}")
+                                if attempt < 2:
+                                    await asyncio.sleep(1.5)
+                                else:
+                                    raise RuntimeError(f"Agent failed after 3 attempts: {e}")
+                    finally:
+                        session_agent_running.pop(session_id, None)
 
                     messages_array = agent_response['messages']
 
@@ -1103,7 +1222,46 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                         response_object.has_verse_audio = True
                                         response_object.audio_data = [SurahForAudio.model_validate(v) for v in audio_data]
                                     data_flag[1] = True
-                        
+                        tool_calls_made = [m for m in messages_array if isinstance(m, ToolMessage)]
+
+                        def is_tool_result_empty(tool_message: ToolMessage) -> bool:
+                            try:
+                                content = json.loads(tool_message.content) if isinstance(tool_message.content, str) else tool_message.content
+                                # Handle searchAsbabNuzul structure: {'results': [{'points': [...]}]}
+                                if 'results' in content:
+                                    for result in content.get('results', []):
+                                        points = result.get('points', [])
+                                        if points: 
+                                            return False
+                                    return True 
+                                if 'audio_data' in content:
+                                    return not content.get('audio_data')
+                                if 'verse_images' in content:
+                                    return not content.get('verse_images')
+                                return False  # unknown structure, don't skip
+                            except Exception:
+                                return False  # parse error, don't skip
+
+                        all_tools_empty = bool(tool_calls_made) and all(
+                            is_tool_result_empty(m) for m in tool_calls_made
+                        )
+
+                        if all_tools_empty:
+                            logger.warning(f"⚠️ All tool calls returned empty results — skipping DB save")
+                            try:
+                                await ws_send(websocket, {
+                                    "type": "assistance_response",
+                                    "message_id": response_message_id,
+                                    "content": response_object.model_dump(mode="json"),
+                                    "resend_flag": resend_flag,
+                                    "reply_to_message_id": user_message_id,
+                                    "final": True,
+                                }, label="assistance_response")
+                            except WSDisconnectedError:
+                                logger.info("Socket closed before sending empty-tool response")
+                                break
+                            continue
+                                    
                         try:
                             await db_retry(
                                 lambda:supabase_client.table('chat_messages').insert({
