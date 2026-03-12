@@ -1086,11 +1086,12 @@ def get_agent_by_user_age( age: int , username: str, model_key: str = None ):
         tools = [Search_Quran_By_filters, searchAsbabNuzul, structured_response_tool, get_Quran_Audio, get_verse_image, story_agent_tool],
         middleware = [
             tool_protection,
-            SummarizationMiddleware(
-                model = summarizer_llm,
-                trigger = ("tokens", 4000),
-                keep = ("messages",4)
-            )]
+            # SummarizationMiddleware(
+            #     model = summarizer_llm,
+            #     trigger = ("tokens", 4000),
+            #     keep = ("messages",4)
+            # )
+        ]
         
     )
 

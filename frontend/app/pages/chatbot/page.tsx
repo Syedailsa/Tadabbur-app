@@ -14,7 +14,7 @@ import SendIcon from "../../../icons/send_icon.svg";
 import PdfFileIcon from "../../../icons/pdf-file-icon.svg"
 import PlusIcon from "../../../icons/plus-icon-white.svg"
 import TadabburFontWhite from "../../../images/tadabbur-font-white.png"
-import TadabburFontBlack from "../../../images/tadabbur-font-black.jpeg"
+import TadabburFontBlack from "../../../images/tadabbur-font-black-cropped.jpeg"
 import EngagingIcon from "../../../icons/engage_icon.svg"
 import ArrowLeft from "../../../icons/arrow-left-bold.svg"
 import UndoArrow from "../../../icons/refresh.svg";
@@ -118,6 +118,8 @@ function ChatContent() {
     useState<hidePromptExtraOptionsModelBoxArray[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected">("disconnected");
   const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
+  const [paragraphCount, setParagraphCount] = useState<number>(3);
+
   const pendingPromptRef = useRef<{
     input: string;
     guidelines: string | null;
@@ -262,7 +264,6 @@ function ChatContent() {
     localStorage.clear();
     router.push('/pages/auth');
   };
-
 
   useEffect(() => {
     const audioEl = audioRef.current;
@@ -708,7 +709,7 @@ function ChatContent() {
               localStorage.setItem("tadabbur_pending_deletes", JSON.stringify(updated));
 
             } else {
-              alert("Error deleting chat session: " + data.error);
+
             }
             break;
 
@@ -738,7 +739,7 @@ function ChatContent() {
                 model: "kimi-k2-instruct-0905",
               });
             } else {
-              alert("Error deleting chat sessions: " + data.error);
+              alert("Error deleting sessions: " + data.error);
             }
             break;
 
@@ -928,6 +929,7 @@ function ChatContent() {
                   const streamIndex = streamingMessageIndex ?? updated.length - 1;
                   if (streamIndex >= 0 && streamIndex < updated.length) {
                     const lastMsg = updated[streamIndex];
+                    if (!lastMsg.responses || lastMsg.responses.length === 0) return prev;
                     const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
 
                     updated[streamIndex].responses[lastResIdx].content =
@@ -980,6 +982,7 @@ function ChatContent() {
             const message = data.content ?? "Thinking to enhance response";
             setLoading(false)
             setLoadingMessage(message);
+            setParagraphCount(data.paragraph_count ?? 3);
             break;
           case "report":
             const report_status = data.status;
@@ -1013,6 +1016,7 @@ function ChatContent() {
         wsRef.current = null;
       }
     };
+
   }, [reconnectTrigger]);
 
   useEffect(() => {
@@ -1347,7 +1351,7 @@ function ChatContent() {
           </AnimatePresence>
           <div className="fixed top-4 right-4 z-9999 flex flex-col items-end gap-y-2 pointer-events-none">
             <AnimatePresence mode="wait">
-              {connectionStatus === "disconnected" && (
+              {/* {connectionStatus === "disconnected" && (
                 <motion.span
                   key="offline"
                   initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
@@ -1355,7 +1359,7 @@ function ChatContent() {
                 >
                   OFFLINE - TRYING TO RECONNECT
                 </motion.span>
-              )}
+              )} */}
               {showOfflineToast && (
                 <motion.div
                   initial={{ opacity: 0, y: 50 }}
@@ -1373,13 +1377,28 @@ function ChatContent() {
               )}
             </AnimatePresence>
           </div>
+          {/* navbar for top options background */}
+          <div id="navbar" className={`absolute w-full h-14 bg-${currentMode === "normal" ? "white" : "black"} z-20 flex px-2`}>
+            <div className="self-center mr-4">
+              <HamBurger wsRef={wsRef} openChatHistoryDialogueBox={openChatHistoryDialogueBox} setOpenChatHistoryDialogueBox={setOpenChatHistoryDialogueBox} currentMode={currentMode} />
+            </div>
+            <div className="absolute top-4 right-4">
+              {currentMode === "story" ? (
+                <Image className="w-16 h-auto object-cover object-center" src={TadabburFontWhite}
+                  alt="tadabbur-font-white" />
+              ) : (<Image className="w-16 h-auto object-cover object-center" src={TadabburFontBlack}
+                alt="tadabbur-font-black" />)}
+            </div>
 
-          <div className="absolute -top-2 right-4">
-            {currentMode === "story" ? (
-              <Image className="w-16 h-auto object-cover object-top" src={TadabburFontWhite}
-                alt="tadabbur-font-white" />
-            ) : (<Image className="w-16 h-auto object-cover object-top" src={TadabburFontBlack}
-              alt="tadabbur-font-black" />)}
+            <div>
+              <button
+                onClick={handleLogout}
+                className="cursor-pointer mt-2 px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm font-medium rounded-md shadow-md transition-colors"
+              >
+                Logout
+              </button>
+            </div>
+
           </div>
 
           <ChatProvider
@@ -1409,8 +1428,6 @@ function ChatContent() {
             openStoryModeExtraOptions={openStoryModeExtraOptions}
             setOpenStoryModeExtraOptions={setOpenStoryModeExtraOptions}
           >
-            {/* renders only when open chat history dialogue box is true */}
-            {/* <ChatHisoryDialogueBox /> */}
 
             <AnimatePresence>
               {openChatHistoryDialogueBox && (
@@ -1424,21 +1441,7 @@ function ChatContent() {
             </AnimatePresence>
 
             <div className={`w-full h-full flex flex-col items-center z-10 ${currentMode === "normal" ? "" : "black-scrollbar"} overflow-y-auto`}>
-              <div className="absolute top-0 p-2 w-full">
-                {/* 
-              <div className="pointer-events-auto">
-                <Controls wsRef={wsRef} />
-              </div> */}
 
-
-                <button
-                  onClick={handleLogout}
-                  className="cursor-pointer ml-16 mt-2 px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm font-medium rounded-md shadow-md transition-colors"
-                >
-                  Logout
-                </button>
-              </div>
-              <HamBurger />
               <div
                 id="chat-bot"
                 className={`w-full ${messages && messages?.length > 0 ? "h-max mt-16" : "items-center mt-12"} px-4 lg:w-2/3 flex flex-col gap-y-4 ${!messages ? "justify-center" : ""}`}
@@ -1636,8 +1639,19 @@ function ChatContent() {
                                 ></motion.div>
                               </div>
                             ) : !loading && loadingMessage && !ai_msg.content ? (
-                              <div className="px-3" key={ai_msg_idx} id="loading-message-box">
-                                <p className={`switzer-500 animate-pulse ${currentMode === "normal" ? "" : "text-white/80"}`}>{loadingMessage}</p>
+                              <div key={ai_msg_idx} className="flex flex-col gap-y-6 mt-4 w-full">
+                                <p className="switzer-500 text-white/60 text-sm animate-pulse mb-2">{loadingMessage}</p>
+                                {Array.from({ length: paragraphCount }).map((_, i) => (
+                                  <div key={i} className="flex flex-col gap-y-3">
+                                    <div className="h-4 w-36 rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
+                                    <div className="flex flex-col gap-y-2">
+                                      <div className="h-3 w-full rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
+                                      <div className="h-3 w-[85%] rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
+                                      <div className="h-3 w-[70%] rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
+                                    </div>
+                                    <div className="w-[80%] sm:w-[50%] md:w-[45%] lg:w-[30%] h-auto aspect-video rounded-md bg-linear-to-br from-white/5 via-white/10 to-white/5 animate-pulse border border-white/5" />
+                                  </div>
+                                ))}
                               </div>
                             ) : reportedMessageIDs &&
                               !reportedMessageIDs.includes(ai_msg?.message_id) &&
@@ -1671,7 +1685,7 @@ function ChatContent() {
                                       // PARAGRAPH
                                       p: ({ node, ...props }) => (
                                         <p
-                                          className={`leading-7 my-2 ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
+                                          className={`leading-7 my-2 ${currentMode === "normal" ? "text-gray-700" : "text-white"} wrap-break-word`}
                                           {...props}
                                         />
                                       ),
@@ -1900,6 +1914,7 @@ function ChatContent() {
                               </div>
                             ) : null;
                           })}
+
                         </div>
                       )
                     })
@@ -1908,7 +1923,9 @@ function ChatContent() {
                 </AnimatePresence >
 
                 <div ref={messagesEndRef}></div>
+
               </div >
+
             </div >
 
             <AnimatePresence>
