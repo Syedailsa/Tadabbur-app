@@ -1036,7 +1036,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         [{"role": "system", "content": dynamic_system_instruction["text"]}]
                         if dynamic_system_instruction["text"] else []
                     )
-                    print("Message string", message_string)
                     if not resend_flag:
                         # append user message to conversation history
                         conversation_history.append({"role": "user", "content": message_string, "id": user_message_id})
@@ -1061,7 +1060,9 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                 raise RuntimeError(f"Agent failed after 3 attempts: {e}")
 
                     messages_array = agent_response['messages']
-
+                    print("=======================")
+                    print("Messages Array", messages_array)
+                    print("=======================")
                     # initialize a response object
                     response_object = None
                     ai_response = None

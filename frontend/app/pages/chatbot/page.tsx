@@ -1622,19 +1622,23 @@ function ChatContent() {
                             return loading &&
                               !loadingMessage &&
                               !ai_msg.content ? (
-                              <motion.div
-                                key={ai_msg_idx}
-                                animate={{ scale: [1, 1.2, 1] }}
-                                transition={{
-                                  duration: 0.4,
-                                  ease: easeInOut,
-                                  repeat: Infinity,
-                                  repeatType: "loop",
-                                }}
-                                className={`w-3 h-3 rounded-full ${currentMode === "normal" ? "bg-black" : "bg-white"}`}
-                              ></motion.div>
+                              <div key={ai_msg_idx}
+                                className="px-3">
+                                <motion.div
+                                  animate={{ scale: [1, 1.2, 1] }}
+                                  transition={{
+                                    duration: 0.4,
+                                    ease: easeInOut,
+                                    repeat: Infinity,
+                                    repeatType: "loop",
+                                  }}
+                                  className={`w-3 h-3 rounded-full ${currentMode === "normal" ? "bg-black" : "bg-white"}`}
+                                ></motion.div>
+                              </div>
                             ) : !loading && loadingMessage && !ai_msg.content ? (
-                              <p key={ai_msg_idx} id="loading-message" className={`switzer-500 animate-pulse ${currentMode === "normal" ? "" : "text-white/80"}`}>{loadingMessage}</p>
+                              <div className="px-3" key={ai_msg_idx} id="loading-message-box">
+                                <p className={`switzer-500 animate-pulse ${currentMode === "normal" ? "" : "text-white/80"}`}>{loadingMessage}</p>
+                              </div>
                             ) : reportedMessageIDs &&
                               !reportedMessageIDs.includes(ai_msg?.message_id) &&
                               ai_msg_idx === record.active_message_index ? (
@@ -2008,11 +2012,13 @@ function ChatContent() {
                             ask(input.trim());
                           }
                         }}
-                        className={`absolute top-2 right-3 p-2 rounded-md bg-black hover:bg-neutral-800 cursor-pointer"
+                        className={`absolute top-2 right-3"
                       `}
-                        title="Send message"
+
                       >
-                        <SendIcon className="w-4.5 h-4.5 text-white" />
+                        <motion.div style={{ cursor: showPlaceholder ? "default" : "pointer" }} animate={{ color: showPlaceholder ? "#000000B3" : "#000000" }} className="cursor-pointer">
+                          <SendIcon className="w-6 h-6 fill-current" />
+                        </motion.div>
                       </button>
                     )}
                   </div>

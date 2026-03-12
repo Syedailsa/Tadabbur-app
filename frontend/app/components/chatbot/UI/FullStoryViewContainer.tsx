@@ -34,8 +34,8 @@ const FullStoryViewContainer = ({ story_data }: { story_data: StoryParagraph[] }
         }
     }
     useEffect(() => {
-        console.log("Translate amount", translateAmount)
-    }, [translateAmount])
+        console.log("activeIndex", activeIndex)
+    }, [activeIndex])
     return (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5, ease: "linear" }} className="absolute w-screen h-screen flex items-center backdrop-blur-xl lg z-30 justify-center px-8">
 
@@ -61,20 +61,40 @@ const FullStoryViewContainer = ({ story_data }: { story_data: StoryParagraph[] }
                 <motion.div className="w-full px-4 overflow-x-hidden">
                     <motion.div animate={{ x: `${translateAmount}%` }} className="flex gap-x-4 w-full items-center">
                         {story_data.map((seg, idx) => {
-
                             if (activeIndex < idx) {
                                 return (
-                                    <motion.img key={idx} animate={{ width: "100%", maxHeight: "max-content" }} className="rounded-md" src={seg.image} alt={`image${idx}`} />
+                                    <div key={idx} className="flex justify-center w-full shrink-0">
+                                        <motion.img
+                                            animate={{ width: "30%", height: "max-content" }}
+                                            className="rounded-md"
+                                            src={seg.image}
+                                            alt={`image${idx + 1}`}
+                                        />
+                                    </div>
                                 )
                             }
                             else if (activeIndex === idx) {
                                 return (
-                                    <motion.img key={idx} animate={{ width: "100%", height: "auto" }} className="rounded-md" src={seg.image} alt={`image${idx}`} />
+                                    <div key={idx} className="flex justify-center w-full shrink-0">
+                                        <motion.img
+                                            animate={{ width: "70%", height: "max-content" }}
+                                            className="rounded-md"
+                                            src={seg.image}
+                                            alt={`image${idx + 1}`}
+                                        />
+                                    </div>
                                 )
                             }
                             else {
                                 return (
-                                    <motion.img key={idx} animate={{ width: "100%", maxHeight: "max-content" }} className="rounded-md" src={seg.image} alt={`image${idx}`} />
+                                    <div key={idx} className="flex justify-center w-full shrink-0">
+                                        <motion.img
+                                            animate={{ width: "30%", height: "max-content" }}
+                                            className="rounded-md"
+                                            src={seg.image}
+                                            alt={`image${idx + 1}`}
+                                        />
+                                    </div>
                                 )
                             }
                         })}
@@ -89,7 +109,7 @@ const FullStoryViewContainer = ({ story_data }: { story_data: StoryParagraph[] }
                             <div className="h-max px-1 flex flex-col">
                                 <div id="paragraph">
                                     <p className="roboto-500 text-white/80 text-[0.9rem]">
-                                        {story_data[activeIndex].story_paragraph.slice(0, 200)}
+                                        {story_data[activeIndex].story_paragraph}
                                     </p>
                                 </div>
                             </div>
