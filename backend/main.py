@@ -482,7 +482,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                     continue
                             else:
                                 logger.info(f"🆕 Generated ID for potential new session: {session_id}")
-
                                 conversation_history = []
                                 unique_message_ids = []
                                 
@@ -502,7 +501,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             # await websocket.send_json({"type": "session_id", "status": "error", "error": str(e)})
                             await ws_send(websocket, {"type": "session_id", "status": "Not_acknowledeged", "error": str(e)}, label="session_init_error")
                         
-                        continue
+                    continue
             
             # Handle CHAT HISTORY request
             if data.get("type") == "chat_history":
