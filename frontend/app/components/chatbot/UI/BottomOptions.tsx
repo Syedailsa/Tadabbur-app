@@ -6,6 +6,7 @@ import AttachIcon from "../../../../icons/attach_icon.svg";
 import PlusIcon from "../../../../icons/plus-icon-black.svg";
 import StoryIcon from "../../../../icons/story_telling_icon.svg";
 import MicIcon from "../../../../icons/mic_icon.svg";
+import SendIcon from "../../../../icons/send_icon.svg"
 import { retryOperation, wsSendAsync } from "@/app/utils/retryOpernation";
 
 
@@ -18,13 +19,25 @@ const BottomOptions = () => {
     setHideModelBox,
     active,
     setActive,
+    attachedFile,
     setAttachedFile,
+    isUploading,
+    fileContext,
+    showPlaceholder,
+    ask,
+    inputRef,
+    isGenerating,
+    stopGeneration,
+    currentMode
+
   } = useContext(ChatContext)!;
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]); // Store audio chunks locally
   const fileInputRef = useRef<HTMLInputElement>(null);
   const micActive = useRef<boolean>(false);
+
+
 
   const isMicActive = active[2];
 
@@ -93,7 +106,7 @@ const BottomOptions = () => {
       // 1. Dispatch event to tell ChatPage to show loading state
       window.dispatchEvent(new Event("tadabbur-transcription-start"));
       const data = await retryOperation(async () => {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/`, {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/transcribe`, {
           method: "POST",
           body: formData,
         });
@@ -164,7 +177,7 @@ const BottomOptions = () => {
         style={{ display: "none" }}
         accept=".pdf,.txt"
       />
-      <motion.div
+      {/* <motion.div
         whileTap={{ backgroundColor: "#0000003D" }}
         whileHover={{ backgroundColor: "#0000000D" }}
         animate={{ backgroundColor: active[0] ? "#0000000D" : "#00000000" }}
@@ -186,8 +199,40 @@ const BottomOptions = () => {
         <p className="switzer-500 text-[0.91rem] sm:text-[0.96rem]">
           {selectedModel}
         </p>
+      </motion.div> */}
+      <motion.div className="flex">
+        <motion.div
+          whileTap={{ backgroundColor: "#0000003D" }}
+          whileHover={{ backgroundColor: "#0000000D" }}
+          className="rounded-full w-9 h-9 cursor-pointer flex justify-center items-center"
+          id="attach-files-box"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <AttachIcon className="fill-current text-black w-5.5 h-5.5" />
+        </motion.div>
+        
+        <motion.div
+          id="mic-icon-box"
+          whileTap={{ backgroundColor: "#0000003D" }}
+          whileHover={{ backgroundColor: "#0000000D" }}
+          onClick={() => {
+            setActive((prev: boolean[]) => {
+              const current = [...prev];
+              current[2] = !current[2];
+              return current;
+            });
+          }}
+          animate={{ backgroundColor: active[2] ? "#ff000020" : "#00000000" }}
+          className="w-9 h-9 rounded-full flex items-center justify-center cursor-pointer"
+        >
+          <MicIcon
+            className={`w-5.5 h-5.5 fill-current ${active[2] ? "text-red-600" : "text-black"
+              }`}
+          />
+        </motion.div>
+
       </motion.div>
-      <motion.div className={`ml-auto flex gap-x-1`}>
+      <motion.div className={`ml-auto flex gap-x-1 items-center`}>
         <motion.div
           onClick={(e) => {
             e.stopPropagation();
@@ -201,8 +246,10 @@ const BottomOptions = () => {
           className={`w-9 h-9 rounded-full flex items-center justify-center cursor-pointer
           }`}
         >
-          <PlusIcon className="fill-current w-5 h-5 text-black" />
+          <PlusIcon className="fill-current w-5.5 h-5.5 text-black" />
         </motion.div>
+
+
         <motion.div
           id="story-telling-box"
           onClick={async () => {
@@ -222,44 +269,47 @@ const BottomOptions = () => {
           whileHover={{ backgroundColor: "#0000000D" }}
           className="flex gap-x-1 px-3 py-1 rounded-full cursor-pointer items-center"
         >
-          <StoryIcon className="fill-current w-5 h-5 text-black" />
-          <span className="w-max switzer-500 text-[0.96rem]">
+          <StoryIcon className="fill-current w-5.5 h-5.5 text-black" />
+          <span className="w-max switzer-500">
             Story telling
           </span>
         </motion.div>
+        {currentMode === "normal" && (
+          <div className="w-9 h-9 flex items-center justify-center">
+            {isGenerating ? (
+              <button
+                onClick={stopGeneration}
+                className="flex items-center gap-x-2 p-1.5 bg-black/70 hover:bg-black/90 text-white text-xs rounded-sm switzer-500 transition-colors cursor-pointer"
+              >
+                <div className="w-2 h-2 bg-white"></div>
 
-        <motion.div
-          id="mic-icon-box"
-          whileTap={{ backgroundColor: "#0000003D" }}
-          whileHover={{ backgroundColor: "#0000000D" }}
-          onClick={() => {
-            setActive((prev: boolean[]) => {
-              const current = [...prev];
-              current[2] = !current[2];
-              return current;
-            });
-          }}
-          animate={{ backgroundColor: active[2] ? "#ff000020" : "#00000000" }}
-          className="w-9 h-9 rounded-full flex items-center justify-center cursor-pointer"
-        >
-          <MicIcon
-            className={`w-5 h-5 fill-current ${active[2] ? "text-red-600" : "text-black"
-              }`}
-          />
-        </motion.div>
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  if (attachedFile && isUploading) {
+                    alert("File is still uploading, please wait a moment...");
+                    return;
+                  }
+                  const input = inputRef.current?.innerText || "";
+                  if (input.trim() !== "" || fileContext) {
+                    ask(input.trim());
+                  }
+                }}
 
-        <motion.div
-          whileTap={{ backgroundColor: "#0000003D" }}
-          whileHover={{ backgroundColor: "#0000000D" }}
-          className="rounded-full w-9 h-9 cursor-pointer flex justify-center items-center"
-          id="attach-files-box"
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <AttachIcon className="fill-current text-black w-5 h-5" />
-        </motion.div>
+              >
+                <motion.div style={{ cursor: showPlaceholder ? "default" : "pointer" }} animate={{ color: showPlaceholder ? "#000000B3" : "#000000" }} className="cursor-pointer w-9 h-9 flex justify-center items-center">
+                  <SendIcon className="w-5.5 h-5.5 fill-current" />
+                </motion.div>
+              </button>
+            )}
+          </div>
+        )}
       </motion.div>
     </div>
   );
 };
 
 export default BottomOptions;
+
+

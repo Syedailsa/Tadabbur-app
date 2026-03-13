@@ -6,20 +6,15 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { ReactNode, useEffect, useRef, useState, CSSProperties, HTMLAttributes, Suspense } from "react";
 import Image from "next/image"
-import QuranPic from "../../../images/Quran.jpg"
-import QuranReading from "../../../images/QuranReading.jpg"
-import DesertPic from "../../../images/Desert.jpg"
-import ArkPic from "../../../images/OldArk.png"
 import ChatProvider from "@/app/providers/chatbot/ChatProvider";
-
 import DisclaimerIcon from "../../../icons/disclaimer.svg";
 import CrossIcon from "../../../icons/cross_icon.svg"
 import TextFileIcon from "../../../icons/text-file-icon.svg"
+import SendIcon from "../../../icons/send_icon.svg";
 import PdfFileIcon from "../../../icons/pdf-file-icon.svg"
 import PlusIcon from "../../../icons/plus-icon-white.svg"
 import TadabburFontWhite from "../../../images/tadabbur-font-white.png"
-import TadabburFontBlack from "../../../images/tadabbur-font-black.jpeg"
-import SendIcon from "../../../icons/send_icon.svg"
+import TadabburFontBlack from "../../../images/tadabbur-font-black.png"
 import EngagingIcon from "../../../icons/engage_icon.svg"
 import ArrowLeft from "../../../icons/arrow-left-bold.svg"
 import UndoArrow from "../../../icons/refresh.svg";
@@ -36,26 +31,23 @@ import {
 } from "framer-motion";
 import ProtectedRoute from "@/app/utils/ProtectedRoutes";
 import RegistrationForm from "@/app/components/chatbot/UI/ReactForm";
-import { ModelList } from "@/static/data";
+import { defaultPromptsNormalMode, defaultPromptsStoryMode, ModelList } from "@/static/data";
 import BottomOptions from "../../components/chatbot/UI/BottomOptions";
 import ExtraOptions from "../../components/chatbot/UI/ExtraOptions";
 import MicStoryMode from "@/app/components/chatbot/UI/MicStoryMode";
-// import PromptSuggestion from ".../icons/prompt_suggestion.svg";
-import { defaultPrompts } from "@/static/data";
 import ModelBox from "../../components/chatbot/UI/ModelBox";
-import Controls from "../../components/chatbot/UI/Controls";
 import PromptExtraOptions from "../../components/chatbot/UI/PrompExtraOptions";
-import generateUUID from "@/utils/generateShortId";
-import { ChatHisoryDialogueBox } from "../../components/chatbot/UI/ChatHistoryDialogueBox";
+import generateUUID from "@/app/utils/generateShortId";
 import { SurahForAudios, SurahForVerseImages } from "@/app/components/chatbot/interfaces/Surah";
 import ReportContentDialogueBox from "../../components/chatbot/UI/ReportContentDialogueBox";
 import { ChatMessage } from "../../components/chatbot/interfaces/ChatMessage";
 import QuranDialogBox from "@/app/components/chatbot/UI/QuranDialogBox";
 import StoryContainer from "@/app/components/chatbot/UI/StoryContainer";
-import groupChatMessages from "@/utils/groupChatMessages";
+import groupChatMessages from "@/app/utils/groupChatMessages";
 import WaveForm from "../../components/chatbot/UI/WaveForm";
 import hidePromptExtraOptionsModelBoxArray from "@/app/components/chatbot/interfaces/hidePromptExtraOptionsModelBoxArray";
 import { useRouter, useSearchParams } from "next/navigation";
+import Cookies from "js-cookie";
 import {
   SessionInitMessage,
   ChatRecordType,
@@ -65,6 +57,7 @@ import HamBurger from "@/app/components/chatbot/UI/HamBurger";
 import ChatHistoryCupboard from "@/app/components/chatbot/UI/ChatHistoryCupboard";
 import FullStoryViewContainer from "@/app/components/chatbot/UI/FullStoryViewContainer";
 import StoryModeExtraOptions from "@/app/components/chatbot/UI/StoryModeExtraOptions";
+import ImageContainer from "@/app/components/chatbot/UI/ImageContainer";
 
 
 
@@ -109,7 +102,8 @@ function ChatContent() {
   const [reportedMessageIDs, setReportedMessageIDs] = useState<string[] | null>(
     [],
   );
-  const [currentMode, setCurrentMode] = useState<"normal" | "story" | null>("story");
+  const [openImageContainer, setOpenImageContainer] = useState<boolean>(false)
+  const [currentMode, setCurrentMode] = useState<"normal" | "story" | null>("normal");
   const [isGenerating, setIsGenerating] = useState(false);
   const [openStoryModeExtraOptions, setOpenStoryModeExtraOptions] = useState<boolean>(false)
   const currentStreamingMsgRef = useRef<{
@@ -124,8 +118,35 @@ function ChatContent() {
   const controls = useAnimationControls();
   const [hidePromptExtraOptionsModelBoxArray, setHidePromptExtraOptionsModelBoxArray] =
     useState<hidePromptExtraOptionsModelBoxArray[]>([]);
+  const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected">("connected");
+  const streamingMessageIndexRef = useRef<number | null>(null);
+  const setStreamingMessageIndexSynced = (val: number | null) => {
+    streamingMessageIndexRef.current = val;
+    setStreamingMessageIndex(val);
+  };
+  const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
+  const [paragraphCount, setParagraphCount] = useState<number>(3);
+
+  const pendingPromptRef = useRef<{
+    input: string;
+    guidelines: string | null;
+    resend_flag: boolean;
+    resend_message_id: string | null;
+    old_responses_attachments: { responses: AssistantMessage[], attachments: Attachment[] } | null;
+    target_session_id: string | null;
+    timestamp: number | null;
+  } | null>(null);
+  const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
+  const lastPongRef = useRef<number>(Date.now());
+  const reconnectAttemptRef = useRef(0);
+  const urlSessionId = searchParams.get("session_id");
+  const totalReconnectAttempts = useRef(0);
+  const [showOfflineToast, setShowOfflineToast] = useState(false);
+  const [reconnectTrigger, setReconnectTrigger] = useState<number>(0);
+  const MAX_RECONNECT_TRIES = 5;
   const [openFullStoryView, setOpenFullStoryView] = useState<boolean>(false)
   const [storyData, setStoryData] = useState<StoryParagraph[]>([])
+  const [userImages, setUserImages] = useState<{ image_url: string }[]>([])
   const router = useRouter()
   const [openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox] = useState<
     boolean
@@ -183,6 +204,56 @@ function ChatContent() {
 
   }, [isStoryMode])
 
+  useEffect(() => {
+    const savedPrompt = localStorage.getItem("tadabbur_pending_prompt");
+    if (savedPrompt) {
+      try {
+        const parsed = JSON.parse(savedPrompt);
+        const isExpired = Date.now() - (parsed.timestamp || 0) > 3600000;
+
+        if (isExpired) {
+          console.log(" Pending prompt expired, clearing from storage.");
+          localStorage.removeItem("tadabbur_pending_prompt");
+        } else {
+          pendingPromptRef.current = parsed;
+          console.log(" Recovered a valid pending message.");
+        }
+      } catch (e) {
+        localStorage.removeItem("tadabbur_pending_prompt");
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleOffline = () => {
+      console.log("🌐 Browser report: Network is OFF");
+      setConnectionStatus("disconnected");
+    };
+    type PendingDelete = { type: string; user_id: string | null; session_id?: string };
+
+    const handleOnline = () => {
+      console.log("🌐 Browser report: Network is ON");
+      const pending: PendingDelete[] = JSON.parse(localStorage.getItem("tadabbur_pending_deletes") || "[]");
+      if (pending.length > 0) {
+        pending.forEach((op) => {
+          wsSendAsync(wsRef.current, op);
+        });
+        localStorage.removeItem("tadabbur_pending_deletes");
+        console.log("🗑️ Pending deletes executed after reconnection");
+      }
+      setConnectionStatus("connected");
+      setReconnectTrigger(prev => prev + 1);
+    };
+
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleOnline);
+
+    return () => {
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, []);
+
   function preprocessContent(content: string) {
     if (!content) return "";
     let processed = content;
@@ -197,11 +268,10 @@ function ChatContent() {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
+    Cookies.remove('auth_token');
+    localStorage.clear();
     router.push('/pages/auth');
   };
-
 
   useEffect(() => {
     const audioEl = audioRef.current;
@@ -363,7 +433,7 @@ function ChatContent() {
   useEffect(() => {
     const checkPersonalization = async () => {
       try {
-        const token = localStorage.getItem("token");
+        const token = localStorage.getItem("auth_token");
         if (!token) {
           setIsCheckingPersonalization(false);
           setShowPersonalizationForm(true);
@@ -386,7 +456,7 @@ function ChatContent() {
           }
           return await response.json();
         }, 5, 1000);
-        // console.log("📊 Personalization data received:", data);
+        console.log("📊 Personalization data received:", data);
 
         if (data.is_personalized && data.username && data.age) {
 
@@ -422,266 +492,399 @@ function ChatContent() {
   }, []);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      console.error("No authentication token found. Cannot connect to chat.");
-      return;
-    }
-
-    const urlSessionId = searchParams.get("session_id");
-
-
-    const websocket = new WebSocket(`${process.env.NEXT_PUBLIC_WEBSOCKET_URL}/ws/chat?token=${token}`);
-    wsRef.current = websocket;
-    websocket.onopen = async () => {
-      const user = localStorage.getItem("user");
-      let user_id = null;
-      if (user) {
-        try {
-          const userData = JSON.parse(user);
-          user_id = userData.id;
-        } catch (e) {
-          console.error("Error parsing user data:", e);
-        }
+    let reconnectTimeout: NodeJS.Timeout;
+    const connect = () => {
+      if (totalReconnectAttempts.current >= MAX_RECONNECT_TRIES) {
+        console.log(" Max reconnect attempts reached. Waiting for manual user action.");
+        setConnectionStatus("disconnected");
+        return;
       }
-      const sessionInit: SessionInitMessage = {
-        type: "session-init",
-        session_id: urlSessionId || "",
-        user_id: user_id,
-        model: "kimi-k2-instruct-0905",
-        mode: "normal"
+
+      const token = localStorage.getItem("auth_token");
+      if (!token) {
+        console.error("No authentication token found. Cannot connect to chat.");
+        return;
+      }
+
+      const websocket = new WebSocket(`${process.env.NEXT_PUBLIC_WEBSOCKET_URL}/ws/chat?token=${token}`);
+      wsRef.current = websocket;
+      websocket.onopen = async () => {
+        reconnectAttemptRef.current = 0;
+        totalReconnectAttempts.current = 0;
+        const user = localStorage.getItem("user");
+        let user_id = null;
+        if (user) {
+          try {
+            const userData = JSON.parse(user);
+            user_id = userData.id;
+          } catch (e) {
+            console.error("Error parsing user data:", e);
+          }
+        }
+
+        const sessionInit: SessionInitMessage = {
+          type: "session-init",
+          session_id: urlSessionId || "",
+          user_id: user_id,
+          model: "kimi-k2-instruct-0905",
+          mode: currentMode
+        };
+
+        try {
+          await wsSendAsync(
+            websocket,
+            sessionInit,
+            8,
+            500
+          );
+          if (urlSessionId) {
+            await wsSendAsync(
+              websocket, {
+              type: "get_chat",
+              session_id: urlSessionId,
+              user_id: user_id,
+            }, 8, 500)
+          } else {
+            // If no history to fetch, we are ready immediately
+            setConnectionStatus("connected");
+          }
+
+        } catch (error) {
+          console.error("❌ Failed to initialize WebSocket session:", error);
+          setConnectionStatus("disconnected");
+        }
+        setReportedMessageIDs([]);
       };
 
-      try {
-        await wsSendAsync(
-          websocket,
-          sessionInit,
-          8,
-          500
-        );
-        if (urlSessionId) {
-          await wsSendAsync(
-            websocket, {
-            type: "get_chat",
-            session_id: urlSessionId,
-            user_id: user_id,
-          }, 8, 500
-          )
+      wsRef.current.onclose = () => {
+        if (heartbeatRef.current) {
+          clearInterval(heartbeatRef.current);
+          heartbeatRef.current = null;
         }
-      }
-      catch (error) {
-        console.error("❌ Failed to initialize WebSocket session:", error);
-      }
-      setReportedMessageIDs([]);
-    };
+        setConnectionStatus("disconnected");
+        totalReconnectAttempts.current += 1;
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttemptRef.current), 30000);
 
-    wsRef.current.onerror = (error) => {
-      console.error("An error occured in websocket", error);
-    };
+        console.log(`❌ Socket closed. Retrying in ${delay / 1000}s...`);
 
-    wsRef.current.onclose = () => {
-      // console.log("Websocket closed!");
-    };
+        reconnectTimeout = setTimeout(() => {
+          reconnectAttemptRef.current += 1;
+          connect();
+        }, delay);
+      };
 
-    wsRef.current.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      console.log("Data from websocket", event.data);
+      wsRef.current.onerror = (error) => {
+        console.log("An error occured in websocket", error);
+        setConnectionStatus("disconnected");
+        websocket.close();
+      };
 
-      const type = data.type;
-      switch (type) {
-        case "undo-report":
-          const id = data.message_id;
-          if (id) {
-            setReportedMessageIDs((prev) => {
-              if (!prev) return prev;
-              return prev.filter((i) => i !== id);
-            });
-          }
-          break;
 
-        case "tts_audio_url":
-          const audio_url = data.audio_url;
-          const tts_message_id = data.message_id;
-          const user_message_id = data.user_id
-          if (audio_url && tts_message_id && user_message_id) {
-            // logic here
-            try {
-              // store the audio_url for next playback
-              setMessages(prev => prev.map(m => m.message_id === user_message_id ? { ...m, responses: m.responses.map(r => r.message_id === tts_message_id ? { ...r, audio_link: audio_url } : r) } : m))
+      wsRef.current.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        console.log("Data from websocket", event.data);
 
-              // only play if current playable audio is the one that matches response ID
-              if (audioRef.current && currentPlayableAudio.current?.response_message_id == tts_message_id) {
-                audioRef.current.src = ""
-                audioRef.current.src = audio_url
-                audioRef.current.play()
-              }
-            } catch (err) {
-              console.log("Some error occured while assigning audio url", err)
+        const type = data.type;
+        switch (type) {
+          case "pong":
+            console.log("Pong received - connection alive");
+            break;
+          case "undo-report":
+            const id = data.message_id;
+            if (id) {
+              setReportedMessageIDs((prev) => {
+                if (!prev) return prev;
+                return prev.filter((i) => i !== id);
+              });
             }
-          }
-          break;
+            break;
 
-        case "session_id":
-          setCurrentMode(null)
-          const session_id = data.session_id;
-          const session_status = data.status;
-          const message_ids = data.message_ids;
-          const session_mode: "story" | "normal" = data.mode || "normal"
-          if (session_status === "acknowledged") {
-            setSessionID(session_id);
-            const currentUrlId = searchParams.get("session_id");
-            if (!currentUrlId || currentUrlId === "" || currentMode != session_mode) {
-              router.push(`/pages/chatbot?session_id=${session_id}`, { scroll: false });
-            }
-            setMessages([]);
-            setActive([false, false, false])
-            setCurrentMode(session_mode)
-            setHidePromptExtraOptionsModelBoxArray([])
-            setMessageIDs(message_ids);
-
-          }
-          break;
-
-        case "model-selection":
-          const model_status = data.status;
-          const model_name = data.display_name;
-          if (model_status === "acknowledged") {
-            alert(`Model is changed to ${model_name}`);
-          }
-
-          break;
-        case "chat_history":
-          const chat_history = data.chat_history;
-          const history_status = data.status;
-          // handle chat history
-          if (history_status === "acknowledged") {
-            setChatHistory(chat_history);
-          } else if (history_status === "error") {
-            alert("Error loading chat history: " + data.error);
-          }
-          break;
-
-        case "delete_session":
-          const delete_status = data.status;
-          if (delete_status === "success") {
-            // Refresh chat history
-            const user = localStorage.getItem("user");
-            let user_id = null;
-            if (user) {
+          case "tts_audio_url":
+            const audio_url = data.audio_url;
+            const tts_message_id = data.message_id;
+            const user_message_id = data.user_id
+            if (audio_url && tts_message_id && user_message_id) {
+              // logic here
               try {
-                const userData = JSON.parse(user);
+                // store the audio_url for next playback
+                setMessages(prev => prev.map(m => m.message_id === user_message_id ? { ...m, responses: m.responses.map(r => r.message_id === tts_message_id ? { ...r, audio_link: audio_url } : r) } : m))
+
+                // only play if current playable audio is the one that matches response ID
+                if (audioRef.current && currentPlayableAudio.current?.response_message_id == tts_message_id) {
+                  audioRef.current.src = ""
+                  audioRef.current.src = audio_url
+                  audioRef.current.play()
+                }
+              } catch (err) {
+                console.log("Some error occured while assigning audio url", err)
+              }
+            }
+            break;
+
+          case "session_id":
+            setCurrentMode(null)
+            const session_id = data.session_id;
+            const session_status = data.status;
+            const message_ids = data.message_ids;
+            const session_mode: "story" | "normal" = data.mode || "normal"
+            if (session_status === "acknowledged") {
+              setSessionID(session_id);
+              const currentUrlId = searchParams.get("session_id");
+              if (!currentUrlId || currentUrlId === "" || currentMode != session_mode) {
+                router.replace(`/pages/chatbot?session_id=${session_id}`, { scroll: false });
+              } else {
+                router.push(`/pages/chatbot?session_id=${session_id}`, { scroll: false });
+              }
+              setMessages([]);
+              setActive([false, false, false])
+              setCurrentMode(session_mode)
+              setHidePromptExtraOptionsModelBoxArray([])
+              setMessageIDs(message_ids);
+
+            }
+            break;
+
+          case "model-selection":
+            const model_status = data.status;
+            const model_name = data.display_name;
+            if (model_status === "acknowledged") {
+              alert(`Model is changed to ${model_name}`);
+            }
+
+            break;
+          case "chat_history":
+            const chat_history = data.chat_history;
+            const history_status = data.status;
+            // handle chat history
+            if (history_status === "acknowledged") {
+              setChatHistory(chat_history);
+            } else if (history_status === "error") {
+              alert("Error loading chat history: " + data.error);
+            }
+            break;
+
+          case "delete_session":
+            const delete_status = data.status;
+            if (delete_status === "success") {
+              window.dispatchEvent(new CustomEvent("tadabbur-session-deleted", {
+                detail: { session_id: data.session_id }
+              }));
+
+              const currentUrlSessionId = new URLSearchParams(window.location.search).get("session_id");
+              if (currentUrlSessionId === data.session_id) {
+                setMessages([]);
+                setSessionID(null);
+                setMessageIDs([]);
+                setHidePromptExtraOptionsModelBoxArray([]);
+                setLoading(false);
+                setIsGenerating(false);
+
+                const u = localStorage.getItem("user");
+                let uid = null;
+                try { uid = u ? JSON.parse(u).id : null; } catch { }
+
+                wsSendAsync(wsRef.current, {
+                  type: "session-init",
+                  session_id: "",
+                  user_id: uid,
+                  model: "kimi-k2-instruct-0905",
+                });
+              }
+
+
+              const user = localStorage.getItem("user");
+              let user_id: string = "";
+
+              try {
+                const userData = JSON.parse(user || "{}");
                 user_id = userData.id;
               } catch (e) {
                 console.error("Error parsing user data:", e);
+
               }
+
+              if (user_id) {
+                wsSendAsync(wsRef.current, {
+                  type: "chat_history",
+                  user_id: user_id,
+                });
+              }
+              setShowDeleteSuccess(true);
+              setTimeout(() => setShowDeleteSuccess(false), 3000);
+              type PendingDelete = { type: string; user_id: string | null; session_id?: string };
+              const pending: PendingDelete[] = JSON.parse(localStorage.getItem("tadabbur_pending_deletes") || "[]");
+              const updated = pending.filter((op) => op.session_id !== data.session_id);
+              localStorage.setItem("tadabbur_pending_deletes", JSON.stringify(updated));
+
+            } else {
+
             }
-            if (user_id) {
+            break;
+
+          case "delete_all_sessions":
+            const delete_all_status = data.status;
+            if (delete_all_status === "success") {
+              if (setOpenChatHistoryDialogueBox) setOpenChatHistoryDialogueBox(false);
+              setChatHistory([]);
+              window.dispatchEvent(new CustomEvent("tadabbur-all-sessions-deleted"));
+              localStorage.removeItem("tadabbur_pending_deletes");
+
+              setMessages([]);
+              setSessionID(null);
+              setMessageIDs([]);
+              setHidePromptExtraOptionsModelBoxArray([]);
+              router.push('/pages/chatbot', { scroll: false });
+
               wsSendAsync(wsRef.current, {
-                type: "chat_history",
-                user_id: user_id,
+                type: "session-init",
+                session_id: "",
+                user_id: (() => {
+                  try {
+                    const u = localStorage.getItem("user");
+                    return u ? JSON.parse(u).id : null;
+                  } catch { return null; }
+                })(),
+                model: "kimi-k2-instruct-0905",
               });
+            } else {
+              alert("Error deleting sessions: " + data.error);
             }
-            alert("Chat session deleted successfully");
-          } else {
-            alert("Error deleting chat session: " + data.error);
-          }
-          break;
+            break;
+          case "get_images":
+            const get_image_status = data.status
+            const images = data.images || []
+            if (get_image_status != "acknowledged" || images.length <= 0) {
+              break
+            }
+            setUserImages(images)
+            setOpenImageContainer(true)
+            break
 
-        case "delete_all_sessions":
-          const delete_all_status = data.status;
-          if (delete_all_status === "success") {
-            setChatHistory([]);
-            alert("All chat sessions deleted successfully");
-          } else {
-            alert("Error deleting all chat sessions: " + data.error);
-          }
-          break;
+          case "get_chat":
+            const status = data.status;
+            const mode: "story" | "normal" = data.mode;
+            if (status === "acknowledged") {
+              const messageIDs = data.unique_message_ids;
+              const session_id = data.session_id
+              const chat_history = groupChatMessages(data.chat_history);
+              setMessages(chat_history);
+              setMessageIDs(messageIDs);
+              setSessionID(session_id)
+              setConnectionStatus("connected")
+              setCurrentMode(mode)
+              setLoading(false);
 
-        case "get_chat":
-          const status = data.status;
-          const mode: "story" | "normal" = data.mode;
-          if (status === "acknowledged") {
-            const messageIDs = data.unique_message_ids;
-            const session_id = data.session_id
-            const chat_history = groupChatMessages(data.chat_history);
-            setMessages(chat_history);
-            setMessageIDs(messageIDs);
-            setCurrentMode(mode)
+              const saved = localStorage.getItem("tadabbur_pending_prompt");
+              if (saved) {
+                try {
+                  const pendingData = JSON.parse(saved);
+                  // Only auto-send if it belongs to this session or session is new
+                  const isCorrectSession = !pendingData.target_session_id || pendingData.target_session_id === session_id;
 
-            // initialize an emtpy array for hidePromptExtraOptionsModelBoxArray
-            const array: hidePromptExtraOptionsModelBoxArray[] = [];
-            if (data.chat_history.length > 0) {
-              for (const record of data.chat_history) {
-                if (record.role === "assistant") {
-                  array.push({ assistant_message_id: record.message_id, hidePromptExtraOptionsModelBox: true })
+                  if (isCorrectSession && pendingData.input) {
+                    console.log("🚀 Connection restored. Sending pending prompt from localStorage...");
+
+                    ask(
+                      pendingData.input,
+                      pendingData.guidelines,
+                      pendingData.resend_flag,
+                      pendingData.resend_message_id,
+                      pendingData.old_responses_attachments,
+                      true,
+                      null
+                    );
+
+                    localStorage.removeItem("tadabbur_pending_prompt");
+                    pendingPromptRef.current = null;
+                  }
+                } catch (e) {
+                  console.error("Error processing pending prompt:", e);
+                  localStorage.removeItem("tadabbur_pending_prompt");
                 }
               }
+
+              // initialize an emtpy array for hidePromptExtraOptionsModelBoxArray
+              const array: hidePromptExtraOptionsModelBoxArray[] = [];
+              if (data.chat_history.length > 0) {
+                for (const record of data.chat_history) {
+                  if (record.role === "assistant") {
+                    array.push({ assistant_message_id: record.message_id, hidePromptExtraOptionsModelBox: true })
+                  }
+                }
+              }
+              setHidePromptExtraOptionsModelBoxArray(array)
+              router.push(`/pages/chatbot?session_id=${session_id}`);
             }
-            setHidePromptExtraOptionsModelBoxArray(array)
-            router.push(`/pages/chatbot?session_id=${session_id}`);
-          }
-          break;
+            break;
 
-        case "assistance_response":
-          const reply: string = data.content.response ?? "No reply from server";
-          const has_verse_audio: boolean = data.content.has_verse_audio
-          const has_verse_image: boolean = data.content.has_verse_image
-          const message_id: string = data.message_id;
-          // assign reply to message ID with order data.reply_to_message_id >> currentMessageIDRef.current >> null
-          const reply_to_message_id =
-            data.reply_to_message_id || currentMessageIDRef.current || null;
-          const resend_flag = data.resend_flag;
-          const audio_data: SurahForAudios[] = data.content.audio_data || []
-          const verse_images: SurahForVerseImages[] = data.content.verse_images || []
-          const story_data: StoryParagraph[] = data.content.story_segments ?? []
-          // check if oldMessages is present with resend flag
-          if (resend_flag) {
-            if (
-              !oldMessagesRef.current ||
-              oldMessagesRef.current.length === 0
-            ) {
-              // console.log("No old messages so returning...");
-              break;
+          case "assistance_response":
+            const reply: string = data.content.response ?? "No reply from server";
+            const has_verse_audio: boolean = data.content.has_verse_audio
+            const has_verse_image: boolean = data.content.has_verse_image
+            const message_id: string = data.message_id;
+            // assign reply to message ID with order data.reply_to_message_id >> currentMessageIDRef.current >> null
+            const reply_to_message_id =
+              data.reply_to_message_id || currentMessageIDRef.current || null;
+            const resend_flag = data.resend_flag;
+            const audio_data: SurahForAudios[] = data.content.audio_data || []
+            const verse_images: SurahForVerseImages[] = data.content.verse_images || []
+            const story_data: StoryParagraph[] = data.content.story_segments ?? []
+            // check if oldMessages is present with resend flag
+            if (resend_flag) {
+              if (
+                !oldMessagesRef.current ||
+                oldMessagesRef.current.length === 0
+              ) {
+                // console.log("No old messages so returning...");
+                break;
+              }
             }
-          }
 
-          messageScrollFlag.current = false;
-          setLoadingMessage(null);
+            messageScrollFlag.current = false;
+            setLoadingMessage(null);
 
-          // add a new object for the upcoming assistant's message
-          setHidePromptExtraOptionsModelBoxArray((prev) => {
-            return [
-              ...(prev || []),
-              { assistant_message_id: message_id, hidePromptExtraOptionsModelBox: true }
-            ];
-          });
+            setHidePromptExtraOptionsModelBoxArray((prev) => {
+              return [
+                ...(prev || []),
+                { assistant_message_id: message_id, hidePromptExtraOptionsModelBox: true }
+              ];
+            });
 
-          // Add a new assistant message
-          setMessages((prev) => {
-            if (!prev || prev.length == 0) {
-              return prev;
-            }
-            const updated = [...(prev || [])];
+            // Add a new assistant message
+            setMessages((prev) => {
+              if (!prev || prev.length == 0) {
+                return prev;
+              }
+              const updated = [...(prev || [])];
 
-            // although streamingMessageIndex is already set in ask function, but setting again for safety
-            setStreamingMessageIndex(updated.length - 1);
-            const lastUserMessage = updated.findLast((m) => m.role === "user");
+              const targetIndex = reply_to_message_id
+                ? updated.findIndex((m) => m.message_id === reply_to_message_id)
+                : updated.length - 1;
 
-            if (lastUserMessage) {
-              if (!lastUserMessage.number_of_responses) {
-                lastUserMessage.number_of_responses = 1;
-              } else {
-                lastUserMessage.number_of_responses += 1;
+              // If not found, return unchanged
+              if (targetIndex === -1) {
+                console.warn("⚠️ Could not find target message for assistance_response, skipping");
+                return prev;
               }
 
-              // initialize a new responses array if resend flag is false otherwise assign to oldMessages
+              setStreamingMessageIndexSynced(targetIndex);
 
-              lastUserMessage.responses = resend_flag
-                ? oldMessagesRef.current
-                : [];
+              const targetMessage = updated[targetIndex];
 
-              // assign message_id and reply_to_message_id this time
-              lastUserMessage.responses.push({
+              // Check if already rendered with content
+              const alreadyRendered = targetMessage.responses?.some(
+                (r) => r.message_id === message_id && r.content !== ""
+              );
+              if (alreadyRendered) return prev;
+
+              if (!targetMessage.number_of_responses) {
+                targetMessage.number_of_responses = 1;
+              } else {
+                targetMessage.number_of_responses += 1;
+              }
+
+              targetMessage.responses = resend_flag ? oldMessagesRef.current : [];
+              targetMessage.responses.push({
                 role: "assistant",
                 message_id: message_id,
                 content: "",
@@ -696,117 +899,152 @@ function ChatContent() {
                 story_data: story_data
               });
 
-              // set the number of active message index
-              lastUserMessage.active_message_index =
-                lastUserMessage.number_of_responses - 1;
-            }
-
-            return updated;
-          });
+              targetMessage.active_message_index = targetMessage.number_of_responses - 1;
+              return updated;
+            });
 
 
-          setLoading(false);
-          setLoadingMessage(null);
-          setIsGenerating(true);
-          streamingContentRef.current = "";
-          currentStreamingMsgRef.current = {
-            message_id: message_id,
-            reply_to_message_id: reply_to_message_id || ""
-          };
-          const tokens = reply.split(/(\s+)/);
+            setLoading(false);
+            setLoadingMessage(null);
+            setIsGenerating(true);
+            streamingContentRef.current = "";
+            currentStreamingMsgRef.current = {
+              message_id: message_id,
+              reply_to_message_id: reply_to_message_id || ""
+            };
+            const tokens = reply.split(/(\s+)/);
 
-          let stopFlag = false;
-          stopStreamRef.current = () => { stopFlag = true; };
+            let stopFlag = false;
+            stopStreamRef.current = () => { stopFlag = true; };
 
-          (async () => {
-            for (let i = 0; i < tokens.length; i += 4) {
-              if (stopFlag) break;
+            (async () => {
+              for (let i = 0; i < tokens.length; i += 4) {
+                if (stopFlag) break;
 
-              const chunk = tokens.slice(i, i + 4).join("");
-              await new Promise((resolve) => setTimeout(resolve, 2));
+                const chunk = tokens.slice(i, i + 4).join("");
+                await new Promise((resolve) => setTimeout(resolve, 2));
 
-              if (stopFlag) break;
+                if (stopFlag) break;
 
 
-              setMessages((prev) => {
-                if (!prev || prev.length === 0) return prev;
-                const updated = [...prev];
-                const streamIndex = streamingMessageIndex ?? updated.length - 1;
+                setMessages((prev) => {
+                  if (!prev || prev.length === 0) return prev;
+                  const updated = [...prev];
+                  const streamIndex = streamingMessageIndex ?? updated.length - 1;
+                  if (streamIndex >= 0 && streamIndex < updated.length) {
+                    const lastMsg = updated[streamIndex];
+                    if (!lastMsg.responses || lastMsg.responses.length === 0) return prev;
+                    const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
 
-                if (streamIndex >= 0 && streamIndex < updated.length) {
-                  const lastMsg = updated[streamIndex];
-                  const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
+                    updated[streamIndex].responses[lastResIdx].content =
+                      (updated[streamIndex].responses[lastResIdx]?.content || "") +
+                      chunk;
+                    streamingContentRef.current = updated[streamIndex].responses[lastResIdx].content;
+                  }
+                  return updated;
+                });
+              }
+            })().then(() => {
+              stopStreamRef.current = null;
+              setStreamingMessageIndexSynced(null);
+              setIsGenerating(false);
+              currentStreamingMsgRef.current = null;
+              streamingContentRef.current = "";
+            });
+            break;
 
-                  updated[streamIndex].responses[lastResIdx].content =
-                    (updated[streamIndex].responses[lastResIdx].content || "") +
-                    chunk;
-                  streamingContentRef.current = updated[streamIndex].responses[lastResIdx].content;
-                }
-                return updated;
-              });
-            }
-          })().then(() => {
-            setStreamingMessageIndex(null);
-            stopStreamRef.current = null;
-            setStreamingMessageIndex(null);
+          case "stop_acknowledged":
+            // reset states related to streaming
             setIsGenerating(false);
+            setStreamingMessageIndexSynced(null);
+            setLoading(false);
             currentStreamingMsgRef.current = null;
             streamingContentRef.current = "";
-          });
-          break;
-
-        case "stop_acknowledged":
-          // reset states related to streaming
-          setIsGenerating(false);
-          setStreamingMessageIndex(null);
-          setLoading(false);
-          currentStreamingMsgRef.current = null;
-          streamingContentRef.current = "";
-          break;
-
-        case "agent":
-          const agent_type = data.agent;
-          switch (agent_type) {
-            case "story-telling":
-              setPlaceholder("Generate an Islamic story");
-              setMessages([]);
-              setGreeting(
-                "Generate any Islamic story with the finest AI Models."
-              );
-              break;
-            case "tafseer":
-              setPlaceholder("Let's lean about the Quran");
-              setMessages([]);
-              setGreeting(
-                "Assalam O Alaykum, I am Tadabbur, how may I help you today?"
-              );
-              break;
-          }
-          break;
-        case "loading_message":
-          const message = data.content ?? "Thinking to enhance response";
-          setLoading(false)
-          setLoadingMessage(message);
-          break;
-        case "report":
-          const report_status = data.status;
-          if (report_status !== "acknowledged") {
             break;
-          }
-          const reported_message_id = data.message_id;
-          if (reported_message_id) {
-            setReportedMessageIDs((prev) => [
-              ...(prev ?? []),
-              reported_message_id,
-            ]);
-          }
 
-          break;
-        default:
-          break;
+          case "agent":
+            const agent_type = data.agent;
+            switch (agent_type) {
+              case "story-telling":
+                setPlaceholder("Generate an Islamic story");
+                setMessages([]);
+                setGreeting(
+                  "Generate any Islamic story with the finest AI Models."
+                );
+                break;
+              case "tafseer":
+                setPlaceholder("Let's lean about the Quran");
+                setMessages([]);
+                setGreeting(
+                  "Assalam O Alaykum, I am Tadabbur, how may I help you today?"
+                );
+                break;
+            }
+            break;
+          case "loading_message":
+            const message = data.content ?? "Thinking to enhance response";
+            setLoading(false)
+            setLoadingMessage(message);
+            setParagraphCount(data.paragraph_count ?? 3);
+            break;
+          case "regenerate_required":
+            const orphanMsgId = data.message_id;
+            const orphanContent = data.content;
+            if (orphanMsgId && orphanContent) {
+              console.log("🔄 Regenerating orphaned message:", orphanMsgId);
+              setTimeout(() => {
+                streamingMessageIndexRef.current = null;
+                setStreamingMessageIndex(null);
+                setIsGenerating(false);
+                setLoading(false);
+                setMessages(prev => prev.filter(m => m.message_id !== orphanMsgId));
+
+                ask(
+                  orphanContent,
+                  null,
+                  false,
+                  null,
+                  null,
+                  true,
+                  orphanMsgId
+                );
+              }, 500);
+            }
+            break;
+          case "report":
+            const report_status = data.status;
+            if (report_status !== "acknowledged") {
+              break;
+            }
+            const reported_message_id = data.message_id;
+            if (reported_message_id) {
+              setReportedMessageIDs((prev) => [
+                ...(prev ?? []),
+                reported_message_id,
+              ]);
+            }
+
+            break;
+          default:
+            break;
+        }
       }
     };
-  }, []);
+
+    connect();
+
+    return () => {
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.onmessage = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+
+  }, [reconnectTrigger]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -865,7 +1103,7 @@ function ChatContent() {
     const msgId = currentStreamingMsgRef.current.message_id;
 
     setIsGenerating(false);
-    setStreamingMessageIndex(null);
+    setStreamingMessageIndexSynced(null);
     setLoading(false);
 
     wsSendAsync(wsRef.current, {
@@ -883,9 +1121,11 @@ function ChatContent() {
     guidelines: string | null = null,
     resend_flag: boolean = false,
     resend_message_id: string | null = null,
-    old_responses_attachments: { responses: AssistantMessage[], attachments: Attachment[] } | null = null
+    old_responses_attachments: { responses: AssistantMessage[], attachments: Attachment[] } | null = null,
+    bypassCheck: boolean = false,
+    message_id: string | null = null
   ) => {
-    if (streamingMessageIndex !== null || (!input.trim() && !fileContext)) return;
+    if (streamingMessageIndexRef.current !== null || (!input.trim() && !fileContext)) return;
 
     if (resend_flag) {
       if (!old_responses_attachments || old_responses_attachments.responses.length === 0) {
@@ -908,9 +1148,9 @@ function ChatContent() {
 
     if (!resend_flag) {
       // generate a message ID for the user message if its not a resend message
-      messageID = generateUUID();
+      messageID = message_id || generateUUID();
       while (messageIDs?.includes(messageID)) {
-        messageID = generateUUID(); // Reassign the same variable
+        messageID = generateUUID();
       }
       setMessageIDs((prev) => {
         return [...(prev || []), messageID];
@@ -933,6 +1173,30 @@ function ChatContent() {
       // Reset file states
       setAttachedFile(null);
 
+    }
+
+    if (connectionStatus !== "connected" && !bypassCheck) {
+      console.log("📡 Socket not ready. Saving prompt to pending queue.");
+      const pendingData = {
+        input,
+        guidelines,
+        resend_flag,
+        resend_message_id: messageID,
+        old_responses_attachments,
+        target_session_id: urlSessionId,
+        timestamp: Date.now()
+      };
+      pendingPromptRef.current = pendingData;
+      try {
+        localStorage.setItem("tadabbur_pending_prompt", JSON.stringify(pendingData));
+        console.log("prompt saved to pending queue:", pendingData);
+      } catch (error) {
+        console.warn("⚠️ LocalStorage full, message only saved in memory:", error);
+      }
+      setShowOfflineToast(true);
+      setTimeout(() => setShowOfflineToast(false), 4000); // 4 seconds
+
+      return;
     }
 
     const userMessage: ChatMessage = {
@@ -963,31 +1227,47 @@ function ChatContent() {
     oldMessagesRef.current = resend_flag ? old_responses_attachments?.responses ?? [] : [];
 
     setMessages((prev) => {
-      // prev is already typed correctly from useState
+      const isExisting = prev.some(m => m.message_id === messageID);
+      if (isExisting) {
+        return prev;
+      }
       const updated = [...(prev || []), userMessage];
-      // Set the streaming index to the upcoming new message
-      setStreamingMessageIndex(updated.length - 1);
+      setStreamingMessageIndexSynced(updated.length - 1);
       return updated;
     });
 
     currentMessageIDRef.current = messageID;
 
-    await wsSendAsync(wsRef.current, {
-      type: "user_message",
-      message_id: messageID,
-      role: "user",
-      system_instructions: guidelines || "",
-      content: input,
-      file_name: attachedFile?.name,
-      file_type: attachedFile?.type,
-      resend_flag: resend_flag,
-      resend_message_id: resend_message_id || "",
-      new_file_context: fileContext,
-    });
-    setFileContext(null);
-    if (inputRef.current) {
-      inputRef.current.innerText = "";
-      setShowPlaceholder(true);
+    try {
+      await wsSendAsync(wsRef.current, {
+        type: "user_message",
+        message_id: messageID,
+        role: "user",
+        system_instructions: guidelines || "",
+        content: input,
+        file_name: attachedFile?.name,
+        file_type: attachedFile?.type,
+        resend_flag: resend_flag,
+        resend_message_id: resend_message_id || "",
+        new_file_context: fileContext,
+      });
+      localStorage.removeItem("tadabbur_pending_prompt");
+      setFileContext(null);
+      if (inputRef.current) {
+        inputRef.current.innerText = "";
+        setShowPlaceholder(true);
+      }
+    } catch (err) {
+      console.error("Failed to send message:", err);
+      setConnectionStatus("disconnected");
+      // Also save to pending if the actual send fails
+      const pendingData = {
+        input, guidelines, resend_flag, resend_message_id, old_responses_attachments,
+        target_session_id: urlSessionId,
+        timestamp: Date.now()
+      };
+      pendingPromptRef.current = pendingData;
+      localStorage.setItem("tadabbur_pending_prompt", JSON.stringify(pendingData));
     }
   };
 
@@ -1084,21 +1364,53 @@ function ChatContent() {
           }}
           transition={{ duration: 0.3 }}
           className="relative w-screen h-screen flex flex-col items-center">
-
-
-          <div className="absolute -top-2 right-4">
-            {currentMode === "story" ? (
-              <Image className="w-16 h-auto object-cover object-top" src={TadabburFontWhite}
-                alt="tadabbur-font-white" />
-            ) : (<Image className="w-16 h-auto object-cover object-top" src={TadabburFontBlack}
-              alt="tadabbur-font-black" />)}
+          {/* --- UI STATUS INDICATOR --- */}
+          <AnimatePresence>
+            {showDeleteSuccess && (
+              <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="fixed top-10 left-1/2 -translate-x-1/2 bg-emerald-700 text-white text-[0.75rem] switzer-600 px-4 py-2 rounded-full shadow-xl z-9999 whitespace-nowrap flex items-center gap-2"
+              >
+                Session Deleted Successfully
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <div className="fixed top-4 right-4 z-9999 flex flex-col items-end gap-y-2 pointer-events-none">
+            <AnimatePresence mode="wait">
+              {connectionStatus === "disconnected" && (
+                <motion.span
+                  key="offline"
+                  initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  className="bg-red-500 text-white px-3 py-1.5 rounded-full text-[0.7rem] switzer-600 shadow-lg animate-pulse"
+                >
+                  OFFLINE - TRYING TO RECONNECT
+                </motion.span>
+              )}
+              {showOfflineToast && (
+                <motion.div
+                  initial={{ opacity: 0, y: 50 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 20 }}
+                  className="fixed bottom-24 z-100 bg-amber-100 border border-amber-300 text-amber-900 px-4 py-3 rounded-lg shadow-xl flex items-center gap-3"
+                >
+                  <div className="bg-amber-500 text-white rounded-full p-1">
+                    <UndoArrow className="w-4 h-4 rotate-180" />
+                  </div>
+                  <p className="switzer-500 text-sm">
+                    {"You're offline check your network connection ! "}
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
-
 
           <ChatProvider
             chatHistory={chatHistory}
             setChatHistory={setChatHistory}
             wsRef={wsRef}
+            inputRef={inputRef}
             sessionID={sessionID}
             attachedFile={attachedFile}
             setAttachedFile={setAttachedFile}
@@ -1108,22 +1420,26 @@ function ChatContent() {
             ask={ask}
             currentPlayableAudio={currentPlayableAudio}
             hideReportContentDialogueBox={hideReportContentDialogueBox}
+            openChatHistoryDialogueBox={openChatHistoryDialogueBox}
+            setOpenChatHistoryDialogueBox={setOpenChatHistoryDialogueBox}
             setHideReportContentDialogueBox={setHideReportContentDialogueBox}
             hidePromptExtraOptionsModelBoxArray={hidePromptExtraOptionsModelBoxArray}
             setHidePromptExtraOptionsModelBoxArray={setHidePromptExtraOptionsModelBoxArray}
             active={active}
             setActive={setActive}
-            openChatHistoryDialogueBox={openChatHistoryDialogueBox}
-            setOpenChatHistoryDialogueBox={setOpenChatHistoryDialogueBox}
             currentMode={currentMode}
             setCurrentMode={setCurrentMode}
             setOpenFullStoryView={setOpenFullStoryView}
             setStoryData={setStoryData}
             openStoryModeExtraOptions={openStoryModeExtraOptions}
             setOpenStoryModeExtraOptions={setOpenStoryModeExtraOptions}
+            isUploading={isUploading}
+            fileContext={fileContext}
+            stopGeneration={stopGeneration}
+            showPlaceholder={showPlaceholder}
+            isGenerating={isGenerating}
+            setOpenImageContainer={setOpenImageContainer}
           >
-            {/* renders only when open chat history dialogue box is true */}
-            {/* <ChatHisoryDialogueBox /> */}
 
             <AnimatePresence>
               {openChatHistoryDialogueBox && (
@@ -1136,25 +1452,42 @@ function ChatContent() {
               )}
             </AnimatePresence>
 
-            <div className={`w-full h-full flex flex-col items-center z-10 ${currentMode === "normal" ? "" : "black-scrollbar"} overflow-y-auto`}>
-              <div className="absolute top-0 p-2 w-full">
-                {/* 
-              <div className="pointer-events-auto">
-                <Controls wsRef={wsRef} />
-              </div> */}
 
+            <div className={`w-full h-full flex flex-col items-center ${currentMode === "normal" ? "" : "black-scrollbar"} overflow-y-auto`}>
 
-                <button
-                  onClick={handleLogout}
-                  className="cursor-pointer ml-16 mt-2 px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm font-medium rounded-md shadow-md transition-colors"
-                >
-                  Logout
-                </button>
+              <AnimatePresence>
+                {openImageContainer && (
+                  <ImageContainer images={userImages} />
+                )}
+              </AnimatePresence>
+              {/* navbar for top options background */}
+              <div id="navbar" style={{ backgroundColor: currentMode === "normal" ? "#F9FAFB99" : "#00000099" }} className={`fixed w-[98%] z-20 h-14 flex items-center shrink-0 backdrop-blur-md border-b ${currentMode === "normal" ? "border-black/5" : "border-white/10"} ${messages.length > 0 ? "pr-2 pl-4" : "px-2"}`}>
+                <div className="mr-4 z-40">
+                  <HamBurger wsRef={wsRef} openChatHistoryDialogueBox={openChatHistoryDialogueBox} setOpenChatHistoryDialogueBox={setOpenChatHistoryDialogueBox} currentMode={currentMode} />
+                </div>
+                <div>
+                  <button
+                    onClick={handleLogout}
+                    className="cursor-pointer px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm font-medium rounded-md shadow-md transition-colors"
+                  >
+                    Logout
+                  </button>
+                </div>
+                <div className="ml-auto">
+                  {currentMode === "story" ? (
+                    <Image className="w-16 h-auto object-cover object-center" src={TadabburFontWhite}
+                      alt="tadabbur-font-white" />
+                  ) : (<Image className="w-16 h-auto object-cover object-center" src={TadabburFontBlack}
+                    alt="tadabbur-font-black" />)}
+                </div>
+
               </div>
-              <HamBurger />
+
+
+
               <div
                 id="chat-bot"
-                className={`w-full ${messages && messages?.length > 0 ? "h-max mt-16" : "h-full items-center mt-12"} px-4 lg:w-2/3 flex flex-col gap-y-4 ${!messages ? "justify-center" : ""}`}
+                className={`w-full ${messages && messages?.length > 0 ? "h-max mt-16" : "items-center mt-16"} px-4 lg:w-2/3 flex flex-col gap-y-4 ${!messages ? "justify-center" : ""}`}
               >
                 <AnimatePresence>
 
@@ -1202,22 +1535,19 @@ function ChatContent() {
                             {Array.from({ length: 3 }).map((_, i) => (
                               <motion.div key={i} id="carousel-default-prompts-story" className="w-1/2">
                                 <div className="grid grid-cols-4 grid-rows-1 gap-x-4 w-full">
-                                  <motion.div whileHover={{ scale: 1.02 }} transition={{ duration: 0.5, ease: easeInOut }} className="cursor-pointer w-max flex flex-col gap-y-1 p-1.5 rounded-lg border border-white/10">
-                                    <Image className="rounded-md md:w-36 md:h-34 w-34 h-30 object-cover object-top" alt="smiling-boy" src={QuranReading} />
-                                    <p className="switzer-500 text-white/80 w-36">Generate the story of the people of the Cave.</p>
-                                  </motion.div>
-                                  <motion.div whileHover={{ scale: 1.02 }} transition={{ duration: 0.3, ease: easeInOut }} className="cursor-pointer w-max flex flex-col gap-y-1 p-1.5 rounded-lg border border-white/10">
-                                    <Image className="rounded-md md:w-36 md:h-34 w-34 h-30 object-cover object-top" alt="smiling-boy" src={QuranPic} />
-                                    <p className="switzer-500 text-white/80 w-36">Narrate the occasion of first revelation.</p>
-                                  </motion.div>
-                                  <motion.div whileHover={{ scale: 1.02 }} transition={{ duration: 0.3, ease: easeInOut }} className="cursor-pointer w-max flex flex-col gap-y-1 p-1.5 rounded-lg border border-white/10">
-                                    <Image className="rounded-md md:w-36 md:h-34 w-34 h-30 object-cover object-top" alt="smiling-boy" src={DesertPic} />
-                                    <p className="switzer-500 text-white/80 w-36">Generate the story of Prophet Yusuf عليه السلام.</p>
-                                  </motion.div>
-                                  <motion.div whileHover={{ scale: 1.02 }} transition={{ duration: 0.3, ease: easeInOut }} className="cursor-pointer w-max flex flex-col gap-y-1 p-1.5 rounded-lg border border-white/10">
-                                    <Image className="rounded-md md:w-36 md:h-34 w-34 h-30 object-cover object-top" alt="old-ark" src={ArkPic} />
-                                    <p className="switzer-500 text-white/80 w-36">Generate the story of Prophet Noah عليه السلام and his people.</p>
-                                  </motion.div>
+                                  {defaultPromptsStoryMode.map((record, index) => {
+                                    return (
+                                      <motion.div key={index} whileHover={{ scale: 1.02 }} transition={{ duration: 0.5, ease: easeInOut }}
+                                        onClick={() => {
+                                          ask(
+                                            `${record.prompt}`,
+                                          );
+                                        }} className="cursor-pointer w-max flex flex-col gap-y-1 p-1.5 rounded-lg border border-white/10">
+                                        <Image className="rounded-md md:w-36 md:h-34 w-34 h-30 object-cover object-top" alt="smiling-boy" src={record.imageSrc} />
+                                        <p className="switzer-500 text-white/80 w-36">{record.prompt}</p>
+                                      </motion.div>
+                                    )
+                                  })}
                                 </div>
                               </motion.div>
                             ))}
@@ -1235,13 +1565,19 @@ function ChatContent() {
                               repeat: Infinity,
                               repeatType: "loop",
                             }}
+                            onMouseOver={() => {
+                              controls.stop();
+                            }}
+                            onMouseLeave={() => {
+                              controls.start({ x: "-60%" });
+                            }}
                             className="w-[1200%] md:w-[600%] flex gap-x-2"
                           >
                             {Array.from({ length: 2 }).map((_, i) => (
                               <motion.div key={i} id="carousel-default-prompts-normal" className="carousel w-1/2">
                                 <div className="carousel-controls-slider flex">
                                   <div className="h-max grid grid-cols-6 grid-rows-1 rounded-md gap-4 w-full">
-                                    {defaultPrompts.map((prompt, index) => (
+                                    {defaultPromptsNormalMode.map((prompt, index) => (
                                       <motion.div
                                         key={index}
                                         whileHover={{ scale: 1.01 }}
@@ -1249,12 +1585,7 @@ function ChatContent() {
                                           duration: 0.5,
                                           ease: easeInOut,
                                         }}
-                                        onMouseOver={() => {
-                                          controls.stop();
-                                        }}
-                                        onMouseLeave={() => {
-                                          controls.start({ x: "-60%" });
-                                        }}
+
                                         onClick={() => {
                                           ask(
                                             `${prompt.title} ${prompt.description}`,
@@ -1292,340 +1623,352 @@ function ChatContent() {
                 </AnimatePresence>
 
                 <AnimatePresence mode="popLayout">
-                  {/* first render user messages */}
-                  {messages?.map((record, record_index) => {
-                    return (
-                      <div key={record_index}>
-                        {record?.attachments?.length > 0 && (
-                          record.attachments.map((attachment, attachment_index) => {
-                            return (
-                              <div key={attachment_index} id="chatbot-messages-box" className="w-max min-w-60 max-w-70 border border-black/5 ml-auto px-3 py-3 rounded-md text-xs flex items-center gap-x-2 my-2 relative">
-                                {attachment.attachmentType === "text/plain" ? (
-                                  <div className="p-1 border border-[#FFA800]/10 shadow-[0.1rem] rounded-md bg-[#FFA800]/10">
-                                    <TextFileIcon className="fill-current text-blue-400 w-8 h-8" />
+                  {messages && messages.length > 0 && (
+                    messages.map((record, record_index) => {
+                      return (
+                        <div key={record_index}>
+                          {record?.attachments?.length > 0 && (
+                            record.attachments.map((attachment, attachment_index) => {
+                              return (
+                                <div key={attachment_index} id="chatbot-messages-box" className="w-max min-w-60 max-w-70 border border-black/5 ml-auto px-3 py-3 rounded-md text-xs flex items-center gap-x-2 my-2 relative">
+                                  {attachment.attachmentType === "text/plain" ? (
+                                    <div className="p-1 border border-[#FFA800]/10 shadow-[0.1rem] rounded-md bg-[#FFA800]/10">
+                                      <TextFileIcon className="fill-current text-blue-400 w-8 h-8" />
+                                    </div>
+                                  ) : attachment.attachmentType === "application/pdf" ? (
+                                    <PdfFileIcon className="fill-current text-blue-400 w-8 h-8" />
+                                  ) : (null)}
+                                  <div className="absolute border border-black/5 rounded-md w-max px-2 py-0.5 poppins-semibold -top-3 z-10 -right-2 shadow-2xs fill-current text-black/30 bg-gray-50 subpixel-antialiased">
+                                    <p>ATTACHED</p>
                                   </div>
-                                ) : attachment.attachmentType === "application/pdf" ? (
-                                  <PdfFileIcon className="fill-current text-blue-400 w-8 h-8" />
-                                ) : (null)}
-                                <div className="absolute border border-black/5 rounded-md w-max px-2 py-0.5 poppins-semibold -top-3 z-10 -right-2 shadow-2xs fill-current text-black/30 bg-gray-50 subpixel-antialiased">
-                                  <p>ATTACHED</p>
+                                  <div className="flex flex-col gap-y-0.5">
+                                    <p className="roboto-600 text-[0.9rem]">{attachment.attachmentName}</p>
+                                    <p className="subpixel-antialiased text-black/70" style={{ fontStyle: "italic" }}>
+                                      {attachment.attachmentType && attachment.attachmentType === "text/plain" ? "Text"
+                                        : attachment.attachmentType === "application/pdf" ? "PDF"
+                                          : "File"} File
+                                    </p>
+                                  </div>
                                 </div>
-                                <div className="flex flex-col gap-y-0.5">
-                                  <p className="roboto-600 text-[0.9rem]">{attachment.attachmentName}</p>
-                                  <p className="subpixel-antialiased text-black/70" style={{ fontStyle: "italic" }}>
-                                    {attachment.attachmentType && attachment.attachmentType === "text/plain" ? "Text"
-                                      : attachment.attachmentType === "application/pdf" ? "PDF"
-                                        : "File"} File
-                                  </p>
-                                </div>
-                              </div>
-                            )
-                          })
-                        )}
-                        <div>
-                          <p className={`ml-auto w-max min-w-40 max-w-[20rem] rounded-md switzer-500 py-2 shadow-md px-3 text-white ${currentMode === "normal" ? "border bg-neutral-900 border-black/5" : "bg-linear-to-b from-[#570900] to-[#8A0F00]"}`}>
-                            {record.content}
-                          </p>
-                        </div>
+                              )
+                            })
+                          )}
+                          <div>
+                            <p className={`ml-auto w-max min-w-40 max-w-[20rem] rounded-md switzer-500 py-2 shadow-md px-3 text-white ${currentMode === "normal" ? "border bg-neutral-900 border-black/5" : "bg-linear-to-b from-[#570900] to-[#8A0F00]"}`}>
+                              {record.content}
+                            </p>
+                          </div>
 
-                        {/* PromptExtraOptions */}
-                        <div>
-                          <PromptExtraOptions message_id={record.message_id} reply_to_message_id={null} parent_index={record_index} assistant_index={null} messageType="user" />
-                        </div>
-                        {record?.responses?.map((ai_msg, ai_msg_idx) => {
-                          // loading circle logic here
-                          return loading &&
-                            !loadingMessage &&
-                            !ai_msg.content ? (
-                            <motion.div
-                              key={ai_msg_idx}
-                              animate={{ scale: [1, 1.2, 1] }}
-                              transition={{
-                                duration: 0.4,
-                                ease: easeInOut,
-                                repeat: Infinity,
-                                repeatType: "loop",
-                              }}
-                              className="w-3 h-3 rounded-full bg-black"
-                            ></motion.div>
-                          ) : !loading && loadingMessage && !ai_msg.content ? (
-                            <p key={ai_msg_idx} id="loading-message" className={`switzer-500 animate-pulse ${currentMode === "normal" ? "" : "text-white/80"}`}>{loadingMessage}</p>
-                          ) : reportedMessageIDs &&
-                            !reportedMessageIDs.includes(ai_msg?.message_id) &&
-                            ai_msg_idx === record.active_message_index ? (
-                            <div key={ai_msg_idx}>
-                              <div className={`w-max min-w-40 max-w-full switzer-500 mt-2 rounded-md px-3 ${currentMode === "normal" ? "bg-white shadow-md py-2" : ""}`}>
-                                <ReactMarkdown
-                                  remarkPlugins={[remarkGfm]}
-                                  rehypePlugins={[rehypeRaw]}
-                                  components={{
-                                    // HEADERS
-                                    h1: ({ node, ...props }) => (
-                                      <h1
-                                        className="text-3xl font-bold"
-                                        {...props}
-                                      />
-                                    ),
-                                    h2: ({ node, ...props }) => (
-                                      <h2
-                                        className="text-2xl font-semibold"
-                                        {...props}
-                                      />
-                                    ),
-                                    h3: ({ node, ...props }) => (
-                                      <h3
-                                        className="text-xl font-semibold"
-                                        {...props}
-                                      />
-                                    ),
-
-                                    // PARAGRAPH
-                                    p: ({ node, ...props }) => (
-                                      <p
-                                        className={`leading-7 my-2 ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
-                                        {...props}
-                                      />
-                                    ),
-
-                                    // STRONG ( **bold** )
-                                    strong: ({ node, ...props }) => (
-                                      <strong
-                                        className="font-bold text-black"
-                                        {...props}
-                                      />
-                                    ),
-
-                                    // EMPHASIS ( *italic* )
-                                    em: ({ node, ...props }) => (
-                                      <em
-                                        className="italic text-gray-700"
-                                        {...props}
-                                      />
-                                    ),
-
-                                    // LINE BREAK
-                                    br: ({ node, ...props }) => <br />,
-
-                                    // LINKS
-                                    a: ({ node, ...props }) => (
-                                      <a
-                                        className="text-blue-600 underline wrap-break-word"
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        {...props}
-                                      />
-                                    ),
-
-                                    // LISTS
-                                    ul: ({ node, ...props }) => (
-                                      <ul
-                                        className="list-disc pl-6"
-                                        {...props}
-                                      />
-                                    ),
-                                    ol: ({ node, ...props }) => (
-                                      <ol
-                                        className="list-decimal pl-6"
-                                        {...props}
-                                      />
-                                    ),
-                                    li: ({ node, ...props }) => (
-                                      <li className="my-1" {...props} />
-                                    ),
-                                    blockquote: ({ node, ...props }) => (
-                                      <blockquote
-                                        className="border-l-4 border-gray-400 pl-4 italic my-3"
-                                        {...props}
-                                      />
-                                    ),
-
-                                    // HORIZONTAL RULE
-                                    hr: () => (
-                                      <hr className="my-4 border-gray-300" />
-                                    ),
-
-                                    // IMAGES
-                                    img: ({ node, ...props }) => (
-                                      <img
-                                        className="rounded-md my-2"
-                                        alt=""
-                                        {...props}
-                                      />
-                                    ),
-                                    table: ({ node, ...props }) => (
-                                      <div className="overflow-x-auto my-4 border border-black/20 rounded-lg shadow-sm">
-                                        <table className="min-w-full divide-y divide-gray-200" {...props} />
-                                      </div>
-                                    ),
-                                    thead: ({ node, ...props }) => (
-                                      <thead
-                                        className="bg-gray-50"
-                                        {...props}
-                                      />
-                                    ),
-                                    tbody: ({ node, ...props }) => (
-                                      <tbody
-                                        className="bg-white divide-y divide-gray-200"
-                                        {...props}
-                                      />
-                                    ),
-                                    tr: ({ node, ...props }) => (
-                                      <tr
-                                        className="hover:bg-gray-50"
-                                        {...props}
-                                      />
-                                    ),
-                                    th: ({ node, ...props }) => (
-                                      <th className="px-4 py-3 text-left text-sm font-medium text-black uppercase tracking-wider border-b" {...props} />
-                                    ),
-                                    td: ({ node, ...props }) => (
-                                      <td className="px-4 py-3 text-sm text-gray-700 border-b border-black/20 whitespace-pre-wrap" {...props} />
-                                    ),
-                                    code({
-                                      inline,
-                                      className,
-                                      children,
-                                      ...props
-                                    }: {
-                                      inline?: boolean;
-                                      className?: string;
-                                      children?: ReactNode;
-                                    } & HTMLAttributes<HTMLElement>) {
-                                      const match = /language-(\w+)/.exec(className || '');
-
-                                      if (!inline && match) {
-                                        // Create a clean props object without HTML attributes that conflict
-                                        const syntaxHighlighterProps = {
-                                          language: match[1],
-                                          PreTag: "div" as const,
-                                          className: "rounded-md shadow-sm my-4",
-                                          style: dracula as { [key: string]: CSSProperties }
-                                        };
-
-                                        return (
-                                          <SyntaxHighlighter
-                                            {...syntaxHighlighterProps}
-                                          >
-                                            {String(children).replace(/\n$/, "")}
-                                          </SyntaxHighlighter>
-                                        );
-                                      } else {
-                                        return (
-                                          <code
-                                            className="bg-gray-100 text-red-500 px-1.5 py-0.5 rounded text-sm font-mono"
-                                            {...props}
-                                          >
-                                            {children}
-                                          </code>
-                                        );
-                                      }
-                                    },
+                          {/* PromptExtraOptions */}
+                          <div>
+                            <PromptExtraOptions message_id={record.message_id} reply_to_message_id={null} parent_index={record_index} assistant_index={null} messageType="user" />
+                          </div>
+                          {record?.responses?.map((ai_msg, ai_msg_idx) => {
+                            // loading circle logic here
+                            return loading &&
+                              !loadingMessage &&
+                              !ai_msg.content ? (
+                              <div key={ai_msg_idx}
+                                className="px-3">
+                                <motion.div
+                                  animate={{ scale: [1, 1.2, 1] }}
+                                  transition={{
+                                    duration: 0.4,
+                                    ease: easeInOut,
+                                    repeat: Infinity,
+                                    repeatType: "loop",
                                   }}
-                                >
-                                  {preprocessContent(ai_msg.content)}
-                                </ReactMarkdown>
+                                  className={`w-3 h-3 rounded-full ${currentMode === "normal" ? "bg-black" : "bg-white"}`}
+                                ></motion.div>
                               </div>
-
-                              {ai_msg.has_verse_audio && ai_msg.verse_audio_data.length > 0 && streamingMessageIndex != record_index && (
-                                <>
-                                  <br />
-                                  <QuranDialogBox
-                                    type="audio"
-                                    surahs={ai_msg?.verse_audio_data}
-                                  />
-                                </>
-                              )}
-
-                              {ai_msg.has_verse_image && ai_msg.verse_images.length > 0 && streamingMessageIndex != record_index && (
-                                <>
-                                  <br />
-                                  <QuranDialogBox
-                                    type="read"
-                                    surahs={ai_msg?.verse_images}
-                                  />
-                                </>
-                              )}
-                              {ai_msg.story_data?.length > 0 && streamingMessageIndex != record_index && (
-                                <StoryContainer story_data={ai_msg.story_data} />
-                              )}
-                              {streamingMessageIndex != record_index &&
-                                reportedMessageIDs &&
-                                !reportedMessageIDs.includes(
-                                  ai_msg?.message_id
-                                ) && (
-                                  <div>
-                                    <PromptExtraOptions
-                                      message_id={ai_msg?.message_id}
-                                      reply_to_message_id={
-                                        ai_msg?.reply_to_message_id
-                                      }
-                                      parent_index={record_index}
-                                      assistant_index={ai_msg_idx}
-                                      messageType={"assistant"}
-                                    />
+                            ) : !loading && loadingMessage && !ai_msg.content ? (
+                              <div key={ai_msg_idx} className="flex flex-col gap-y-6 mt-4 w-full">
+                                <p className="switzer-500 text-white/60 text-sm animate-pulse mb-2">{loadingMessage}</p>
+                                {Array.from({ length: paragraphCount }).map((_, i) => (
+                                  <div key={i} className="flex flex-col gap-y-3">
+                                    <div className="h-4 w-36 rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
+                                    <div className="flex flex-col gap-y-2">
+                                      <div className="h-3 w-full rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
+                                      <div className="h-3 w-[85%] rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
+                                      <div className="h-3 w-[70%] rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
+                                    </div>
+                                    <div className="w-[80%] sm:w-[50%] md:w-[45%] lg:w-[30%] h-auto aspect-video rounded-md bg-linear-to-br from-white/5 via-white/10 to-white/5 animate-pulse border border-white/5" />
                                   </div>
+                                ))}
+                              </div>
+                            ) : reportedMessageIDs &&
+                              !reportedMessageIDs.includes(ai_msg?.message_id) &&
+                              ai_msg_idx === record.active_message_index ? (
+                              <div key={ai_msg_idx}>
+                                <div className={`w-max min-w-40 max-w-full switzer-500 mt-2 rounded-md px-3 ${currentMode === "normal" ? "bg-white shadow-md py-2" : ""}`}>
+                                  <ReactMarkdown
+                                    remarkPlugins={[remarkGfm]}
+                                    rehypePlugins={[rehypeRaw]}
+                                    components={{
+                                      // HEADERS
+                                      h1: ({ node, ...props }) => (
+                                        <h1
+                                          className={`text-3xl font-bold ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
+                                          {...props}
+                                        />
+                                      ),
+                                      h2: ({ node, ...props }) => (
+                                        <h2
+                                          className={`text-2xl font-semibold ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
+                                          {...props}
+                                        />
+                                      ),
+                                      h3: ({ node, ...props }) => (
+                                        <h3
+                                          className={`text-xl font-semibold ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
+                                          {...props}
+                                        />
+                                      ),
+
+                                      // PARAGRAPH
+                                      p: ({ node, ...props }) => (
+                                        <p
+                                          className={`leading-7 my-2 ${currentMode === "normal" ? "text-gray-700" : "text-white"} wrap-break-word`}
+                                          {...props}
+                                        />
+                                      ),
+
+                                      // STRONG ( **bold** )
+                                      strong: ({ node, ...props }) => (
+                                        <strong
+                                          className={`font-bold text-black ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
+                                          {...props}
+                                        />
+                                      ),
+
+                                      // EMPHASIS ( *italic* )
+                                      em: ({ node, ...props }) => (
+                                        <em
+                                          className={`italic ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
+                                          {...props}
+                                        />
+                                      ),
+
+                                      // LINE BREAK
+                                      br: ({ node, ...props }) => <br />,
+
+                                      // LINKS
+                                      a: ({ node, ...props }) => (
+                                        <a
+                                          className={`${currentMode === "normal" ? "text-blue-600" : "text-blue-400"}  underline wrap-break-word`}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          {...props}
+                                        />
+                                      ),
+
+                                      // LISTS
+                                      ul: ({ node, ...props }) => (
+                                        <ul
+                                          className={`list-disc pl-6 ${currentMode === "normal" ? "text-black" : "text-white"}`}
+                                          {...props}
+                                        />
+                                      ),
+                                      ol: ({ node, ...props }) => (
+                                        <ol
+                                          className={`list-decimal pl-6 ${currentMode === "normal" ? "text-black" : "text-white"}`}
+                                          {...props}
+                                        />
+                                      ),
+                                      li: ({ node, ...props }) => (
+                                        <li className={`my-1 ${currentMode === "normal" ? "text-black" : "text-white"}`} {...props} />
+                                      ),
+                                      blockquote: ({ node, ...props }) => (
+                                        <blockquote
+                                          className={`border-l-4 border-gray-400 pl-4 italic my-3 ${currentMode === "normal" ? "text-black" : "text-white"}`}
+                                          {...props}
+                                        />
+                                      ),
+
+                                      // HORIZONTAL RULE
+                                      hr: () => (
+                                        <hr className="my-4 border-gray-300" />
+                                      ),
+
+                                      table: ({ node, ...props }) => (
+                                        <div className="overflow-x-auto my-4 border border-black/20 rounded-lg shadow-sm">
+                                          <table className="min-w-full divide-y divide-gray-200" {...props} />
+                                        </div>
+                                      ),
+                                      thead: ({ node, ...props }) => (
+                                        <thead
+                                          className="bg-gray-50"
+                                          {...props}
+                                        />
+                                      ),
+                                      tbody: ({ node, ...props }) => (
+                                        <tbody
+                                          className="bg-white divide-y divide-gray-200"
+                                          {...props}
+                                        />
+                                      ),
+                                      tr: ({ node, ...props }) => (
+                                        <tr
+                                          className="hover:bg-gray-50"
+                                          {...props}
+                                        />
+                                      ),
+                                      th: ({ node, ...props }) => (
+                                        <th className={`px-4 py-3 text-left text-sm font-medium ${currentMode === "normal" ? "text-black" : "text-white"} uppercase tracking-wider border-b`} {...props} />
+                                      ),
+                                      td: ({ node, ...props }) => (
+                                        <td className={`px-4 py-3 text-sm border-b border-black/20 whitespace-pre-wrap ${currentMode === "normal" ? "text-gray-700" : "text-white"}`} {...props} />
+                                      ),
+                                      code({
+                                        inline,
+                                        className,
+                                        children,
+                                        ...props
+                                      }: {
+                                        inline?: boolean;
+                                        className?: string;
+                                        children?: ReactNode;
+                                      } & HTMLAttributes<HTMLElement>) {
+                                        const match = /language-(\w+)/.exec(className || '');
+
+                                        if (!inline && match) {
+                                          // Create a clean props object without HTML attributes that conflict
+                                          const syntaxHighlighterProps = {
+                                            language: match[1],
+                                            PreTag: "div" as const,
+                                            className: "rounded-md shadow-sm my-4",
+                                            style: dracula as { [key: string]: CSSProperties }
+                                          };
+
+                                          return (
+                                            <SyntaxHighlighter
+                                              {...syntaxHighlighterProps}
+                                            >
+                                              {String(children).replace(/\n$/, "")}
+                                            </SyntaxHighlighter>
+                                          );
+                                        } else {
+                                          return (
+                                            <code
+                                              className={`bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono ${currentMode === "normal" ? "text-black" : "text-white"}`}
+                                              {...props}
+                                            >
+                                              {children}
+                                            </code>
+                                          );
+                                        }
+                                      },
+                                    }}
+                                  >
+                                    {preprocessContent(ai_msg.content)}
+                                  </ReactMarkdown>
+                                </div>
+
+                                {ai_msg.has_verse_audio && ai_msg.verse_audio_data.length > 0 && streamingMessageIndex != record_index && (
+                                  <>
+                                    <br />
+                                    <QuranDialogBox
+                                      type="audio"
+                                      surahs={ai_msg?.verse_audio_data}
+                                    />
+                                  </>
                                 )}
 
-                            </div>
-                          ) : reportedMessageIDs &&
-                            reportedMessageIDs.includes(ai_msg?.message_id) ? (
-                            // reportedmessage component here
-                            <div
-                              key={ai_msg_idx}
-                              className="flex flex-col gap-y-1.5 w-[90%] max-w-120 "
-                            >
-                              <div className="h-max rounded-md shadow-md min-h-25 border border-red-200/10 px-2 pt-2 pb-3">
-                                <div className="mb-0.5 w-full flex justify-between">
-                                  <p
-                                    id="report-title"
-                                    className="text-red-800 switzer-500 text-[1.1rem] tracking-[-0.04rem]"
-                                  >
-                                    This response is reported
-                                  </p>
-                                  <DisclaimerIcon className="w-5 h-5 fill-current text-red-700/90" />
-                                </div>
+                                {ai_msg.has_verse_image && ai_msg.verse_images.length > 0 && streamingMessageIndex != record_index && (
+                                  <>
+                                    <br />
+                                    <QuranDialogBox
+                                      type="read"
+                                      surahs={ai_msg?.verse_images}
+                                    />
+                                  </>
+                                )}
+                                {ai_msg.story_data?.length > 0 && streamingMessageIndex != record_index && (
+                                  <StoryContainer story_data={ai_msg.story_data} />
+                                )}
+                                {streamingMessageIndex != record_index &&
+                                  reportedMessageIDs &&
+                                  !reportedMessageIDs.includes(
+                                    ai_msg?.message_id
+                                  ) && (
+                                    <div>
+                                      <PromptExtraOptions
+                                        message_id={ai_msg?.message_id}
+                                        reply_to_message_id={
+                                          ai_msg?.reply_to_message_id
+                                        }
+                                        parent_index={record_index}
+                                        assistant_index={ai_msg_idx}
+                                        messageType={"assistant"}
+                                      />
+                                    </div>
+                                  )}
 
-                                <p
-                                  id="report-description"
-                                  className="switzer-500 text-black/60 tracking-tight"
-                                >
-                                  This response promotes violence or self-harm
-                                  and goes against our community policies.
-                                </p>
                               </div>
-                              <div className="flex items-center gap-x-2 px-1">
-                                <div id="learn-more-box" className="ml-auto">
-                                  <p className="inter-500 text-[0.9rem] text-red-700/80 cursor-pointer hover:text-red-700 tracking-tight">
-                                    Learn More about guidelines
+                            ) : reportedMessageIDs &&
+                              reportedMessageIDs.includes(ai_msg?.message_id) ? (
+                              // reportedmessage component here
+                              <div
+                                key={ai_msg_idx}
+                                className="flex flex-col gap-y-1.5 w-[90%] max-w-120 "
+                              >
+                                <div className="h-max rounded-md shadow-md min-h-25 border border-red-200/10 px-2 pt-2 pb-3">
+                                  <div className="mb-0.5 w-full flex justify-between">
+                                    <p
+                                      id="report-title"
+                                      className="text-red-800 switzer-500 text-[1.1rem] tracking-[-0.04rem]"
+                                    >
+                                      This response is reported
+                                    </p>
+                                    <DisclaimerIcon className="w-5 h-5 fill-current text-red-700/90" />
+                                  </div>
+
+                                  <p
+                                    id="report-description"
+                                    className="switzer-500 text-black/60 tracking-tight"
+                                  >
+                                    This response promotes violence or self-harm
+                                    and goes against our community policies.
                                   </p>
                                 </div>
-                                <div className="ml-1 w-[0.5px] h-3.5 bg-black/40"></div>
-                                <div
-                                  onClick={() => {
-                                    wsSendAsync(wsRef.current, {
-                                      type: "undo-report",
-                                      message_id: ai_msg.message_id,
-                                    });
-                                  }}
-                                  id="undo-report-box"
-                                  className="undo-report-box flex justify-center items-center gap-x-2 flex-row-reverse px-2 py-1 hover:bg-black/5 rounded-md cursor-pointer"
-                                >
-                                  <p className="switzer-500 text-[0.9rem]">
-                                    Undo
-                                  </p>
-                                  <UndoArrow className="w-3.5 h-3.5" />
+                                <div className="flex items-center gap-x-2 px-1">
+                                  <div id="learn-more-box" className="ml-auto">
+                                    <p className="inter-500 text-[0.9rem] text-red-700/80 cursor-pointer hover:text-red-700 tracking-tight">
+                                      Learn More about guidelines
+                                    </p>
+                                  </div>
+                                  <div className="ml-1 w-[0.5px] h-3.5 bg-black/40"></div>
+                                  <div
+                                    onClick={() => {
+                                      wsSendAsync(wsRef.current, {
+                                        type: "undo-report",
+                                        message_id: ai_msg.message_id,
+                                      });
+                                    }}
+                                    id="undo-report-box"
+                                    className="undo-report-box flex justify-center items-center gap-x-2 flex-row-reverse px-2 py-1 hover:bg-black/5 rounded-md cursor-pointer"
+                                  >
+                                    <p className="switzer-500 text-[0.9rem]">
+                                      Undo
+                                    </p>
+                                    <UndoArrow className="w-3.5 h-3.5" />
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          ) : null;
-                        })}
-                      </div>
-                    );
-                  })}
+                            ) : null;
+                          })}
+
+                        </div>
+                      )
+                    })
+                  )}
+
                 </AnimatePresence >
 
                 <div ref={messagesEndRef}></div>
+
               </div >
+
             </div >
 
             <AnimatePresence>
@@ -1643,9 +1986,9 @@ function ChatContent() {
                   exit={{ opacity: 0, y: 10 }}
                   className="w-full px-4 lg:w-2/3 flex"
                 >
-                  <div className="bg-white/90 backdrop-blur-sm border ml-auto border-black/5 shadow-lg rounded-full px-4 py-3 flex items-center gap-x-3">
-                    <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin"></div>
-                    <p className="switzer-500 text-sm text-black/80">Transcribing audio...</p>
+                  <div className={`${currentMode === "normal" ? "bg-white/90" : "bg-black shadow-sm shadow-red-500"} backdrop-blur-sm border ml-auto border-black/5 shadow-lg rounded-full px-4 py-3 flex items-center gap-x-3`}>
+                    <div className={`w-4 h-4 border-2 ${currentMode === "normal" ? "border-black/20" : "border-white"} border-t-black rounded-full animate-spin`}></div>
+                    <p className={`switzer-500 text-sm ${currentMode === "normal" ? "text-black/80" : "text-white"}`}>Transcribing audio</p>
                   </div>
                 </motion.div>
               )}
@@ -1654,9 +1997,9 @@ function ChatContent() {
             <motion.div animate={{ paddingTop: currentMode === "normal" ? 16 : 20, paddingBottom: currentMode === "normal" ? 16 : 28 }} className={`mr-1.5 px-4 ${currentMode === "normal" ? "w-full lg:w-2/3 mt-4" : "w-[95%] sm:w-[70%] lg:w-1/2 mt-2 flex gap-x-2 items-center"} input-box`}>
 
               <motion.div
-                animate={{ height: currentMode === "normal" ? attachedFile ? 200 : 160 : 42 }}
+                animate={{ height: currentMode === "normal" ? attachedFile ? 200 : 160 : 45 }}
                 transition={{ duration: 0.2, ease: easeInOut }}
-                className={`flex relative shadow-md py-2 border gap-x-1 ${currentMode === "normal" ? "bg-white rounded-lg shadow-md px-3 border-black/10 flex-col" : "bg-[##001e1e] rounded-full px-2 border border-white/15 shadow-md justify-between items-center w-full"} `}
+                className={`flex relative shadow-md py-2 border gap-x-1 ${currentMode === "normal" ? "bg-white rounded-lg shadow-md px-3 border-black/10 flex-col" : "bg-[##001e1e] rounded-full px-1 border border-white/15 shadow-md justify-between items-center w-full py-2"} `}
               >
                 {attachedFile && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative w-max bg-white border border-black/10 px-3 py-2 rounded-md text-xs flex items-center gap-x-2 z-10">
@@ -1683,8 +2026,8 @@ function ChatContent() {
                 {currentMode === "story" && (
                   <motion.div onClick={() => {
                     setOpenStoryModeExtraOptions(prev => !prev)
-                  }} whileHover={{ backgroundColor: "#FFFFFF1A" }} className="p-1.5 rounded-full cursor-pointer">
-                    <PlusIcon className="w-5 h-5" />
+                  }} whileHover={{ backgroundColor: "#FFFFFF1A" }} className="p-2 rounded-full cursor-pointer">
+                    <PlusIcon className="w-5.5 h-5.5" />
                   </motion.div>
                 )}
                 <div
@@ -1702,48 +2045,37 @@ function ChatContent() {
                 ></div>
                 {showPlaceholder && (
                   <span
-                    className={`absolute ${currentMode === "normal" ? attachedFile ? "top-16 text-black" : "top-2 text-black" : "top-1.8 text-white/70 left-11 text-[15px]"} pointer-events-none placeholder-input-box switzer-500`}
+                    className={`absolute ${currentMode === "normal" ? attachedFile ? "top-16 text-black" : "top-2 text-black" : "top-1.8 text-white/70 left-12 text-[15px]"} pointer-events-none placeholder-input-box switzer-500`}
                   >
                     {placeholder}
                   </span>
                 )}
 
-                {isGenerating && (
-                  <div className="flex justify-end mb-1">
-                    <button
-                      onClick={stopGeneration}
-                      className="flex items-center gap-x-2 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs rounded-md switzer-500 transition-colors shadow-sm"
-                    >
-                      <div className="w-2 h-2 bg-white rounded-sm"></div>
-                      Stop
-                    </button>
-                  </div>
-                )}
-
-                {currentMode === "normal" && (
-                  <>
-                    <BottomOptions />
-                    <ExtraOptions />
-                    <ModelBox modelList={ModelList} />
-                  </>
-                )}
-                {currentMode === "story" && (
-                  <>
-                    <MicStoryMode />
-                    <AnimatePresence>
-                      {openStoryModeExtraOptions && (
-                        <StoryModeExtraOptions />
-                      )}
-                    </AnimatePresence>
-                  </>
-                )}
-                {currentMode === "story" && (
-                  <motion.div onClick={sendPrompt} style={{ cursor: showPlaceholder ? "default" : "pointer" }} animate={{ backgroundColor: showPlaceholder ? "#FFFFFFCC" : "#FFFFFF" }} className="p-[5px] rounded-full bg-white">
-                    <SendIcon className="w-5 h-5 fill-current text-black" />
-                  </motion.div>
-                )}
+                <div className={`transition-opacity duration-300 ${connectionStatus !== "connected" ? "pointer-events-none opacity-50" : "opacity-100"} ${currentMode === "story" ? 'flex gap-x-1' : ''}`}>
+                  {currentMode === "normal" && (
+                    <>
+                      <BottomOptions />
+                      <ExtraOptions />
+                      {/* <ModelBox modelList={ModelList} /> */}
+                    </>
+                  )}
+                  {currentMode === "story" && (
+                    <>
+                      <MicStoryMode />
+                      <AnimatePresence>
+                        {openStoryModeExtraOptions && (
+                          <StoryModeExtraOptions />
+                        )}
+                      </AnimatePresence>
+                    </>
+                  )}
+                  {currentMode === "story" && (
+                    <motion.div onClick={sendPrompt} style={{ cursor: showPlaceholder ? "default" : "pointer" }} animate={{ backgroundColor: showPlaceholder ? "#FFFFFFCC" : "#ffffff" }} className="p-2 rounded-full scale-90">
+                      <SendIcon className="w-5.5 h-5.5 fill-current text-black" />
+                    </motion.div>
+                  )}
+                </div>
               </motion.div>
-
             </motion.div>
 
             <ReportContentDialogueBox
@@ -1754,7 +2086,8 @@ function ChatContent() {
             <audio className="hidden" controls ref={audioRef} />
           </ChatProvider >
         </motion.div >
-      )}
+      )
+      }
     </ProtectedRoute >
   )
 }

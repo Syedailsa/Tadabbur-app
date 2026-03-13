@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Step,
@@ -13,7 +13,7 @@ import {
   ChangePasswordResponse,
 } from "../../utils/types";
 
-export default function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
+export default function ForgotPassword({ onBackToLogin, onLoading }: ForgotPasswordProps) {
   const [step, setStep] = useState<Step>("EMAIL");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -23,6 +23,10 @@ export default function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
   const [newPassword, setNewPassword] = useState("");
 
   const API_URL = `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth`;
+
+  useEffect(() => {
+    onLoading(loading);
+  }, [loading, onLoading]);
 
   const handleSendEmail = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
@@ -91,7 +95,7 @@ export default function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
   };
 
   return (
-    <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-xl shadow-lg">
+    <div className="w-full max-w-md p-8 space-y-6 rounded-xl ">
       <div className="text-center">
         <h2 className="text-2xl font-bold text-gray-900">Reset Password</h2>
         <p className="text-sm text-gray-500 mt-2">

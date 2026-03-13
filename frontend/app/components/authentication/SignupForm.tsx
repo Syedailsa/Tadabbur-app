@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import axios, { AxiosError } from 'axios';
+import { SignupProps, SignupResponse } from '@/app/utils/types';
 
 const signupSchema = z.object({
   firstname: z.string().min(2, "First name must be at least 2 characters"),
@@ -12,22 +13,16 @@ const signupSchema = z.object({
 
 type SignupInputs = z.infer<typeof signupSchema>;
 
-interface SignupResponse {
-  token: string;
-  user_id: string;
-  firstname: string;
-}
-
-interface SignupProps {
-  onSuccess: (data: SignupResponse) => void;
-}
-
-export default function SignupForm({ onSuccess }: SignupProps) {
+export default function SignupForm({ onSuccess, onLoading }: SignupProps) {
   const [serverError, setServerError] = React.useState<string | null>(null);
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<SignupInputs>({
     resolver: zodResolver(signupSchema),
   });
+
+  useEffect(() => {
+    onLoading(isSubmitting);
+  }, [isSubmitting, onLoading]);
 
   const onSubmit = async (data: SignupInputs) => {
     setServerError(null);

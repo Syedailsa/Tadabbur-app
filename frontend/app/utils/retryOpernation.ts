@@ -1,26 +1,37 @@
-
-
 export async function retryOperation<T>(
   operation: () => Promise<T>,
-  maxRetries: number = 8,
-  delayMs: number = 1000
+  maxRetries: number = 5,
+  delayMs: number = 1000,
+  useExponentialBackoff: boolean = true
 ): Promise<T> {
   let lastError: Error;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      console.log(`🔄 Attempt ${attempt + 1}/${maxRetries}`);
+      if (attempt > 0) {
+        console.log(`🔄 Retry Attempt ${attempt + 1}/${maxRetries}...`);
+      }
       return await operation();
     } catch (error) {
       lastError = error as Error;
-      console.error(`❌ Attempt ${attempt + 1} failed:`, error);
+      
+      // Log the specific error to help debugging
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.warn(`⚠️ Attempt ${attempt + 1} failed: ${errorMessage}`);
 
       if (attempt < maxRetries - 1) {
-        await new Promise(resolve => setTimeout(resolve, delayMs));
+        // Calculate delay: base delay * 2^attempt
+        const waitTime = useExponentialBackoff 
+          ? delayMs * Math.pow(2, attempt) 
+          : delayMs;
+        
+        console.log(`⏳ Waiting ${waitTime}ms before next attempt...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
       }
     }
   }
 
+  console.error("❌ Max retries reached. Operation failed.");
   throw lastError!;
 }
 
@@ -33,8 +44,7 @@ export const wsSendAsync = <T extends { type?: string }>(
   return retryOperation(async () => {
     return new Promise((resolve, reject) => {
       if (!ws) {
-        reject(new Error("WebSocket is null"));
-        return;
+        return reject(new Error("WebSocket is null"));
       }
 
       if (ws.readyState === WebSocket.OPEN) {
@@ -43,33 +53,35 @@ export const wsSendAsync = <T extends { type?: string }>(
           console.log("✅ WebSocket message sent:", payload.type);
           resolve();
         } catch (error) {
-          console.error("❌ WebSocket send error:", error);
           reject(error);
         }
       } else if (ws.readyState === WebSocket.CONNECTING) {
-        console.log("⏳ WebSocket connecting, waiting...");
+        console.log("⏳ WebSocket connecting, attaching listeners...");
+        
         const timeout = setTimeout(() => {
-          ws.removeEventListener('open', onOpen);
-          ws.removeEventListener('error', onError);
+          cleanup();
           reject(new Error("WebSocket connection timeout (5s)"));
         }, 5000);
 
         const onOpen = () => {
-          clearTimeout(timeout);
-          ws.removeEventListener('error', onError);
+          cleanup();
           try {
             ws.send(JSON.stringify(payload));
-            console.log("✅ WebSocket message sent after connection:", payload.type);
             resolve();
           } catch (error) {
             reject(error);
           }
         };
 
-        const onError = () => {
+        const onError = (ev: Event) => {
+          cleanup();
+          reject(new Error("WebSocket connection failed during send"));
+        };
+
+        const cleanup = () => {
           clearTimeout(timeout);
           ws.removeEventListener('open', onOpen);
-          reject(new Error("WebSocket connection failed"));
+          ws.removeEventListener('error', onError);
         };
 
         ws.addEventListener('open', onOpen, { once: true });
@@ -80,6 +92,3 @@ export const wsSendAsync = <T extends { type?: string }>(
     });
   }, maxRetries, retryDelay);
 };
-
-
-

@@ -6,7 +6,14 @@ const nextConfig: NextConfig = {
 
   reactStrictMode: false,
   images: {
-    domains: ["cdn.islamic.network"],
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "cdn.islamic.network",
+        port: "",
+        pathname: "/**",
+      },
+    ],
   },
 
   // Webpack override for SVGR

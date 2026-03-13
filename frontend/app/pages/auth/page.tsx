@@ -1,18 +1,21 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import LoginForm from '../../components/authentication/LoginForm';
 import SignupForm from '../../components/authentication/SignupForm';
 import GoogleLoginButton from '../../components/authentication/GoogleLoginButton';
 import ForgotPassword from '../../components/authentication/ForgotPassword';
 import { useRouter } from 'next/navigation';
+import Cookies from 'js-cookie';
 
 type AuthView = 'LOGIN' | 'SIGNUP' | 'FORGOT';
 
 export default function AuthPage() {
   const [view, setView] = useState<AuthView>('LOGIN');
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const router = useRouter();
 
   type AuthSuccessData = {
@@ -21,16 +24,49 @@ export default function AuthPage() {
     firstname: string;
   };
 
-  const handleAuthSuccess = (data: AuthSuccessData) => {
-    console.log("Auth Successful:", data);
+  useEffect(() => {
+    const token = Cookies.get('auth_token');
+    if (token) {
+      router.replace('/pages/chatbot');
+    } else {
+      setIsInitialLoading(false); // Only show the form if we AREN'T redirecting
+    }
+  }, [router]);
 
-    localStorage.setItem('token', data.token);
+  if (isInitialLoading) {
+    return (
+       <div className="flex min-h-screen items-center justify-center bg-gray-100">
+         <div className="h-12 w-12 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+       </div>
+    );
+  }
+
+  // const handleAuthSuccess = (data: AuthSuccessData) => {
+  //   console.log("Auth Successful:", data);
+
+  //   localStorage.setItem('token', data.token);
+  //   localStorage.setItem('user', JSON.stringify({ 
+  //     id: data.user_id,
+  //     name: data.firstname
+  //   }));
+
+  //   router.push('/pages/chatbot');
+  // };
+
+  const handleAuthSuccess = (data: AuthSuccessData) => {
+    setIsSubmitting(true);
+    
+    Cookies.set('auth_token', data.token, { expires: 7, path: '/' });
+
+    localStorage.setItem('auth_token', data.token); 
     localStorage.setItem('user', JSON.stringify({
       id: data.user_id,
       name: data.firstname
     }));
 
-    router.push('/pages/chatbot');
+    setTimeout(() => {
+      router.push('/pages/chatbot');
+    }, 100);
   };
 
   const getHeaderText = () => {
@@ -44,6 +80,16 @@ export default function AuthPage() {
   return (
     <GoogleOAuthProvider clientId={process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!}>
       <div className="flex min-h-screen items-center justify-center bg-gray-100 p-4">
+
+        {isSubmitting && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/60 backdrop-blur-sm pointer-events-auto">
+            <div className="flex flex-col items-center">
+              <div className="h-12 w-12 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+              <p className="mt-4 font-medium text-blue-600">Authenticating</p>
+            </div>
+          </div>
+        )}
+
         <div className="w-full max-w-md bg-white rounded-xl shadow-lg overflow-hidden">
 
           <div className="px-8 pt-8 pb-6 text-center">
@@ -85,7 +131,7 @@ export default function AuthPage() {
 
             {view === 'LOGIN' && (
               <>
-                <LoginForm onSuccess={handleAuthSuccess} />
+                <LoginForm onSuccess={handleAuthSuccess} onLoading={setIsSubmitting}/>
                 <div className="mt-2 text-right">
                   <button
                     onClick={() => { setView('FORGOT'); setGlobalError(null); }}
@@ -98,11 +144,11 @@ export default function AuthPage() {
             )}
 
             {view === 'SIGNUP' && (
-              <SignupForm onSuccess={handleAuthSuccess} />
+              <SignupForm onSuccess={handleAuthSuccess} onLoading={setIsSubmitting}/>
             )}
 
             {view === 'FORGOT' && (
-              <ForgotPassword onBackToLogin={() => { setView('LOGIN'); setGlobalError(null); }} />
+              <ForgotPassword onBackToLogin={() => { setView('LOGIN'); setGlobalError(null); }} onLoading={setIsSubmitting} />
             )}
 
             {view !== 'FORGOT' && (
@@ -118,6 +164,7 @@ export default function AuthPage() {
 
                 <GoogleLoginButton
                   onSuccess={handleAuthSuccess}
+                  onLoading={setIsSubmitting}
                   onError={setGlobalError}
                   text={view === 'LOGIN' ? "signin_with" : "signup_with"}
                 />

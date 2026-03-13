@@ -1,18 +1,18 @@
-# """
-# Quran Audio Playback Tool
-# Provides audio URLs for Quran recitation
-# """
-
 import requests
 import operator
 from data.data import reciters_name_array, surah_name_english_array, surah_name_english_translation_array
-from tools.utils import normalize_reciter_name
+from tools.normalizeName import normalize_reciter_name, normalize_surah
 from pydantic import BaseModel, Field
 from typing import Optional
-from tools.utils import normalize_surah
 from langchain.tools import tool
 from typing import List, Literal
 from langchain.tools import tool
+import json
+import logging
+from langchain_core.caches import InMemoryCache
+from langchain_core.outputs import Generation
+from threading import Lock
+from collections import OrderedDict
 
 class SurahFilter(BaseModel):
     """Input for surah queries"""
@@ -55,15 +55,78 @@ class VerseFilter(BaseModel):
     limit: Optional[int] = 1
 
 class Filters(BaseModel):
-    surah_args: SurahFilter = None
-    verse_args: VerseFilter = None
+    surah_args: Optional[SurahFilter] = None
+    verse_args: Optional[VerseFilter] = None
 
 
 QURAN_API_BASE = "http://api.alquran.cloud/v1/quran"
+AUDIO_TOOL_CACHE = InMemoryCache(maxsize=1000)
+logger = logging.getLogger(__name__)
+MAX_RECITERS_IN_CACHE = 6
+AUDIO_DATA_LOCK = Lock()
+AUDIO_DATA_CACHE = OrderedDict()
 
 class QuranAudioInput(BaseModel):
     args: Optional[List[Filters]] = None
     reciter: str = "ar.alafasy"
+
+def get_Quran_Audio_Data(reciter_identifier: str):
+    """
+LRU Cache Logic:
+
+Cache contains:
+    [alafasy, minshawi, sudais, ghamdi, husary, ajami]
+     ↑ oldest                                   ↑ newest
+
+User requests "alafasy":
+    → Found in cache 
+    → Use move_to_end() to move it to the end (now it becomes the most recent)
+    → [minshawi, sudais, ghamdi, husary, ajami, alafasy]
+
+Cache is full and a new reciter is requested:
+    [minshawi, sudais, ghamdi, husary, ajami, alafasy]
+
+User requests "bukhatir":
+    → Not found in cache ✗
+    → Cache is full (6/6)
+    → Remove the oldest item (minshawi) 
+    → Load "bukhatir" and add it to the end
+    → [sudais, ghamdi, husary, ajami, alafasy, bukhatir]
+"""
+    global AUDIO_DATA_CACHE
+    with AUDIO_DATA_LOCK:
+        if reciter_identifier in AUDIO_DATA_CACHE:
+           
+            AUDIO_DATA_CACHE.move_to_end(reciter_identifier)
+            logger.info("Data cache hit for reciter: %s", reciter_identifier)
+        else:
+            
+            if len(AUDIO_DATA_CACHE) >= MAX_RECITERS_IN_CACHE:
+                
+                oldest_reciter = next(iter(AUDIO_DATA_CACHE))
+                del AUDIO_DATA_CACHE[oldest_reciter]
+                logger.info("Cache full — oldest reciter removed: %s", oldest_reciter)
+
+            
+            try:
+                request_url = f'{QURAN_API_BASE}/{reciter_identifier}'
+                response = requests.get(request_url, timeout=10)
+                if not response.ok:
+                    raise ValueError("Quran audio data not available")
+                data = response.json()['data']['surahs']
+                if not data:
+                    raise ValueError("Quran audio data is empty")
+                
+                AUDIO_DATA_CACHE[reciter_identifier] = data
+                logger.info("New reciter cached: %s | Cache size: %d/%d",
+                            reciter_identifier, len(AUDIO_DATA_CACHE), MAX_RECITERS_IN_CACHE)
+            except requests.Timeout:
+                raise ValueError("Request to Quran API timed out")
+            except requests.RequestException as e:
+                raise ValueError(f"Error fetching Quran audio data: {e}")
+
+        return AUDIO_DATA_CACHE[reciter_identifier]
+    
 
 @tool(args_schema = QuranAudioInput)
 def get_Quran_Audio(args: List[Filters] = None, reciter:str = "ar.alafasy") -> List[str]:
@@ -186,25 +249,32 @@ def get_Quran_Audio(args: List[Filters] = None, reciter:str = "ar.alafasy") -> L
 
         }
         return response_data
-    # initialize a results array to concatenate results
+    
+    cache_payload = {
+        "args": [arg.model_dump() for arg in args],
+        "reciter": reciter
+    }
+    cache_key = json.dumps(cache_payload, sort_keys=True)
+    llm_string = "quran_audio_v1"
+
+    cached_result = AUDIO_TOOL_CACHE.lookup(prompt=cache_key, llm_string=llm_string)
+    if cached_result:
+        logger.info(f"Audio cache hit for reciter: {reciter}")
+        return json.loads(cached_result[0].text)
+    
     surah_array = []    
     # fetch the data
     reciter_identifier = normalize_reciter_name(reciter, reciters_name_array)
     
-    request_url = f'{QURAN_API_BASE}/{reciter_identifier}'
-    response = requests.get(request_url)
-
-    if not response.ok:
-        print("Couldn't get data from the Quran Cloud")
-        response_data = {
+    try:
+        Quran_data = get_Quran_Audio_Data(reciter_identifier)
+    except Exception as e:
+        logger.error("Couldn't get data from the Quran Cloud: %s", e)
+        return {
             "success": False,
             "audio_data": [],
-            "error": "Network error while fetching Quran Data from Cloud"
-
+            "error": "Data not available from Quran Cloud"
         }
-        return response_data
-    
-    Quran_data = response.json()['data']['surahs']
 
     for filter_args in args:
         # start with the complete copy of the Quran
@@ -341,6 +411,11 @@ def get_Quran_Audio(args: List[Filters] = None, reciter:str = "ar.alafasy") -> L
             "error": None
 
         }
+        AUDIO_TOOL_CACHE.update(
+            prompt=cache_key,
+            llm_string=llm_string,
+            return_val=[Generation(text=json.dumps(response_data))]
+        )
         return response_data
     else:
         response_data = {
@@ -350,3 +425,4 @@ def get_Quran_Audio(args: List[Filters] = None, reciter:str = "ar.alafasy") -> L
 
         }
         return response_data
+    

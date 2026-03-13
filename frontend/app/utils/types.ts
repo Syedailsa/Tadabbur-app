@@ -210,7 +210,7 @@ export interface SessionInitMessage extends BaseOutgoingMessage {
   session_id: string;
   user_id: string | null;
   model: string;
-  mode:string;
+  mode:string | null;
 }
 
 // User message
@@ -404,6 +404,7 @@ export type Step = "EMAIL" | "OTP" | "PASSWORD" | "SUCCESS";
 
 export interface ForgotPasswordProps {
   onBackToLogin: () => void;
+  onLoading: (isLoading: boolean) => void;
 }
 
 export interface ForgotPasswordRequest {
@@ -459,8 +460,24 @@ export interface GoogleSignInResponse {
 
 export interface GoogleLoginProps {
   onSuccess: (data: GoogleSignInResponse) => void;
+  onLoading: (isLoading: boolean) => void;
   onError: (message: string) => void;
   text?: "signin_with" | "signup_with";
+}
+
+// ============================================
+// SIGNUP TYPES
+// ============================================
+
+export interface SignupResponse {
+  token: string;
+  user_id: string;
+  firstname: string;
+}
+
+export interface SignupProps {
+  onSuccess: (data: SignupResponse) => void;
+  onLoading: (isLoading: boolean) => void;
 }
 
 // ============================================
@@ -489,6 +506,7 @@ export interface LoginResponse {
 
 export interface LoginProps {
   onSuccess: (data: LoginResponse) => void;
+  onLoading: (isLoading: boolean) => void;
 }
 
 // ============================================

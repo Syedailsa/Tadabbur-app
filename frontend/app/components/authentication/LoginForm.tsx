@@ -1,15 +1,19 @@
-import React from 'react';
+import React, {useEffect} from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import axios, { AxiosError } from 'axios';
 import { loginSchema, LoginInputs, LoginProps, LoginResponse } from '@/app/utils/types';
 
-export default function LoginForm({ onSuccess }: LoginProps) {
+export default function LoginForm({ onSuccess, onLoading }: LoginProps) {
   const [serverError, setServerError] = React.useState<string | null>(null);
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginInputs>({
     resolver: zodResolver(loginSchema),
   });
+
+  useEffect(() => {
+    onLoading(isSubmitting);
+  }, [isSubmitting, onLoading]);
 
   const onSubmit = async (data: LoginInputs) => {
     setServerError(null);

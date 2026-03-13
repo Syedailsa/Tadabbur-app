@@ -12,7 +12,7 @@ import { ChatContext } from "@/app/context/chatbot/ChatContext";
 
 const StoryContainer = ({ story_data }: { story_data: StoryParagraph[] }) => {
 
-    const { setOpenFullStoryView, setStoryData } = useContext(ChatContext)!
+    const { setOpenFullStoryView, setStoryData, currentMode } = useContext(ChatContext)!
     if (!story_data || story_data.length <= 0) return null
 
     return (
@@ -32,19 +32,19 @@ const StoryContainer = ({ story_data }: { story_data: StoryParagraph[] }) => {
                                         // HEADERS
                                         h1: ({ node, ...props }) => (
                                             <h1
-                                                className="text-3xl font-bold"
+                                                className={`text-3xl font-bold ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
                                                 {...props}
                                             />
                                         ),
                                         h2: ({ node, ...props }) => (
                                             <h2
-                                                className="text-2xl font-semibold"
+                                                className={`text-2xl font-semibold ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
                                                 {...props}
                                             />
                                         ),
                                         h3: ({ node, ...props }) => (
                                             <h3
-                                                className="text-xl font-semibold"
+                                                className={`text-xl font-semibold ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
                                                 {...props}
                                             />
                                         ),
@@ -52,7 +52,7 @@ const StoryContainer = ({ story_data }: { story_data: StoryParagraph[] }) => {
                                         // PARAGRAPH
                                         p: ({ node, ...props }) => (
                                             <p
-                                                className="leading-7 my-2 text-white"
+                                                className={`leading-7 my-2 ${currentMode === "normal" ? "text-gray-700" : "text-white"} wrap-break-word`}
                                                 {...props}
                                             />
                                         ),
@@ -60,7 +60,7 @@ const StoryContainer = ({ story_data }: { story_data: StoryParagraph[] }) => {
                                         // STRONG ( **bold** )
                                         strong: ({ node, ...props }) => (
                                             <strong
-                                                className="font-bold text-black"
+                                                className={`font-bold text-black ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
                                                 {...props}
                                             />
                                         ),
@@ -68,7 +68,7 @@ const StoryContainer = ({ story_data }: { story_data: StoryParagraph[] }) => {
                                         // EMPHASIS ( *italic* )
                                         em: ({ node, ...props }) => (
                                             <em
-                                                className="italic text-gray-700"
+                                                className={`italic ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
                                                 {...props}
                                             />
                                         ),
@@ -79,7 +79,7 @@ const StoryContainer = ({ story_data }: { story_data: StoryParagraph[] }) => {
                                         // LINKS
                                         a: ({ node, ...props }) => (
                                             <a
-                                                className="text-blue-600 underline wrap-break-word"
+                                                className={`${currentMode === "normal" ? "text-blue-600" : "text-blue-400"}  underline wrap-break-word`}
                                                 target="_blank"
                                                 rel="noreferrer"
                                                 {...props}
@@ -89,22 +89,22 @@ const StoryContainer = ({ story_data }: { story_data: StoryParagraph[] }) => {
                                         // LISTS
                                         ul: ({ node, ...props }) => (
                                             <ul
-                                                className="list-disc pl-6"
+                                                className={`list-disc pl-6 ${currentMode === "normal" ? "text-black" : "text-white"}`}
                                                 {...props}
                                             />
                                         ),
                                         ol: ({ node, ...props }) => (
                                             <ol
-                                                className="list-decimal pl-6"
+                                                className={`list-decimal pl-6 ${currentMode === "normal" ? "text-black" : "text-white"}`}
                                                 {...props}
                                             />
                                         ),
                                         li: ({ node, ...props }) => (
-                                            <li className="my-1" {...props} />
+                                            <li className={`my-1 ${currentMode === "normal" ? "text-black" : "text-white"}`} {...props} />
                                         ),
                                         blockquote: ({ node, ...props }) => (
                                             <blockquote
-                                                className="border-l-4 border-gray-400 pl-4 italic my-3"
+                                                className={`border-l-4 border-gray-400 pl-4 italic my-3 ${currentMode === "normal" ? "text-black" : "text-white"}`}
                                                 {...props}
                                             />
                                         ),
@@ -114,14 +114,6 @@ const StoryContainer = ({ story_data }: { story_data: StoryParagraph[] }) => {
                                             <hr className="my-4 border-gray-300" />
                                         ),
 
-                                        // IMAGES
-                                        img: ({ node, ...props }) => (
-                                            <img
-                                                className="rounded-md my-2"
-                                                alt=""
-                                                {...props}
-                                            />
-                                        ),
                                         table: ({ node, ...props }) => (
                                             <div className="overflow-x-auto my-4 border border-black/20 rounded-lg shadow-sm">
                                                 <table className="min-w-full divide-y divide-gray-200" {...props} />
@@ -146,10 +138,10 @@ const StoryContainer = ({ story_data }: { story_data: StoryParagraph[] }) => {
                                             />
                                         ),
                                         th: ({ node, ...props }) => (
-                                            <th className="px-4 py-3 text-left text-sm font-medium text-black uppercase tracking-wider border-b" {...props} />
+                                            <th className={`px-4 py-3 text-left text-sm font-medium ${currentMode === "normal" ? "text-black" : "text-white"} uppercase tracking-wider border-b`} {...props} />
                                         ),
                                         td: ({ node, ...props }) => (
-                                            <td className="px-4 py-3 text-sm text-gray-700 border-b border-black/20 whitespace-pre-wrap" {...props} />
+                                            <td className={`px-4 py-3 text-sm border-b border-black/20 whitespace-pre-wrap ${currentMode === "normal" ? "text-gray-700" : "text-white"}`} {...props} />
                                         ),
                                         code({
                                             inline,
@@ -182,7 +174,7 @@ const StoryContainer = ({ story_data }: { story_data: StoryParagraph[] }) => {
                                             } else {
                                                 return (
                                                     <code
-                                                        className="bg-gray-100 text-red-500 px-1.5 py-0.5 rounded text-sm font-mono"
+                                                        className={`bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono ${currentMode === "normal" ? "text-black" : "text-white"}`}
                                                         {...props}
                                                     >
                                                         {children}
@@ -198,7 +190,7 @@ const StoryContainer = ({ story_data }: { story_data: StoryParagraph[] }) => {
                                     {idx === (story_data.length - 1) ? (
                                         <div className="flex flex-col gap-y-2 justify-between">
                                             <div className="w-[80%] sm:w-[50%] md:w-[45%] lg:w-[30%] h-auto">
-                                                <img className="rounded-md" src={`data:image/png;base64,${seg.image}`} />
+                                                <img className="rounded-md" src={seg.image} alt={`image${idx}`} />
                                             </div>
 
                                             <div onClick={() => {
@@ -210,7 +202,7 @@ const StoryContainer = ({ story_data }: { story_data: StoryParagraph[] }) => {
                                             </div>
                                         </div>
                                     ) : (<div className="w-[80%] sm:w-[50%] md:w-[45%] lg:w-[30%] h-auto">
-                                        <img className="rounded-md" src={`data:image/png;base64,${seg.image}`} />
+                                        <img className="rounded-md" src={seg.image} alt={`image${idx}`} />
                                     </div>
 
                                     )}
