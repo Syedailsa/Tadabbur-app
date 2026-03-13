@@ -59,13 +59,15 @@ const FullStoryViewContainer = ({ story_data }: { story_data: StoryParagraph[] }
                 {/* add a dummy box */}
                 <div className="w-full h-4 md:hidden"></div>
                 <motion.div className="w-full px-4 overflow-x-hidden">
-                    <motion.div animate={{ x: `${translateAmount}%` }} className="flex gap-x-4 w-full items-center">
+                    <motion.div animate={{ x: `${translateAmount}%` }}
+                        transition={{ duration: 0.5, ease: "linear" }} className="flex gap-x-4 w-full items-center">
                         {story_data.map((seg, idx) => {
                             if (activeIndex < idx) {
                                 return (
                                     <div key={idx} className="flex justify-center w-full shrink-0">
                                         <motion.img
                                             animate={{ width: "30%", height: "max-content" }}
+                                            transition={{duration:0.5, ease:"linear"}}
                                             className="rounded-md"
                                             src={seg.image}
                                             alt={`image${idx + 1}`}
@@ -78,6 +80,7 @@ const FullStoryViewContainer = ({ story_data }: { story_data: StoryParagraph[] }
                                     <div key={idx} className="flex justify-center w-full shrink-0">
                                         <motion.img
                                             animate={{ width: "70%", height: "max-content" }}
+                                            transition={{ duration: 0.2, ease: "linear" }}
                                             className="rounded-md"
                                             src={seg.image}
                                             alt={`image${idx + 1}`}
@@ -90,6 +93,7 @@ const FullStoryViewContainer = ({ story_data }: { story_data: StoryParagraph[] }
                                     <div key={idx} className="flex justify-center w-full shrink-0">
                                         <motion.img
                                             animate={{ width: "30%", height: "max-content" }}
+                                            transition={{ duration: 0.5, ease: "linear" }}
                                             className="rounded-md"
                                             src={seg.image}
                                             alt={`image${idx + 1}`}

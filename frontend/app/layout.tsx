@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   title: "Tadabbur - AI Powered Quranic Insights",
   description: "AI Powered Quranic Application",
   icons: {
-    icon: "/images/tadabbur-font.png"
+    icon: "/images/tadabbur-font-black-cropped.png"
   }
 };
 

@@ -14,7 +14,7 @@ import SendIcon from "../../../icons/send_icon.svg";
 import PdfFileIcon from "../../../icons/pdf-file-icon.svg"
 import PlusIcon from "../../../icons/plus-icon-white.svg"
 import TadabburFontWhite from "../../../images/tadabbur-font-white.png"
-import TadabburFontBlack from "../../../images/tadabbur-font-black-cropped.jpeg"
+import TadabburFontBlack from "../../../images/tadabbur-font-black.png"
 import EngagingIcon from "../../../icons/engage_icon.svg"
 import ArrowLeft from "../../../icons/arrow-left-bold.svg"
 import UndoArrow from "../../../icons/refresh.svg";
@@ -57,6 +57,7 @@ import HamBurger from "@/app/components/chatbot/UI/HamBurger";
 import ChatHistoryCupboard from "@/app/components/chatbot/UI/ChatHistoryCupboard";
 import FullStoryViewContainer from "@/app/components/chatbot/UI/FullStoryViewContainer";
 import StoryModeExtraOptions from "@/app/components/chatbot/UI/StoryModeExtraOptions";
+import ImageContainer from "@/app/components/chatbot/UI/ImageContainer";
 
 
 
@@ -101,6 +102,7 @@ function ChatContent() {
   const [reportedMessageIDs, setReportedMessageIDs] = useState<string[] | null>(
     [],
   );
+  const [openImageContainer, setOpenImageContainer] = useState<boolean>(false)
   const [currentMode, setCurrentMode] = useState<"normal" | "story" | null>("normal");
   const [isGenerating, setIsGenerating] = useState(false);
   const [openStoryModeExtraOptions, setOpenStoryModeExtraOptions] = useState<boolean>(false)
@@ -116,7 +118,7 @@ function ChatContent() {
   const controls = useAnimationControls();
   const [hidePromptExtraOptionsModelBoxArray, setHidePromptExtraOptionsModelBoxArray] =
     useState<hidePromptExtraOptionsModelBoxArray[]>([]);
-  const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected" >("connected");
+  const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected">("connected");
   const streamingMessageIndexRef = useRef<number | null>(null);
   const setStreamingMessageIndexSynced = (val: number | null) => {
     streamingMessageIndexRef.current = val;
@@ -144,6 +146,7 @@ function ChatContent() {
   const MAX_RECONNECT_TRIES = 5;
   const [openFullStoryView, setOpenFullStoryView] = useState<boolean>(false)
   const [storyData, setStoryData] = useState<StoryParagraph[]>([])
+  const [userImages, setUserImages] = useState<{ image_url: string }[]>([])
   const router = useRouter()
   const [openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox] = useState<
     boolean
@@ -747,6 +750,15 @@ function ChatContent() {
               alert("Error deleting sessions: " + data.error);
             }
             break;
+          case "get_images":
+            const get_image_status = data.status
+            const images = data.images || []
+            if (get_image_status != "acknowledged" || images.length <= 0) {
+              break
+            }
+            setUserImages(images)
+            setOpenImageContainer(true)
+            break
 
           case "get_chat":
             const status = data.status;
@@ -757,6 +769,7 @@ function ChatContent() {
               const chat_history = groupChatMessages(data.chat_history);
               setMessages(chat_history);
               setMessageIDs(messageIDs);
+              setSessionID(session_id)
               setConnectionStatus("connected")
               setCurrentMode(mode)
               setLoading(false);
@@ -985,15 +998,15 @@ function ChatContent() {
                 setIsGenerating(false);
                 setLoading(false);
                 setMessages(prev => prev.filter(m => m.message_id !== orphanMsgId));
-                
+
                 ask(
                   orphanContent,
                   null,
-                  false,      
+                  false,
                   null,
                   null,
                   true,
-                  orphanMsgId  
+                  orphanMsgId
                 );
               }, 500);
             }
@@ -1079,29 +1092,29 @@ function ChatContent() {
   }, [attachedFile, sessionID]);
 
   const stopGeneration = () => {
-      if (!currentStreamingMsgRef.current || !wsRef.current) return;
-  
-      if (stopStreamRef.current) {
-        stopStreamRef.current();
-        stopStreamRef.current = null;
-      }
-  
-      const partialContent = streamingContentRef.current;
-      const msgId = currentStreamingMsgRef.current.message_id;
-  
-      setIsGenerating(false);
-      setStreamingMessageIndexSynced(null);
-      setLoading(false);
-  
-      wsSendAsync(wsRef.current, {
-        type: "stop_generation",
-        message_id: msgId,
-        partial_content: partialContent,
-      });
-  
-      currentStreamingMsgRef.current = null;
-      streamingContentRef.current = "";
-    };
+    if (!currentStreamingMsgRef.current || !wsRef.current) return;
+
+    if (stopStreamRef.current) {
+      stopStreamRef.current();
+      stopStreamRef.current = null;
+    }
+
+    const partialContent = streamingContentRef.current;
+    const msgId = currentStreamingMsgRef.current.message_id;
+
+    setIsGenerating(false);
+    setStreamingMessageIndexSynced(null);
+    setLoading(false);
+
+    wsSendAsync(wsRef.current, {
+      type: "stop_generation",
+      message_id: msgId,
+      partial_content: partialContent,
+    });
+
+    currentStreamingMsgRef.current = null;
+    streamingContentRef.current = "";
+  };
 
   const ask = async (
     input: string,
@@ -1366,7 +1379,7 @@ function ChatContent() {
           </AnimatePresence>
           <div className="fixed top-4 right-4 z-9999 flex flex-col items-end gap-y-2 pointer-events-none">
             <AnimatePresence mode="wait">
-              {/* {connectionStatus === "disconnected" && (
+              {connectionStatus === "disconnected" && (
                 <motion.span
                   key="offline"
                   initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
@@ -1374,7 +1387,7 @@ function ChatContent() {
                 >
                   OFFLINE - TRYING TO RECONNECT
                 </motion.span>
-              )} */}
+              )}
               {showOfflineToast && (
                 <motion.div
                   initial={{ opacity: 0, y: 50 }}
@@ -1392,34 +1405,12 @@ function ChatContent() {
               )}
             </AnimatePresence>
           </div>
-          {/* navbar for top options background */}
-          <div id="navbar" className={`absolute w-full h-14 bg-${currentMode === "normal" ? "white" : "black"} z-20 flex px-2`}>
-            <div className="self-center mr-4">
-              <HamBurger wsRef={wsRef} openChatHistoryDialogueBox={openChatHistoryDialogueBox} setOpenChatHistoryDialogueBox={setOpenChatHistoryDialogueBox} currentMode={currentMode} />
-            </div>
-            <div className="absolute top-4 right-4">
-              {currentMode === "story" ? (
-                <Image className="w-16 h-auto object-cover object-center" src={TadabburFontWhite}
-                  alt="tadabbur-font-white" />
-              ) : (<Image className="w-16 h-auto object-cover object-center" src={TadabburFontBlack}
-                alt="tadabbur-font-black" />)}
-            </div>
-
-            <div>
-              <button
-                onClick={handleLogout}
-                className="cursor-pointer mt-2 px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm font-medium rounded-md shadow-md transition-colors"
-              >
-                Logout
-              </button>
-            </div>
-
-          </div>
 
           <ChatProvider
             chatHistory={chatHistory}
             setChatHistory={setChatHistory}
             wsRef={wsRef}
+            inputRef={inputRef}
             sessionID={sessionID}
             attachedFile={attachedFile}
             setAttachedFile={setAttachedFile}
@@ -1442,6 +1433,12 @@ function ChatContent() {
             setStoryData={setStoryData}
             openStoryModeExtraOptions={openStoryModeExtraOptions}
             setOpenStoryModeExtraOptions={setOpenStoryModeExtraOptions}
+            isUploading={isUploading}
+            fileContext={fileContext}
+            stopGeneration={stopGeneration}
+            showPlaceholder={showPlaceholder}
+            isGenerating={isGenerating}
+            setOpenImageContainer={setOpenImageContainer}
           >
 
             <AnimatePresence>
@@ -1455,11 +1452,42 @@ function ChatContent() {
               )}
             </AnimatePresence>
 
-            <div className={`w-full h-full flex flex-col items-center z-10 ${currentMode === "normal" ? "" : "black-scrollbar"} overflow-y-auto`}>
+
+            <div className={`w-full h-full flex flex-col items-center ${currentMode === "normal" ? "" : "black-scrollbar"} overflow-y-auto`}>
+
+              <AnimatePresence>
+                {openImageContainer && (
+                  <ImageContainer images={userImages} />
+                )}
+              </AnimatePresence>
+              {/* navbar for top options background */}
+              <div id="navbar" style={{ backgroundColor: currentMode === "normal" ? "#F9FAFB99" : "#00000099" }} className={`fixed w-[98%] z-20 h-14 flex items-center shrink-0 backdrop-blur-md border-b ${currentMode === "normal" ? "border-black/5" : "border-white/10"} ${messages.length > 0 ? "pr-2 pl-4" : "px-2"}`}>
+                <div className="mr-4 z-40">
+                  <HamBurger wsRef={wsRef} openChatHistoryDialogueBox={openChatHistoryDialogueBox} setOpenChatHistoryDialogueBox={setOpenChatHistoryDialogueBox} currentMode={currentMode} />
+                </div>
+                <div>
+                  <button
+                    onClick={handleLogout}
+                    className="cursor-pointer px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm font-medium rounded-md shadow-md transition-colors"
+                  >
+                    Logout
+                  </button>
+                </div>
+                <div className="ml-auto">
+                  {currentMode === "story" ? (
+                    <Image className="w-16 h-auto object-cover object-center" src={TadabburFontWhite}
+                      alt="tadabbur-font-white" />
+                  ) : (<Image className="w-16 h-auto object-cover object-center" src={TadabburFontBlack}
+                    alt="tadabbur-font-black" />)}
+                </div>
+
+              </div>
+
+
 
               <div
                 id="chat-bot"
-                className={`w-full ${messages && messages?.length > 0 ? "h-max mt-16" : "items-center mt-12"} px-4 lg:w-2/3 flex flex-col gap-y-4 ${!messages ? "justify-center" : ""}`}
+                className={`w-full ${messages && messages?.length > 0 ? "h-max mt-16" : "items-center mt-16"} px-4 lg:w-2/3 flex flex-col gap-y-4 ${!messages ? "justify-center" : ""}`}
               >
                 <AnimatePresence>
 
@@ -2022,46 +2050,13 @@ function ChatContent() {
                     {placeholder}
                   </span>
                 )}
-                {currentMode === "normal" && (
-                  <div className="flex justify-end mb-10 items-center gap-x-2">
-                    {isGenerating ? (
-                      <button
-                        onClick={stopGeneration}
-                        className="flex items-center gap-x-2 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs rounded-md switzer-500 transition-colors shadow-sm"
-                      >
-                        <div className="w-2 h-2 bg-white rounded-sm"></div>
-                        Stop
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          if (attachedFile && isUploading) {
-                            alert("File is still uploading, please wait a moment...");
-                            return;
-                          }
-                          const input = inputRef.current?.innerText || "";
-                          if (input.trim() !== "" || fileContext) {
-                            ask(input.trim());
-                          }
-                        }}
-                        className={`absolute top-2 right-3"
-                      `}
-
-                      >
-                        <motion.div style={{ cursor: showPlaceholder ? "default" : "pointer" }} animate={{ color: showPlaceholder ? "#000000B3" : "#000000" }} className="cursor-pointer">
-                          <SendIcon className="w-6 h-6 fill-current" />
-                        </motion.div>
-                      </button>
-                    )}
-                  </div>
-                )}
 
                 <div className={`transition-opacity duration-300 ${connectionStatus !== "connected" ? "pointer-events-none opacity-50" : "opacity-100"} ${currentMode === "story" ? 'flex gap-x-1' : ''}`}>
                   {currentMode === "normal" && (
                     <>
                       <BottomOptions />
                       <ExtraOptions />
-                      <ModelBox modelList={ModelList} />
+                      {/* <ModelBox modelList={ModelList} /> */}
                     </>
                   )}
                   {currentMode === "story" && (

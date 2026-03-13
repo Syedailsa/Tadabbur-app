@@ -535,6 +535,44 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     except WSDisconnectedError:
                         break
                 continue
+            
+            if data.get("type") == "get_images":
+                user_id_internal = data.get("user_id") or user_id
+                
+                if not user_id_internal:
+                    logger.info("Missing session or user ID")
+                    await ws_send(websocket, {
+                        "type": "get_images",
+                        "status": "not-acknowledged",
+                        "error": "Missing session or user id"
+                    })
+                    continue
+                for i in range(8):
+                    try:
+                        res = supabase_client.table("chat_messages").select("message_id, story_data").eq("user_id", user_id_internal).execute()
+                        rows = res.data
+                        images = []
+                        for row in rows:
+                            for obj in row.get("story_data") or []:
+                                img = obj.get("image")
+                                if img:
+                                    images.append({"image_url":img})
+                        await ws_send(websocket, {
+                            "type":"get_images",
+                            "images": images,
+                            "status":"acknowledged",
+                            "error": ""
+                        })
+                        break
+                    except Exception as e:
+                        logger.info(f"Some error occured while fetching images for user with user_id {user_id}")
+                        await ws_send(websocket, {
+                            "type": "get_images",
+                            "status": "not-acknowledged",
+                            "error": f"Error: {e}"
+                        })
+                        logging.info(f"Try number {i+1} failed, retrying for {i+1}th time.")
+                continue
 
             if data.get("type") == "get_chat":
                 requested_session_id = data.get("session_id", "")
@@ -1332,7 +1370,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                             try:
                                                 image = generate_image(image_prompt)
                                                 image_url = pil_to_img_url(image)
-                                                # print("Base 64 image", base64image)
                                                 story_data.append(StoryParagraph(story_paragraph = story_paragraph, paragraph_title = paragraph_title, image = image_url))
                                                 # print(f"Image pipeline successfully completed for image {i}")
                                                 break
