@@ -74,21 +74,25 @@ const defaultPromptsNormalMode: { title: string, description: string }[] = [
   },
 ];
 
-const defaultPromptsStoryMode: { prompt: string, imageSrc: StaticImageData }[] = [
+const defaultPromptsStoryMode: { title: string, prompt: string, imageSrc: StaticImageData }[] = [
   {
-    prompt: "Generate the story of the people of the Cave.",
+    title: "People of the Cave",
+    prompt: "Generate the story of the People of the Cave, including their faith and the miracle of their sleep.",
     imageSrc: QuranReading
   },
   {
-    prompt: "Narrate the occasion of first revelation.",
+    title: "Battle of Badr",
+    prompt: "Narrate the occasion of the Battle of Badr and how Quran described the battle.",
     imageSrc: QuranPic
   },
   {
-    prompt: "Generate the story of Prophet Yusuf عليه السلام.",
+    title: "Story of Prophet Yusuf A.S",
+    prompt: "Generate the story of Prophet Yusuf A.S, from his childhood dreams to his rise in Egypt.",
     imageSrc: DesertPic
   },
   {
-    prompt: "Generate the story of Prophet Noah عليه السلام and his people.",
+    title: "Story of Prophet Noah A.S",
+    prompt: "Generate the story of Prophet Noah A.S and his people, including the building of the ark and the great flood.",
     imageSrc: ArkPic
   }
 ]
