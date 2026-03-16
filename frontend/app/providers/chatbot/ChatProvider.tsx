@@ -17,6 +17,8 @@ type AskFn = (
 
 interface ChatProviderProps {
   ask: AskFn;
+  stopGeneration: () => void;
+  inputRef: React.RefObject<HTMLDivElement | null>;
   wsRef: React.RefObject<WebSocket | null>;
   messages: ChatMessage[];
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
@@ -41,7 +43,12 @@ interface ChatProviderProps {
   setOpenFullStoryView: React.Dispatch<React.SetStateAction<boolean>>
   setStoryData: React.Dispatch<React.SetStateAction<StoryParagraph[]>>
   openStoryModeExtraOptions: boolean
+  setOpenImageContainer: React.Dispatch<React.SetStateAction<boolean>>
   setOpenStoryModeExtraOptions: React.Dispatch<React.SetStateAction<boolean>>
+  isUploading: boolean
+  fileContext: string | null
+  showPlaceholder: boolean | null
+  isGenerating: boolean
 }
 
 const ChatProvider: React.FC<ChatProviderProps> = ({
@@ -56,6 +63,7 @@ const ChatProvider: React.FC<ChatProviderProps> = ({
   setAttachedFile,
   audioRef,
   ask,
+  stopGeneration,
   currentPlayableAudio,
   hideReportContentDialogueBox,
   setHideReportContentDialogueBox,
@@ -70,7 +78,13 @@ const ChatProvider: React.FC<ChatProviderProps> = ({
   setOpenFullStoryView,
   setStoryData,
   openStoryModeExtraOptions,
-  setOpenStoryModeExtraOptions
+  setOpenStoryModeExtraOptions,
+  isUploading,
+  fileContext,
+  showPlaceholder,
+  inputRef,
+  isGenerating,
+setOpenImageContainer
 }) => {
   const [hideExtraOptions, setHideExtraOptions] = useState<boolean>(true);
   const [selectedModel, setSelectedModel] = useState<string | null>(
@@ -120,7 +134,14 @@ const ChatProvider: React.FC<ChatProviderProps> = ({
         setOpenFullStoryView,
         setStoryData,
         openStoryModeExtraOptions,
-        setOpenStoryModeExtraOptions
+        setOpenStoryModeExtraOptions,
+        isUploading,
+        fileContext,
+        showPlaceholder,
+        inputRef,
+        isGenerating,
+        stopGeneration,
+        setOpenImageContainer
       }}
     >
       {children}

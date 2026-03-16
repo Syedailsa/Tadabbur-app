@@ -53,7 +53,7 @@ const StoryContainer = ({ story_data }: { story_data: StoryParagraph[] }) => {
                                         // PARAGRAPH
                                         p: ({ node, ...props }) => (
                                             <p
-                                                className={`leading-7 my-2 ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
+                                                className={`leading-7 my-2 ${currentMode === "normal" ? "text-gray-700" : "text-white"} wrap-break-word`}
                                                 {...props}
                                             />
                                         ),

@@ -24,7 +24,9 @@ type AskFn = (
 
 export interface ChatContextType {
   ask: AskFn;
+  stopGeneration: () => void;
   wsRef: React.RefObject<WebSocket | null>;
+  inputRef: React.RefObject<HTMLDivElement | null>
   audioRef: React.RefObject<HTMLAudioElement | null>;
   hideExtraOptions: boolean;
   setHideExtraOptions: React.Dispatch<React.SetStateAction<boolean>>;
@@ -58,5 +60,10 @@ export interface ChatContextType {
   setStoryData: React.Dispatch<React.SetStateAction<StoryParagraph[]>>
   openStoryModeExtraOptions: boolean
   setOpenStoryModeExtraOptions: React.Dispatch<React.SetStateAction<boolean>>
+  isUploading: boolean
+  fileContext: string | null
+  showPlaceholder: boolean | null
+  isGenerating: boolean
+  setOpenImageContainer: React.Dispatch<React.SetStateAction<boolean>>
 }
 export const ChatContext = createContext<ChatContextType | null>(null);

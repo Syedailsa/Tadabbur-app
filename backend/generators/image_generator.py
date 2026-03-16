@@ -16,7 +16,6 @@ SUPABASE_GENERATED_IMAGES_BUCKET = os.getenv("GENERATED_IMAGES_BUCKET", "generat
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-
 def pil_to_img_url(image: Image.Image) -> str:
     buffer = BytesIO()
     image.save(buffer, format="PNG")

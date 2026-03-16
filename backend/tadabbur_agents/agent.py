@@ -11,8 +11,8 @@ from langchain.agents import create_agent
 from tools.audio_playback import get_Quran_Audio
 from tools.verse_reader import get_verse_image
 from tools.story_agent_tool import story_agent_tool
-from langchain.agents.middleware import ToolRetryMiddleware
-
+from langchain.agents.middleware import ToolRetryMiddleware, SummarizationMiddleware
+from llms.summarizerLLM import summarizer_llm
 
 load_dotenv()
 
@@ -1082,9 +1082,17 @@ def get_agent_by_user_age( age: int , username: str, model_key: str = None ):
     return create_agent(
         name="QuranTadabburAgent",
         model = llm,
-        middleware = [tool_protection],
         system_prompt = formatted_system_prompt,
         tools = [Search_Quran_By_filters, searchAsbabNuzul, structured_response_tool, get_Quran_Audio, get_verse_image, story_agent_tool],
+        middleware = [
+            tool_protection,
+            # SummarizationMiddleware(
+            #     model = summarizer_llm,
+            #     trigger = ("tokens", 4000),
+            #     keep = ("messages",4)
+            # )
+        ]
+        
     )
 
 main_agent = get_agent_by_user_age(age=25, username="DefaultUser")  

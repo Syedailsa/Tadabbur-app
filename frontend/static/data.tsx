@@ -45,50 +45,54 @@ const defaultPromptsNormalMode: { title: string, description: string }[] = [
   {
     title: "Surah Summary",
     description:
-      "Provide a concise, neutral summary of the selected Surah based only on well-known, non-sectarian scholarly understandings. Do not offer personal opinions, rulings, or new interpretations.",
+      "Provide a concise, authentic summary of the Surah Yaseen.",
   },
   {
     title: "Ayah Explanation",
     description:
-      "Explain the meaning of the selected ayah using widely accepted tafsir principles. Stay neutral across schools of thought, avoid issuing religious rulings, and cite sources when possible.",
+      "Explain the meaning of the verse number 10 of surah Rahman.",
   },
   {
     title: "Context of Revelation",
     description:
-      "Describe the historical context (Asbāb al-Nuzūl) of the selected verse using reliable, established sources. Only share information documented in classical works and avoid speculation.",
+      "Provide the (Asbāb al-Nuzūl) of Surah Quraysh with examples.",
   },
   {
-    title: "Key Themes",
+    title: "Surah Audio",
     description:
-      "Identify the major themes present in the selected Surah or ayah based on recognized scholarly commentary. Present themes clearly and objectively without independent interpretation.",
+      "I want to listen to the complete recitation of surah An'faal.",
   },
   {
-    title: "Arabic Vocabulary Help",
+    title: "Surah Recitation",
     description:
-      "Explain the meaning of specific Qur’anic Arabic words using standard lexical definitions. Provide root meanings where relevant and avoid theological interpretations or rulings.",
+      "I want to read Surah Qamar and Surah Ankaboot.",
   },
   {
-    title: "Reflection Prompt",
+    title: "Surah Summary",
     description:
-      "Offer a gentle, non-prescriptive reflection based on the verse. Keep the reflection general, avoid giving personal religious advice or rulings, and encourage the user to explore established tafsir.",
+      "Provide a concise, authentic summary of the Surah Yaseen.",
   },
 ];
 
-const defaultPromptsStoryMode: { prompt: string, imageSrc: StaticImageData }[] = [
+const defaultPromptsStoryMode: { title: string, prompt: string, imageSrc: StaticImageData }[] = [
   {
-    prompt: "Generate the story of the people of the Cave.",
+    title: "People of the Cave",
+    prompt: "Generate the story of the People of the Cave, including their faith and the miracle of their sleep.",
     imageSrc: QuranReading
   },
   {
-    prompt: "Narrate the occasion of first revelation.",
+    title: "Battle of Badr",
+    prompt: "Narrate the occasion of the Battle of Badr and how Quran described the battle.",
     imageSrc: QuranPic
   },
   {
-    prompt: "Generate the story of Prophet Yusuf عليه السلام.",
+    title: "Story of Prophet Yusuf A.S",
+    prompt: "Generate the story of Prophet Yusuf A.S, from his childhood dreams to his rise in Egypt.",
     imageSrc: DesertPic
   },
   {
-    prompt: "Generate the story of Prophet Noah عليه السلام and his people.",
+    title: "Story of Prophet Noah A.S",
+    prompt: "Generate the story of Prophet Noah A.S and his people, including the building of the ark and the great flood.",
     imageSrc: ArkPic
   }
 ]

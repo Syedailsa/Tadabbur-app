@@ -1,10 +1,14 @@
 import { motion } from "framer-motion"
-import { useContext } from "react"
-import { ChatContext } from "@/app/context/chatbot/ChatContext"
 import { wsSendAsync } from "@/app/utils/retryOpernation"
 
-const HamBurger = () => {
-    const { wsRef, openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox, currentMode } = useContext(ChatContext)!
+type HamBurgerProps = {
+    wsRef: React.RefObject<WebSocket | null>;
+    openChatHistoryDialogueBox: boolean;
+    setOpenChatHistoryDialogueBox: React.Dispatch<React.SetStateAction<boolean>>;
+    currentMode: "normal" | "story" | null;
+}
+
+const HamBurger = ({ wsRef, openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox, currentMode }: HamBurgerProps) => {
     const fontTheme = currentMode === "normal" ? "black" : "white"
     return (
         <motion.div
@@ -34,7 +38,7 @@ const HamBurger = () => {
                     setOpenChatHistoryDialogueBox(true);
                 }
 
-            }} id="ham-burger" className="absolute top-8 left-4 self-start flex flex-col gap-y-1 cursor-pointer z-40">
+            }} id="ham-burger" className="flex flex-col gap-y-1 cursor-pointer z-40">
             <div className={`w-7 h-[3.5px] rounded-full bg-${fontTheme}`}></div>
             <div className={`w-5 h-[3.5px] rounded-full bg-${fontTheme}`}></div>
         </motion.div>

@@ -2,7 +2,6 @@ import uuid
 from fastapi import APIRouter, Depends, Form, HTTPException, File, UploadFile
 from datetime import datetime, timedelta
 from fastapi import File, UploadFile
-from models.models import BookmarkDeleteRequest
 from typing import List, Optional
 import base64
 import logging
