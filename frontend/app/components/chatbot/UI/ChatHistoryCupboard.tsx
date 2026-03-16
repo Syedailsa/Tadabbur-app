@@ -16,10 +16,10 @@ const ChatHistoryCupboard = () => {
     const router = useRouter()
 
     const handleLogout = () => {
-    Cookies.remove('auth_token');
-    localStorage.clear();
-    router.push('/pages/auth');
-};
+        Cookies.remove('auth_token');
+        localStorage.clear();
+        router.push('/pages/auth');
+    };
     const { wsRef, openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox, setSelectedSessionID, chatHistory, currentMode } = useContext(ChatContext)!
     const cupBoardRef = useRef<HTMLDivElement>(null)
 

@@ -47,6 +47,7 @@ import groupChatMessages from "@/app/utils/groupChatMessages";
 import WaveForm from "../../components/chatbot/UI/WaveForm";
 import hidePromptExtraOptionsModelBoxArray from "@/app/components/chatbot/interfaces/hidePromptExtraOptionsModelBoxArray";
 import { useRouter, useSearchParams } from "next/navigation";
+import Cookies from "js-cookie";
 import {
   SessionInitMessage,
   ChatRecordType,
@@ -450,8 +451,7 @@ function ChatContent() {
           return await response.json();
         }, 5, 1000);
         console.log("📊 Personalization data received:", data);
-
-        if (data.is_personalized && data.username && data.age) {
+if (data.is_personalized && data.username && data.age) {
 
           // console.log("✅ User already personalized");
           setShowPersonalizationForm(false);
@@ -1015,8 +1015,7 @@ function ChatContent() {
     };
 
     connect();
-
-    return () => {
+return () => {
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
       if (wsRef.current) {
@@ -1313,7 +1312,7 @@ function ChatContent() {
   if (isCheckingPersonalization) {
     return (
       <ProtectedRoute>
-        <div className="w-screen flex items-center justify-center bg-gray-50">
+        <div className="w-screen h-screen flex items-center justify-center bg-gray-50">
           <div className="flex flex-col items-center gap-y-4">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-black"></div>
             <p className="switzer-500 text-gray-600">Loading your profile...</p>
@@ -1446,7 +1445,6 @@ function ChatContent() {
                 <div className="mr-4 z-40">
                   <HamBurger wsRef={wsRef} openChatHistoryDialogueBox={openChatHistoryDialogueBox} setOpenChatHistoryDialogueBox={setOpenChatHistoryDialogueBox} currentMode={currentMode} />
                 </div>
-
                 <div className="ml-auto">
                   {currentMode === "story" ? (
                     <Image className="w-16 h-auto object-cover object-center" src={TadabburFontWhite}
@@ -1970,8 +1968,7 @@ function ChatContent() {
                 </motion.div>
               )}
             </AnimatePresence>
-
-            <motion.div animate={{ paddingTop: currentMode === "normal" ? 16 : 20, paddingBottom: currentMode === "normal" ? 16 : 28 }} className={`mr-1.5 px-4 ${currentMode === "normal" ? "w-full lg:w-2/3 mt-4" : "w-[95%] sm:w-[70%] lg:w-1/2 mt-2 flex gap-x-2 items-center"} input-box`}>
+<motion.div animate={{ paddingTop: currentMode === "normal" ? 16 : 20, paddingBottom: currentMode === "normal" ? 16 : 28 }} className={`mr-1.5 px-4 ${currentMode === "normal" ? "w-full lg:w-2/3 mt-4" : "w-[95%] sm:w-[70%] lg:w-1/2 mt-2 flex gap-x-2 items-center"} input-box`}>
 
               <motion.div
                 animate={{ height: currentMode === "normal" ? attachedFile ? 200 : 160 : 45 }}

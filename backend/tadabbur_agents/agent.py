@@ -65,7 +65,7 @@ class TableData(BaseModel):
 
 class ContentSection(BaseModel):
     heading: str = Field(..., description="Section title, e.g., 'The Creation', 'Lessons Learned'")
-    body: str = Field(..., description="Main paragraph text for this section")
+    body: str = Field(None, description="Main paragraph text for this section")
     bullet_points: Optional[List[str]] = Field(None, description="List of key takeaways or points, if needed")
     table: Optional[TableData] = Field(None, description="A data table if this section needs to compare items")
 
