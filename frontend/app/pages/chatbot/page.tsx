@@ -31,7 +31,7 @@ import {
 } from "framer-motion";
 import ProtectedRoute from "@/app/utils/ProtectedRoutes";
 import RegistrationForm from "@/app/components/chatbot/UI/ReactForm";
-import { defaultPromptsNormalMode, defaultPromptsStoryMode, ModelList } from "@/static/data";
+import { defaultPromptsNormalMode, defaultPromptsStoryMode } from "@/static/data";
 import BottomOptions from "../../components/chatbot/UI/BottomOptions";
 import ExtraOptions from "../../components/chatbot/UI/ExtraOptions";
 import MicStoryMode from "@/app/components/chatbot/UI/MicStoryMode";
@@ -153,7 +153,7 @@ function ChatContent() {
   >(false);
 
   const x = useMotionValue(0)
-  const animationRef = useRef<any>(null)
+  const animationRef = useRef<ReturnType<typeof animate> | null>(null)
 
   const startAnimation = () => {
     animationRef.current = animate(x, -1000, {
@@ -582,6 +582,7 @@ function ChatContent() {
         switch (type) {
           case "pong":
             console.log("Pong received - connection alive");
+            lastPongRef.current = Date.now();
             break;
           case "undo-report":
             const id = data.message_id;
@@ -813,8 +814,8 @@ function ChatContent() {
 
           case "assistance_response":
             const reply: string = data.content.response ?? "No reply from server";
-            const has_verse_audio: boolean = data.content.has_verse_audio
-            const has_verse_image: boolean = data.content.has_verse_image
+            const has_verse_audio: boolean = data.content.has_verse_audio || false
+            const has_verse_image: boolean = data.content.has_verse_image || false
             const message_id: string = data.message_id;
             // assign reply to message ID with order data.reply_to_message_id >> currentMessageIDRef.current >> null
             const reply_to_message_id =
@@ -876,24 +877,12 @@ function ChatContent() {
               } else {
                 targetMessage.number_of_responses += 1;
               }
-
-              targetMessage.responses = resend_flag ? oldMessagesRef.current : [];
-              targetMessage.responses.push({
-                role: "assistant",
-                message_id: message_id,
-                content: "",
-                reply_to_message_id: reply_to_message_id,
-                feedback: null,
-                audio_link: null,
-                audio_state: null,
-                has_verse_audio: has_verse_audio,
-                verse_audio_data: audio_data,
-                has_verse_image: has_verse_image,
-                verse_images: verse_images,
-                story_data: story_data
-              });
-
+              targetMessage.responses = oldMessagesRef.current ?? []
+              targetMessage.responses.push({ role: "assistant", message_id: message_id, content: "", reply_to_message_id: reply_to_message_id, feedback: null, audio_link: null, audio_state: null, has_verse_audio: has_verse_audio, verse_audio_data: audio_data, has_verse_image: has_verse_image, verse_images: verse_images, story_data: story_data });
               targetMessage.active_message_index = targetMessage.number_of_responses - 1;
+
+              console.log("All Responses", targetMessage.responses)
+
               return updated;
             });
 
@@ -920,13 +909,14 @@ function ChatContent() {
 
                 if (stopFlag) break;
 
-
                 setMessages((prev) => {
                   if (!prev || prev.length === 0) return prev;
                   const updated = [...prev];
+
                   const streamIndex = streamingMessageIndex ?? updated.length - 1;
                   if (streamIndex >= 0 && streamIndex < updated.length) {
                     const lastMsg = updated[streamIndex];
+                    // console.log("Last User Message", lastMsg)
                     if (!lastMsg.responses || lastMsg.responses.length === 0) return prev;
                     const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
 
@@ -1040,6 +1030,9 @@ function ChatContent() {
 
   }, [reconnectTrigger]);
 
+  useEffect(() => {
+    console.log("Logged in messages", messages)
+  }, [messages])
   useEffect(() => {
     let isCancelled = false;
 
@@ -1357,7 +1350,7 @@ function ChatContent() {
               : "#000000",
           }}
           transition={{ duration: 0.3 }}
-          className="relative w-screen h-screen flex flex-col items-center">
+          className="relative w-screen h-svh flex flex-col items-center">
           {/* --- UI STATUS INDICATOR --- */}
           <AnimatePresence>
             {showDeleteSuccess && (
@@ -1447,15 +1440,10 @@ function ChatContent() {
             </AnimatePresence>
 
 
-            <div className={`w-full h-full flex flex-col items-center ${currentMode === "normal" ? "" : "black-scrollbar"} overflow-y-auto`}>
+            <div className={`w-full h-full flex flex-col items-center relative ${currentMode === "normal" ? "" : "black-scrollbar"} ${messages.length > 0 ? "" : " justify-center"} overflow-y-auto`}>
 
-              <AnimatePresence>
-                {openImageContainer && (
-                  <ImageContainer images={userImages} />
-                )}
-              </AnimatePresence>
               {/* navbar for top options background */}
-              <div id="navbar" style={{ backgroundColor: currentMode === "normal" ? "#F9FAFB99" : "#00000099" }} className={`fixed w-[98%] z-20 h-14 flex items-center shrink-0 backdrop-blur-md border-b ${currentMode === "normal" ? "border-black/5" : "border-white/10"} ${messages.length > 0 ? "pr-2 pl-4" : "px-2"}`}>
+              <div id="navbar" style={{ backgroundColor: currentMode === "normal" ? "#F9FAFB99" : "#00000099" }} className={`fixed top-0 w-[98%] z-20 h-14 flex items-center shrink-0 backdrop-blur-md border-b ${currentMode === "normal" ? "border-black/5" : "border-white/10"} ${messages.length > 0 ? "pr-2 pl-4" : "px-2"}`}>
                 <div className="mr-4 z-40">
                   <HamBurger wsRef={wsRef} openChatHistoryDialogueBox={openChatHistoryDialogueBox} setOpenChatHistoryDialogueBox={setOpenChatHistoryDialogueBox} currentMode={currentMode} />
                 </div>
@@ -1473,7 +1461,7 @@ function ChatContent() {
 
               <div
                 id="chat-bot"
-                className={`w-full ${messages && messages?.length > 0 ? "h-max mt-16" : "items-center mt-16"} px-4 lg:w-2/3 flex flex-col gap-y-4 ${!messages ? "justify-center" : ""}`}
+                className={`w-full ${messages && messages?.length > 0 ? "h-max" : "items-center"} mt-16 px-4 lg:w-2/3 flex flex-col gap-y-4 ${!messages ? "justify-center" : ""}`}
               >
                 <AnimatePresence>
 
@@ -1497,7 +1485,7 @@ function ChatContent() {
                           color: currentMode === "normal" ? "#000000E6" : "#FFFFFF"
                         }}
                         transition={{ duration: 0.3 }}
-                        className={`text-center px-6 ${currentMode === "normal" ? "switzer-500 text-4xl tracking-tight" : "inter-600 text-[2.6rem] sm:text-[2.8rem] tracking-tighter lg:text-[3.2rem] leading-9 lg:leading-11 subpixel-antialiased"}`}
+                        className={`text-center px-6 ${currentMode === "normal" ? "switzer-500 tracking-tight text-4xl" : "inter-600 text-[2.6rem] sm:text-[2.8rem] tracking-tighter lg:text-[3.2rem] leading-9 lg:leading-11 subpixel-antialiased"}`}
                       >
                         {currentMode === "story" ? (
                           <>
@@ -1528,9 +1516,12 @@ function ChatContent() {
                                           ask(
                                             `${record.prompt}`,
                                           );
-                                        }} className="cursor-pointer w-max flex flex-col gap-y-1 p-1.5 rounded-lg border border-white/10">
-                                        <Image className="rounded-md md:w-36 md:h-34 w-34 h-30 object-cover object-top" alt="smiling-boy" src={record.imageSrc} />
-                                        <p className="switzer-500 text-white/80 w-36">{record.prompt}</p>
+                                        }} className="cursor-pointer w-max flex flex-row gap-x-3 sm:flex-col gap-y-1 p-2 rounded-lg border border-white/10 shadow-sm">
+                                        <Image className="rounded-md sm:w-36 sm:h-34 w-30 h-28 object-cover object-top" alt="smiling-boy" src={record.imageSrc} />
+
+                                        <p className="w-45 sm:hidden switzer-500 text-white/80">{record.prompt}</p>
+                                        <p className="hidden w-36 sm:block switzer-500 text-white/80">{record.shortPrompt}</p>
+
                                       </motion.div>
                                     )
                                   })}
@@ -1559,7 +1550,7 @@ function ChatContent() {
                             }}
                             className="w-[1200%] md:w-[600%] flex gap-x-2"
                           >
-                            {Array.from({ length: 2 }).map((_, i) => (
+                            {Array.from({ length: 3 }).map((_, i) => (
                               <motion.div key={i} id="carousel-default-prompts-normal" className="carousel w-1/2">
                                 <div className="carousel-controls-slider flex">
                                   <div className="h-max grid grid-cols-6 grid-rows-1 rounded-md gap-4 w-full">
@@ -1579,7 +1570,7 @@ function ChatContent() {
                                         }}
                                         className="bg-white rounded-md shadow-sm backdrop-blur-md cursor-pointer"
                                       >
-                                        <div className="w-full flex flex-col px-3 pt-3 pb-6 gap-y-1">
+                                        <div className="w-full flex flex-col px-3 pt-3 pb-4 gap-y-1">
                                           <div className="flex gap-x-3">
                                             <div className="default-prompt-text-box">
                                               <div className="heading-text">
@@ -2063,6 +2054,12 @@ function ChatContent() {
                 </div>
               </motion.div>
             </motion.div>
+            <AnimatePresence>
+              {openImageContainer && (
+                <ImageContainer images={userImages} />
+              )}
+            </AnimatePresence>
+
 
             <ReportContentDialogueBox
               hideReportContentDialogueBox={hideReportContentDialogueBox}

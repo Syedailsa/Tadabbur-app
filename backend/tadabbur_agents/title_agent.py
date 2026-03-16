@@ -12,7 +12,7 @@ GROQ_API_KEY = os.getenv('GROQ_AI_API_KEY')
 if not GROQ_API_KEY:
     raise ValueError("GROQ Api key is missing")
 model = ChatGroq(
-    model = "openai/gpt-oss-120b",
+    model = "openai/gpt-oss-20b",
     temperature = 0,
     api_key = GROQ_API_KEY
 )

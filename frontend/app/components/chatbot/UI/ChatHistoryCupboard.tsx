@@ -110,7 +110,7 @@ const ChatHistoryCupboard = () => {
 
             <motion.div ref={cupBoardRef} transition={{ duration: 0.3, ease: "linear" }} initial={{ x: "-100%" }}
                 animate={{ x: "0%" }}
-                exit={{ x: "-100%" }} className={`h-screen p-2 absolute left-0 z-30 border-r bg-${backgroundTheme} border-${fontTheme}/10 min-w-60 w-max max-w-60 md:w-70 flex flex-col`}>
+                exit={{ x: "-100%" }} className={`h-svh p-2 absolute left-0 z-30 border-r bg-${backgroundTheme} border-${fontTheme}/10 min-w-60 w-max max-w-60 md:w-70 flex flex-col`}>
 
                 <div className="mt-16"></div>
                 <div className="flex flex-col gap-y-1">
