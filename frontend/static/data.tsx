@@ -73,26 +73,29 @@ const defaultPromptsNormalMode: { title: string, description: string }[] = [
       "Provide a concise, authentic summary of the Surah Yaseen.",
   },
 ];
-
-const defaultPromptsStoryMode: { title: string, prompt: string, imageSrc: StaticImageData }[] = [
+const defaultPromptsStoryMode: { title: string, prompt: string, shortPrompt: string, imageSrc: StaticImageData }[] = [
   {
     title: "People of the Cave",
     prompt: "Generate the story of the People of the Cave, including their faith and the miracle of their sleep.",
+    shortPrompt: "Generate the story of the People of the Cave",
     imageSrc: QuranReading
   },
   {
     title: "Battle of Badr",
     prompt: "Narrate the occasion of the Battle of Badr and how Quran described the battle.",
+    shortPrompt: "Narrate the account of the Battle of Badr",
     imageSrc: QuranPic
   },
   {
     title: "Story of Prophet Yusuf A.S",
     prompt: "Generate the story of Prophet Yusuf A.S, from his childhood dreams to his rise in Egypt.",
+    shortPrompt: "Generate the story of Prophet Yusuf A.S",
     imageSrc: DesertPic
   },
   {
     title: "Story of Prophet Noah A.S",
     prompt: "Generate the story of Prophet Noah A.S and his people, including the building of the ark and the great flood.",
+    shortPrompt: "Narrate the story of Prophet Noah A.S and his ark",
     imageSrc: ArkPic
   }
 ]

@@ -819,8 +819,8 @@ function ChatContent() {
 
           case "assistance_response":
             const reply: string = data.content.response ?? "No reply from server";
-            const has_verse_audio: boolean = data.content.has_verse_audio
-            const has_verse_image: boolean = data.content.has_verse_image
+            const has_verse_audio: boolean = data.content.has_verse_audio || false
+            const has_verse_image: boolean = data.content.has_verse_image || false
             const message_id: string = data.message_id;
             // assign reply to message ID with order data.reply_to_message_id >> currentMessageIDRef.current >> null
             const reply_to_message_id =
@@ -882,24 +882,12 @@ function ChatContent() {
               } else {
                 targetMessage.number_of_responses += 1;
               }
-
-              targetMessage.responses = resend_flag ? oldMessagesRef.current : [];
-              targetMessage.responses.push({
-                role: "assistant",
-                message_id: message_id,
-                content: "",
-                reply_to_message_id: reply_to_message_id,
-                feedback: null,
-                audio_link: null,
-                audio_state: null,
-                has_verse_audio: has_verse_audio,
-                verse_audio_data: audio_data,
-                has_verse_image: has_verse_image,
-                verse_images: verse_images,
-                story_data: story_data
-              });
-
+              targetMessage.responses = oldMessagesRef.current ?? []
+              targetMessage.responses.push({ role: "assistant", message_id: message_id, content: "", reply_to_message_id: reply_to_message_id, feedback: null, audio_link: null, audio_state: null, has_verse_audio: has_verse_audio, verse_audio_data: audio_data, has_verse_image: has_verse_image, verse_images: verse_images, story_data: story_data });
               targetMessage.active_message_index = targetMessage.number_of_responses - 1;
+
+              console.log("All Responses", targetMessage.responses)
+
               return updated;
             });
 
@@ -926,13 +914,14 @@ function ChatContent() {
 
                 if (stopFlag) break;
 
-
                 setMessages((prev) => {
                   if (!prev || prev.length === 0) return prev;
                   const updated = [...prev];
+
                   const streamIndex = streamingMessageIndex ?? updated.length - 1;
                   if (streamIndex >= 0 && streamIndex < updated.length) {
                     const lastMsg = updated[streamIndex];
+                    // console.log("Last User Message", lastMsg)
                     if (!lastMsg.responses || lastMsg.responses.length === 0) return prev;
                     const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
 
@@ -1046,6 +1035,9 @@ function ChatContent() {
 
   }, [reconnectTrigger]);
 
+  useEffect(() => {
+    console.log("Logged in messages", messages)
+  }, [messages])
   useEffect(() => {
     let isCancelled = false;
 
@@ -1506,7 +1498,7 @@ function ChatContent() {
                           color: currentMode === "normal" ? "#000000E6" : "#FFFFFF"
                         }}
                         transition={{ duration: 0.3 }}
-                          className={`text-center px-6 ${currentMode === "normal" ? "switzer-500 tracking-tight text-4xl" : "inter-600 text-[2.6rem] sm:text-[2.8rem] tracking-tighter lg:text-[3.2rem] leading-9 lg:leading-11 subpixel-antialiased"}`}
+                        className={`text-center px-6 ${currentMode === "normal" ? "switzer-500 tracking-tight text-4xl" : "inter-600 text-[2.6rem] sm:text-[2.8rem] tracking-tighter lg:text-[3.2rem] leading-9 lg:leading-11 subpixel-antialiased"}`}
                       >
                         {currentMode === "story" ? (
                           <>
@@ -1538,10 +1530,11 @@ function ChatContent() {
                                             `${record.prompt}`,
                                           );
                                         }} className="cursor-pointer w-max flex flex-row gap-x-3 sm:flex-col gap-y-1 p-2 rounded-lg border border-white/10 shadow-sm">
-                                        <Image className="rounded-md md:w-36 md:h-34 w-30 h-28 object-cover object-top" alt="smiling-boy" src={record.imageSrc} />
-                                        
-                                        <p className="w-45 switzer-500 text-white/80">{record.prompt}</p>
-                                        
+                                        <Image className="rounded-md sm:w-36 sm:h-34 w-30 h-28 object-cover object-top" alt="smiling-boy" src={record.imageSrc} />
+
+                                        <p className="w-45 sm:hidden switzer-500 text-white/80">{record.prompt}</p>
+                                        <p className="hidden w-36 sm:block switzer-500 text-white/80">{record.shortPrompt}</p>
+
                                       </motion.div>
                                     )
                                   })}
