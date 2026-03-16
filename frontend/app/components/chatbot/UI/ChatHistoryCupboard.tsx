@@ -4,12 +4,22 @@ import { ChatContext, ChatRecord } from "@/app/context/chatbot/ChatContext";
 import { wsSendAsync } from "@/app/utils/retryOpernation";
 import NewChatIcon from "../../../../icons/new_chat_icon.svg"
 import ImageIcon from "../../../../icons/image_icon.svg"
-import { X } from "lucide-react";
+import { X, LogOut } from "lucide-react";
+import { useRouter } from "next/navigation";
+import Cookies from "js-cookie";
+
 import { useState, useCallback } from "react";
 import { AlertTriangle, Trash2 } from "lucide-react";
 
 const ChatHistoryCupboard = () => {
 
+    const router = useRouter()
+
+    const handleLogout = () => {
+    Cookies.remove('auth_token');
+    localStorage.clear();
+    router.push('/pages/auth');
+};
     const { wsRef, openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox, setSelectedSessionID, chatHistory, currentMode } = useContext(ChatContext)!
     const cupBoardRef = useRef<HTMLDivElement>(null)
 
@@ -100,7 +110,7 @@ const ChatHistoryCupboard = () => {
 
             <motion.div ref={cupBoardRef} transition={{ duration: 0.3, ease: "linear" }} initial={{ x: "-100%" }}
                 animate={{ x: "0%" }}
-                exit={{ x: "-100%" }} className={`h-svh p-2 absolute left-0 z-30 border-r bg-${backgroundTheme} border-${fontTheme}/10 min-w-60 w-max max-w-60 md:w-70`}>
+                exit={{ x: "-100%" }} className={`h-svh p-2 absolute left-0 z-30 border-r bg-${backgroundTheme} border-${fontTheme}/10 min-w-60 w-max max-w-60 md:w-70 flex flex-col`}>
 
                 <div className="mt-16"></div>
                 <div className="flex flex-col gap-y-1">
@@ -120,7 +130,7 @@ const ChatHistoryCupboard = () => {
                 <div className="mt-4 px-1">
                     <p className={`switzer-500 text-${fontTheme} text-sm tracking-tight`}>Chat history</p>
                 </div>
-                <motion.div className={`grid grid-cols-1 gap-y-1 h-max max-h-120 ${currentMode === "normal" ? "overflow-y-auto" : "chat-history-cupboard-scrollbar"}`}>
+                <motion.div className={`flex-1 grid grid-cols-1 gap-y-1 h-max max-h-120 ${currentMode === "normal" ? "overflow-y-auto" : "chat-history-cupboard-scrollbar"}`}>
                     {chatHistory && chatHistory?.length > 0 ? (
                         chatHistory?.map((chat: ChatRecord, index: number) => (
                             <motion.div
@@ -206,7 +216,17 @@ const ChatHistoryCupboard = () => {
                     )}
                 </motion.div>
 
-
+                <div className={`mt-auto pt-2 border-t border-${fontTheme}/10`}>
+                    <motion.div
+                        whileTap={{ scale: 0.99 }} whileHover={{ scale: 1.01 }} 
+                        transition={{ duration: 0.4, ease: "linear" }}
+                        onClick={handleLogout}
+                        className={`w-full flex items-center cursor-pointer justify-between px-1.5 py-2 rounded-md`}                    
+                    >
+                        <p className={`switzer-500 text-sm tracking-tight text-${fontTheme}`}>Logout</p>
+                        <LogOut className={`text-${fontTheme}/80 hover:text-${fontTheme}/90`} size={16} />
+                    </motion.div>
+                </div>
 
             </motion.div>
             <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
@@ -231,14 +251,3 @@ const ChatHistoryCupboard = () => {
 
 
 export default ChatHistoryCupboard
-
-
-
-
-
-
-
-
-
-
-

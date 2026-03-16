@@ -47,7 +47,6 @@ import groupChatMessages from "@/app/utils/groupChatMessages";
 import WaveForm from "../../components/chatbot/UI/WaveForm";
 import hidePromptExtraOptionsModelBoxArray from "@/app/components/chatbot/interfaces/hidePromptExtraOptionsModelBoxArray";
 import { useRouter, useSearchParams } from "next/navigation";
-import Cookies from "js-cookie";
 import {
   SessionInitMessage,
   ChatRecordType,
@@ -266,12 +265,6 @@ function ChatContent() {
 
     return processed;
   }
-
-  const handleLogout = () => {
-    Cookies.remove('auth_token');
-    localStorage.clear();
-    router.push('/pages/auth');
-  };
 
   useEffect(() => {
     const audioEl = audioRef.current;
@@ -1461,14 +1454,7 @@ function ChatContent() {
                 <div className="mr-4 z-40">
                   <HamBurger wsRef={wsRef} openChatHistoryDialogueBox={openChatHistoryDialogueBox} setOpenChatHistoryDialogueBox={setOpenChatHistoryDialogueBox} currentMode={currentMode} />
                 </div>
-                <div>
-                  <button
-                    onClick={handleLogout}
-                    className="cursor-pointer px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm font-medium rounded-md shadow-md transition-colors"
-                  >
-                    Logout
-                  </button>
-                </div>
+
                 <div className="ml-auto">
                   {currentMode === "story" ? (
                     <Image className="w-16 h-auto object-cover object-center" src={TadabburFontWhite}
