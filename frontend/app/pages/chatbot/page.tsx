@@ -145,7 +145,7 @@ function ChatContent() {
   >(false);
 
   const x = useMotionValue(0)
-  const animationRef = useRef<any>(null)
+  const animationRef = useRef<ReturnType<typeof animate> | null>(null)
 
   const startAnimation = () => {
     animationRef.current = animate(x, -1000, {
@@ -580,6 +580,7 @@ function ChatContent() {
         switch (type) {
           case "pong":
             console.log("Pong received - connection alive");
+            lastPongRef.current = Date.now();
             break;
           case "undo-report":
             const id = data.message_id;

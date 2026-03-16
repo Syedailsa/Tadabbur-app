@@ -16,12 +16,6 @@ SUPABASE_GENERATED_IMAGES_BUCKET = os.getenv("GENERATED_IMAGES_BUCKET", "generat
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# def pil_to_base64(image: Image.Image) -> str:
-#     buffer = BytesIO()
-#     image.save(buffer, format="PNG")
-#     buffer.seek(0)
-#     img_str = base64.b64encode(buffer.read()).decode("utf-8")
-#     return img_str
 
 def pil_to_img_url(image: Image.Image) -> str:
     buffer = BytesIO()
@@ -36,14 +30,8 @@ def pil_to_img_url(image: Image.Image) -> str:
         file_options={"content-type": "image/png", "upsert": "true"}
     )
 
-    signed = supabase.storage.from_(SUPABASE_GENERATED_IMAGES_BUCKET).create_signed_url(
-        path=unique_filename,
-        expires_in=60 * 60 * 24  
-    )
-
-    url = signed["signedURL"]
-    print(f" Generated image URL: {url}")
-    return url
+    print(f"✅ Image uploaded: {unique_filename}")
+    return unique_filename
 
 
 client = InferenceClient(

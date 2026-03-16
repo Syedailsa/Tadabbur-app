@@ -4,6 +4,8 @@ import { useContext, useEffect, useState } from "react"
 import ArrowLeft from "../../../../icons/arrow-left-bold.svg"
 import FullSizeIcon from "../../../../icons/full_size_icon.svg"
 import { ChatContext } from "@/app/context/chatbot/ChatContext"
+import ProtectedImage from "./ProtectedImage"
+
 
 const FullStoryViewContainer = ({ story_data }: { story_data: StoryParagraph[] }) => {
     const { setOpenFullStoryView } = useContext(ChatContext)!
@@ -64,17 +66,23 @@ const FullStoryViewContainer = ({ story_data }: { story_data: StoryParagraph[] }
 
                             if (activeIndex < idx) {
                                 return (
-                                    <motion.img key={idx} animate={{ width: "100%", maxHeight: "max-content" }} className="rounded-md" src={seg.image} alt={`image${idx}`} />
+                                    <motion.div key={idx} animate={{ width: "100%", height: "auto" }}>
+                                        <ProtectedImage filename={seg.image} className="rounded-md w-full" alt={`image${idx}`} />
+                                    </motion.div>
                                 )
                             }
                             else if (activeIndex === idx) {
                                 return (
-                                    <motion.img key={idx} animate={{ width: "100%", height: "auto" }} className="rounded-md" src={seg.image} alt={`image${idx}`} />
+                                    <motion.div key={idx} animate={{ width: "100%", height: "auto" }}>
+                                        <ProtectedImage filename={seg.image} className="rounded-md w-full" alt={`image${idx}`} />
+                                    </motion.div>
                                 )
                             }
                             else {
                                 return (
-                                    <motion.img key={idx} animate={{ width: "100%", maxHeight: "max-content" }} className="rounded-md" src={seg.image} alt={`image${idx}`} />
+                                    <motion.div key={idx} animate={{ width: "100%", height: "auto" }}>
+                                        <ProtectedImage filename={seg.image} className="rounded-md w-full" alt={`image${idx}`} />
+                                    </motion.div>
                                 )
                             }
                         })}

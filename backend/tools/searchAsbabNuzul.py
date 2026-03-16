@@ -29,12 +29,6 @@ qdrant_client = QdrantClient(
     )
 
 ASBAB_NUZUL_CACHE = InMemoryCache(maxsize=1000)
-
-qdrant_client = QdrantClient(
-    url=os.getenv("QDRANT_URL_ENDPOINT"),
-    api_key=os.getenv("QDRANT_API_KEY"),
-    timeout=60
-)
     
 class ToolSchema(BaseModel):
     "Surah and verse filters"
@@ -126,23 +120,22 @@ def searchAsbabNuzul(
             "surah_englishNameTranslation": normalize_surah(row.surah_englishNameTranslation, surah_name_english_translation_array),
         }
 
-        # checks if all tool arguments are none
+        
         if not any(verse_tool_args.values()) and not query:
-            # all arguments are none so return
-            response_object = {
+            
+            return {
                 "success": False,
                 "results": [],
                 "error": "Your query needs more information to return results."
             }
-            return "No tool arguments are provided"
 
-        # filter and remove the none tool arguments
+        
         clean_arguments = {k:v for k,v in verse_tool_args.items() if v is not None}
 
         logger.info("Clean tool arguments: %s", clean_arguments)
 
         must = []
-        # build the filter
+       
         if clean_arguments:
             for k,v in clean_arguments.items():
                 if k == "limit":
@@ -188,13 +181,15 @@ def searchAsbabNuzul(
             query_filter = models.Filter(must=must) if must else None
         )
         results_array.append(similar_points)
-    if results_array:
+    if results_array and any(
+        r.points for r in results_array if hasattr(r, "points")
+    ):
         logger.info("Results found: %d", len(results_array))
         serializable = [r.model_dump() if hasattr(r, "model_dump") else r for r in results_array]
         response_obj = {
             "success": True,
             "results": serializable,
-            "error": "" 
+            "error": ""
         }
         ASBAB_NUZUL_CACHE.update(
             prompt=cache_key,
@@ -202,14 +197,12 @@ def searchAsbabNuzul(
             return_val=[Generation(text=json.dumps(serializable))]
         )
         logger.info("Cache updated with new Asbab Nuzul result")
-        print(response_obj)
         return response_obj
     else:
         logger.warning("No results found for the user's query")
-        response_object = {
+        return {
             "success": False,
             "results": [],
             "error": "No results found for the user's query",
         }
-        return response_object
 
