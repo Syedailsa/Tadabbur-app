@@ -4,8 +4,7 @@ import { useContext, useEffect, useState } from "react"
 import ArrowLeft from "../../../../icons/arrow-left-bold.svg"
 import FullSizeIcon from "../../../../icons/full_size_icon.svg"
 import { ChatContext } from "@/app/context/chatbot/ChatContext"
-import ProtectedImage from "./ProtectedImage"
-
+import ProtectedImage from "./ProtectedImage";
 
 const FullStoryViewContainer = ({ story_data }: { story_data: StoryParagraph[] }) => {
     const { setOpenFullStoryView } = useContext(ChatContext)!
@@ -66,23 +65,47 @@ const FullStoryViewContainer = ({ story_data }: { story_data: StoryParagraph[] }
                         {story_data.map((seg, idx) => {
                             if (activeIndex < idx) {
                                 return (
-                                    <motion.div key={idx} animate={{ width: "100%", height: "auto" }}>
-                                        <ProtectedImage filename={seg.image} className="rounded-md w-full" alt={`image${idx}`} />
-                                    </motion.div>
+                                    <div key={idx} className="flex justify-center w-full shrink-0">
+                                        <motion.div animate={{ width: "30%", height: "max-content" }}
+                                            transition={{duration:0.5, ease:"linear"}}
+                                            >
+                                        <ProtectedImage
+                                        className="rounded-md"
+                                            filename={seg.image}
+                                            alt={`image${idx + 1}`}
+                                        />
+                                        </motion.div>
+                                    </div>
                                 )
                             }
                             else if (activeIndex === idx) {
                                 return (
-                                    <motion.div key={idx} animate={{ width: "100%", height: "auto" }}>
-                                        <ProtectedImage filename={seg.image} className="rounded-md w-full" alt={`image${idx}`} />
-                                    </motion.div>
+                                    <div key={idx} className="flex justify-center w-full shrink-0">
+                                        <motion.div animate={{ width: "70%", height: "max-content" }}
+                                            transition={{duration:0.5, ease:"linear"}}
+                                        >
+                                            <ProtectedImage
+                                            className="rounded-md"
+                                                filename={seg.image}
+                                                alt={`image${idx + 1}`}
+                                            />
+                                        </motion.div>
+                                    </div>
                                 )
                             }
                             else {
                                 return (
-                                    <motion.div key={idx} animate={{ width: "100%", height: "auto" }}>
-                                        <ProtectedImage filename={seg.image} className="rounded-md w-full" alt={`image${idx}`} />
-                                    </motion.div>
+                                    <div key={idx} className="flex justify-center w-full shrink-0">
+                                        <motion.div animate={{ width: "70%", height: "max-content" }}
+                                            transition={{duration:0.5, ease:"linear"}}
+                                            >
+                                        <ProtectedImage
+                                        className="rounded-md"
+                                            filename={seg.image}
+                                            alt={`image${idx + 1}`}
+                                        />
+                                        </motion.div>
+                                    </div>
                                 )
                             }
                         })}

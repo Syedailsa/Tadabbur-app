@@ -1037,7 +1037,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
                 user_message_id = user_message_id if not resend_flag else resend_message_id
 
-                if user_message_id:
+                if user_message_id and not resend_flag:
                     try:
                         existing_response = supabase_client.table('chat_messages')\
                             .select('message_id', 'content', 'has_verse_audio', 'has_verse_image', 
@@ -1066,9 +1066,9 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                     "resend_flag": False,
                                     "final": True,
                                 }, label="assistance_response_cached")
+                                continue
                             except WSDisconnectedError:
                                 break
-                            continue  
                     except Exception as e:
                         logger.warning(f"⚠️ Could not check for existing response: {e}, proceeding with agent call")
                             
@@ -1426,14 +1426,13 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
                     # generate title and description for the current chat history if there are 2 user/assistant messages each
                     # run the below logic in a seperate thread
-                    asyncio.create_task(
-                        asyncio.to_thread(
-                            generate_title_description,
-                            conversation_history,
-                            session_id,
-                            supabase_client
-                        )
+                    await asyncio.to_thread(
+                        generate_title_description,
+                        conversation_history,
+                        session_id,
+                        supabase_client
                     )
+                
 
                     if response_object:
                         send_result = await ws_send(websocket, {
