@@ -29,14 +29,8 @@ def pil_to_img_url(image: Image.Image) -> str:
         file_options={"content-type": "image/png", "upsert": "true"}
     )
 
-    signed = supabase.storage.from_(SUPABASE_GENERATED_IMAGES_BUCKET).create_signed_url(
-        path=unique_filename,
-        expires_in=60 * 60 * 24  
-    )
-
-    url = signed["signedURL"]
-    print(f" Generated image URL: {url}")
-    return url
+    print(f"✅ Image uploaded: {unique_filename}")
+    return unique_filename
 
 
 client = InferenceClient(

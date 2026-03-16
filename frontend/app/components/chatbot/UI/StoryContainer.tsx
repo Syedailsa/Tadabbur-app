@@ -1,6 +1,6 @@
 import { dracula } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { ReactNode, HTMLAttributes, CSSProperties, useContext } from "react";
+import { ReactNode, HTMLAttributes, CSSProperties, useContext, useState, useEffect } from "react";
 import { motion } from "framer-motion"
 import { StoryParagraph } from "../interfaces/ChatMessage"
 import ReactMarkdown from "react-markdown";
@@ -8,6 +8,7 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import FullViewIcon from "../../../../icons/full_size_icon.svg"
 import { ChatContext } from "@/app/context/chatbot/ChatContext";
+import ProtectedImage from "./ProtectedImage";
 
 
 const StoryContainer = ({ story_data }: { story_data: StoryParagraph[] }) => {
@@ -190,7 +191,7 @@ const StoryContainer = ({ story_data }: { story_data: StoryParagraph[] }) => {
                                     {idx === (story_data.length - 1) ? (
                                         <div className="flex flex-col gap-y-2 justify-between">
                                             <div className="w-[80%] sm:w-[50%] md:w-[45%] lg:w-[30%] h-auto">
-                                                <img className="rounded-md" src={seg.image} alt={`image${idx}`} />
+                                                <ProtectedImage filename={seg.image} className="rounded-md" alt={`image${idx}`} />
                                             </div>
 
                                             <div onClick={() => {
@@ -202,7 +203,7 @@ const StoryContainer = ({ story_data }: { story_data: StoryParagraph[] }) => {
                                             </div>
                                         </div>
                                     ) : (<div className="w-[80%] sm:w-[50%] md:w-[45%] lg:w-[30%] h-auto">
-                                        <img className="rounded-md" src={seg.image} alt={`image${idx}`} />
+                                        <ProtectedImage filename={seg.image} className="rounded-md" alt={`image${idx}`} />
                                     </div>
 
                                     )}

@@ -4,6 +4,8 @@ import json
 import asyncio
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse, Response
+import httpx
 from fastapi.websockets import WebSocketState
 from pydantic import BaseModel
 from typing import List
@@ -76,7 +78,7 @@ async def lifespan(app: FastAPI):
     
 # ------------------- APP CONFIG -------------------
 app = FastAPI(title="Tadabbur Agent API", lifespan=lifespan)
-# ------------------- APP CONFIG -------------------
+
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 ALGORITHM = "HS256"
 
@@ -139,6 +141,24 @@ try:
 except Exception as e:
     print("Some error occured initiating supabase connection", e)
     raise
+
+@app.get("/api/story-image/{filename}")
+async def get_story_image(filename: str, token: str = Query(...)):
+    user_id = get_user_from_token(token)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    signed = supabase_client.storage.from_(
+        os.getenv("GENERATED_IMAGES_BUCKET", "generated-images")
+    ).create_signed_url(path=filename, expires_in=60)
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        img_response = await client.get(signed["signedURL"])
+    
+    return Response(
+        content=img_response.content,
+        media_type="image/png"
+    )
 
 def get_chat_messages(session_id: str, user_id: str, supabase_client) -> List[str]:
     """Get all messages of a specific session"""
@@ -1394,7 +1414,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             print("✅ Assistant message saved successfully!")
                         except DBRetryError as e:
                             logger.error(f"❌ Assistant message failed to save after retries: {e}")
-                            raise 
+                             
                         except Exception as e:
                             print("Some error occured while inserting assistant messages", e)
                             raise                  
@@ -1415,8 +1435,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 
 
                     if response_object:
-                        try:
-                            await ws_send(websocket, {
+                        send_result = await ws_send(websocket, {
                             "type": "assistance_response",
                             "message_id": response_message_id,
                             "content": response_object.model_dump(mode = "json"),
@@ -1425,13 +1444,11 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             "db_saved" :True,
                             "final": True
                         }, label="assistance_response")
-                        except WSDisconnectedError:
-                            logger.info("Failed to send assistance response with DB save failure flag (Socket closed?)")
-                            break   
-                        except Exception as e:
-                            logger.error(f"Failed to send assistance response after DB save failure: {e}")
-                            break
-
+                        
+                        if send_result is False:
+                            # WebSocket was disconnected, message saved in DB will be loaded via get_chat
+                            logger.info("⚠️ Assistance response saved but not sent (client disconnected). Will be retrieved on reconnect.")
+                        
                 except WebSocketDisconnect:
                     logger.info("Client disconnected")
                     print("Closing websocket...")
