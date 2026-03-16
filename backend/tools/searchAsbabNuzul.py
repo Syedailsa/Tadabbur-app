@@ -204,7 +204,7 @@ def searchAsbabNuzul(
             "results": serializable,
             "error": "" 
         }
-        print(serializable)
+        print("serialized data: ", serializable)
         ASBAB_NUZUL_CACHE.update(
             prompt=cache_key,
             llm_string=llm_string,

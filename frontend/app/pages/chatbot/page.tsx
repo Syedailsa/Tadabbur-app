@@ -267,12 +267,6 @@ function ChatContent() {
     return processed;
   }
 
-  const handleLogout = () => {
-    Cookies.remove('auth_token');
-    localStorage.clear();
-    router.push('/pages/auth');
-  };
-
   useEffect(() => {
     const audioEl = audioRef.current;
     if (!audioEl) return;
@@ -1327,7 +1321,7 @@ function ChatContent() {
   if (isCheckingPersonalization) {
     return (
       <ProtectedRoute>
-        <div className="w-screen flex items-center justify-center bg-gray-50">
+        <div className="w-screen h-screen flex items-center justify-center bg-gray-50">
           <div className="flex flex-col items-center gap-y-4">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-black"></div>
             <p className="switzer-500 text-gray-600">Loading your profile...</p>
@@ -1464,14 +1458,6 @@ function ChatContent() {
               <div id="navbar" style={{ backgroundColor: currentMode === "normal" ? "#F9FAFB99" : "#00000099" }} className={`fixed w-[98%] z-20 h-14 flex items-center shrink-0 backdrop-blur-md border-b ${currentMode === "normal" ? "border-black/5" : "border-white/10"} ${messages.length > 0 ? "pr-2 pl-4" : "px-2"}`}>
                 <div className="mr-4 z-40">
                   <HamBurger wsRef={wsRef} openChatHistoryDialogueBox={openChatHistoryDialogueBox} setOpenChatHistoryDialogueBox={setOpenChatHistoryDialogueBox} currentMode={currentMode} />
-                </div>
-                <div>
-                  <button
-                    onClick={handleLogout}
-                    className="cursor-pointer px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm font-medium rounded-md shadow-md transition-colors"
-                  >
-                    Logout
-                  </button>
                 </div>
                 <div className="ml-auto">
                   {currentMode === "story" ? (
