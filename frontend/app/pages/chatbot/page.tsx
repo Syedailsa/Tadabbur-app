@@ -451,7 +451,7 @@ function ChatContent() {
           return await response.json();
         }, 5, 1000);
         console.log("📊 Personalization data received:", data);
-if (data.is_personalized && data.username && data.age) {
+        if (data.is_personalized && data.username && data.age) {
 
           // console.log("✅ User already personalized");
           setShowPersonalizationForm(false);
@@ -1015,7 +1015,7 @@ if (data.is_personalized && data.username && data.age) {
     };
 
     connect();
-return () => {
+    return () => {
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
       if (wsRef.current) {
@@ -1969,7 +1969,7 @@ return () => {
                 </motion.div>
               )}
             </AnimatePresence>
-<motion.div animate={{ paddingTop: currentMode === "normal" ? 16 : 20, paddingBottom: currentMode === "normal" ? 16 : 28 }} className={`mr-1.5 px-4 ${currentMode === "normal" ? "w-full lg:w-2/3 mt-4" : "w-[95%] sm:w-[70%] lg:w-1/2 mt-2 flex gap-x-2 items-center"} input-box`}>
+            <motion.div animate={{ paddingTop: currentMode === "normal" ? 16 : 20, paddingBottom: currentMode === "normal" ? 16 : 28 }} className={`mr-1.5 px-4 ${currentMode === "normal" ? "w-full lg:w-2/3 mt-4" : "w-[95%] sm:w-[70%] lg:w-1/2 mt-2 flex gap-x-2 items-center"} input-box`}>
 
               <motion.div
                 animate={{ height: currentMode === "normal" ? attachedFile ? 200 : 160 : 45 }}
