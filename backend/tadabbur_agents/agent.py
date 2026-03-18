@@ -1,4 +1,5 @@
 import os
+from dataclasses import dataclass, field
 from langchain_groq import ChatGroq
 from tools.search_Quran_By_Filters import Search_Quran_By_filters
 from tools.searchAsbabNuzul import searchAsbabNuzul
@@ -11,7 +12,7 @@ from langchain.agents import create_agent
 from tools.audio_playback import get_Quran_Audio
 from tools.verse_reader import get_verse_image
 from tools.story_agent_tool import story_agent_tool
-from langchain.agents.middleware import ToolRetryMiddleware, SummarizationMiddleware
+from langchain.agents.middleware import ToolRetryMiddleware, SummarizationMiddleware, dynamic_prompt, ModelRequest
 from llms.summarizerLLM import summarizer_llm
 
 load_dotenv()
@@ -29,6 +30,14 @@ SUPPORTED_CHAT_MODELS = {
 }
 
 DEFAULT_CHAT_MODEL = "openai/gpt-oss-120b"
+
+@dataclass
+class UserContext:
+    user_name: str = "User"
+    user_age: int = 25
+    user_id: str = ""
+    session_id: str = ""
+    loading_sent: bool = False
 
 def get_llm(model_key: str = None):
     """
@@ -98,6 +107,23 @@ structured_response_tool = StructuredTool.from_function(
     description="Use this tool to return the final answer to the user with the required formatting (Title, Intro, Sections).",
     args_schema=QuranResponse
 )
+
+@dynamic_prompt
+def personalized_system_prompt(request: ModelRequest) -> str:
+    ctx: UserContext = request.runtime.context
+    user_context_str = f"You are chatting with **{ctx.user_name}**, who is **{ctx.user_age} years old**."
+
+    if ctx.user_age <= 12:
+        selected_template = child_system_instructions
+    else:
+        selected_template = standard_system_instructions
+
+    return selected_template.format(
+        QuranMetaData=QuranMetaData,
+        surah_name_english_array=surah_name_english_array,
+        surah_name_english_translation_array=surah_name_english_translation_array,
+        user_context=user_context_str
+    )
 
 child_system_instructions = """
 
@@ -1052,47 +1078,30 @@ standard_system_instructions = """
     **Default language:** English (unless the user converses in another language).
 """
 
-def get_agent_by_user_age( age: int , username: str, model_key: str = None ):
-    """
-    Returns a configured agent based on the user's age and name.
-    """
-    llm = get_llm(model_key)
-    user_context_str = f"You are chatting with **{username}**, who is **{age} years old**."
-    print(user_context_str)
-    if age <= 12:
-        selected_template = child_system_instructions 
-        print(f"\n--- AGENT INITIALIZED: Child Mode | User: {username}, Age: {age} | Model: {llm.model_name} ---\n")
-    else:
-        selected_template = standard_system_instructions 
-        print(f"\n--- AGENT INITIALIZED: Standard Mode | User: {username}, Age: {age} | Model: {llm.model_name} ---\n")
-    
-    formatted_system_prompt = selected_template.format(
-        QuranMetaData=QuranMetaData, 
-        surah_name_english_array=surah_name_english_array,
-        surah_name_english_translation_array=surah_name_english_translation_array,
-        user_context=user_context_str 
-    )
 
+def build_agent(model_key: str = None):
+    llm = get_llm(model_key)
     tool_protection = ToolRetryMiddleware(
-        max_retries=1,  
-        on_failure=custom_tool_error_handler, 
+        max_retries=1,
+        on_failure=custom_tool_error_handler,
         backoff_factor=1.0,
     )
- 
     return create_agent(
         name="QuranTadabburAgent",
-        model = llm,
-        system_prompt = formatted_system_prompt,
-        tools = [Search_Quran_By_filters, searchAsbabNuzul, structured_response_tool, get_Quran_Audio, get_verse_image, story_agent_tool],
-        middleware = [
-            tool_protection,
-            # SummarizationMiddleware(
-            #     model = summarizer_llm,
-            #     trigger = ("tokens", 4000),
-            #     keep = ("messages",4)
-            # )
-        ]
-        
+        model=llm,
+        tools=[Search_Quran_By_filters, searchAsbabNuzul, structured_response_tool,
+               get_Quran_Audio, get_verse_image, story_agent_tool],
+        middleware=[personalized_system_prompt, tool_protection],
+        context_schema=UserContext  
     )
 
-main_agent = get_agent_by_user_age(age=25, username="DefaultUser")  
+agent_registry: dict = {}
+
+def get_agent(model_key: str = None) -> object:
+    """Returns a shared agent instance for the given model key."""
+    key = model_key or DEFAULT_CHAT_MODEL
+    if key not in agent_registry:
+        agent_registry[key] = build_agent(model_key)
+    return agent_registry[key]
+
+main_agent = get_agent()

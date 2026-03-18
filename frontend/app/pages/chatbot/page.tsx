@@ -1031,7 +1031,8 @@ function ChatContent() {
   }, [reconnectTrigger]);
 
   useEffect(() => {
-    console.log("Logged in messages", messages)
+    if (isGenerating) return; // skip during streaming
+    console.log("Logged in messages", messages);
   }, [messages])
   useEffect(() => {
     let isCancelled = false;
@@ -1658,9 +1659,9 @@ function ChatContent() {
                                   className={`w-3 h-3 rounded-full ${currentMode === "normal" ? "bg-black" : "bg-white"}`}
                                 ></motion.div>
                               </div>
-                            ) : !loading && loadingMessage && !ai_msg.content ? (
-                              <div key={ai_msg_idx} className="flex flex-col gap-y-6 mt-4 w-full">
-                                <p className="switzer-500 text-white/60 text-sm animate-pulse mb-2">{loadingMessage}</p>
+                            ) : loadingMessage && !ai_msg.content ? (
+                              <div key={ai_msg_idx} className="flex flex-col gap-y-2 mt-2 px-1">
+                                <p className={`switzer-500 text-sm animate-pulse ${currentMode === "normal" ? "text-black/40" : "text-white/60"}`}>{loadingMessage}</p>
                                 {Array.from({ length: paragraphCount }).map((_, i) => (
                                   <div key={i} className="flex flex-col gap-y-3">
                                     <div className="h-4 w-36 rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
