@@ -10,15 +10,13 @@ from fastapi.websockets import WebSocketState
 from pydantic import BaseModel
 from typing import List
 import asyncio 
-from models.models import NormalOutputSchema, SurahForAudio, SurahForImage, StoryParagraph, StoryOutputSchema
+from models.models import NormalOutputSchema, SurahForAudio, SurahForImage, StoryOutputSchema, StoryParagraph
 from langchain.messages import ToolMessage, SystemMessage, HumanMessage
 from collections import defaultdict
-from generators.image_generator import generate_image, pil_to_img_url
 from contextlib import asynccontextmanager
 import tadabbur_agents.agent as agent_module
 from tadabbur_agents.story_agent import story_agent
 from utils.handle_feedback import handle_feedback
-from builders.prompt_builder import prompt_builder, prompt_builder_instructions
 from utils.generate_title_description import generate_title_description
 from utils.generate_uuid import generate_uuid
 from utils.report_rule import insert_report_rule, delete_report_rule
@@ -1348,56 +1346,35 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             if data_flag:
                                 break
                             if isinstance(message, ToolMessage):
-                                if message.name == "story_structure":
-                                    data = json.loads(message.content)
-                                    # initialize the story data array to store results
-                                    story_data: List[StoryParagraph] = []
-                                    await websocket.send_json({
-                                        "type": "loading_message",
-                                        "content": "Preparing your story",
-                                        "paragraph_count": len(data)
-                                    })
-                                    for i, story_chunk in enumerate(data, start = 1):
-                                        story_paragraph = story_chunk.get("story_paragraph")
-                                        paragraph_title = story_chunk.get("paragraph_title")
-                                        scene_summary = story_chunk.get("scene_summary")
-                                        important_characters = story_chunk.get("important_characters")
-                                        important_objects = story_chunk.get("important_objects")
-                                        forbidden_elements = story_chunk.get("forbidden_elements")
+                                if message.name == "generate_ai_images_story":
+                                    try:
+                                        data = json.loads(message.content)
+                                        story_dicts = data.get("story_data") or []         
 
-                                        if None in (scene_summary, important_characters, important_objects, forbidden_elements, paragraph_title, story_paragraph):
-                                            continue
-                                        # build the pipeline
-
-                                        # build the AI Prompt builder's prompt                                       
-                                        prompt_builder_prompt = [
-                                            SystemMessage(content = prompt_builder_instructions),
-                                            HumanMessage(content=f"""
-                                            Scene Summary: {scene_summary} \n\n 
-                                            Important Characters: {important_characters}\n\n 
-                                            Important Objects: {important_objects} \n\n 
-                                            Forbidden Elements: {forbidden_elements}
-                                            """)
-                                        ]
-                                        response = prompt_builder.invoke(prompt_builder_prompt)
-                                        image_prompt = response.image_prompt
-                                        # print(f"Image prompt for image {i}: {image_prompt}")
-                                        # pass the image prompt to the AI image generator
-                                        if not image_prompt:
-                                            continue
-                                        for try_number in range(8):
-                                            try:
-                                                image = generate_image(image_prompt)
-                                                image_url = pil_to_img_url(image)
-                                                story_data.append(StoryParagraph(story_paragraph = story_paragraph, paragraph_title = paragraph_title, image = image_url))
-                                                # print(f"Image pipeline successfully completed for image {i}")
-                                                break
-                                            except Exception as e:
-                                                print(f"Image generation pipeline failed for image {i}, error: {e},Try number {try_number + 1}, retrying...")
+                                        story_data: List[StoryParagraph] = []
+                                        # Only process if it's a list of dicts
+                                        if isinstance(story_dicts, list):
+                                            story_data = [
+                                                StoryParagraph(**item) 
+                                                for item in story_dicts 
+                                                if isinstance(item, dict)  # Filter out non-dict items
+                                            ]
                                         else:
-                                            print(f"Image pipeline failed for 8 retries for image {i}")
-                                    response_object.story_segments = story_data
-                                    data_flag = True      
+                                            logger.warning(f"Expected list for story_data, got {type(story_dicts)}")
+                                            continue
+
+                                        await websocket.send_json({
+                                            "type": "loading_message",
+                                            "content": "Preparing your story",
+                                            "paragraph_count": len(story_data)
+                                        })
+                                        
+                                        response_object.story_segments = story_data
+                                        data_flag = True
+                                    except json.JSONDecodeError as e:
+                                        logger.error(f"Invalid JSON in tool message: {e}")
+                                    except Exception as e:  
+                                        logger.error(f"Unexpected error parsing tool message: {e}")
                         try:
                             await db_retry(
                                 lambda:supabase_client.table('chat_messages').insert({

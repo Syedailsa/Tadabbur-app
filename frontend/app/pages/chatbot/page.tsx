@@ -55,7 +55,7 @@ import {
 import { retryOperation, wsSendAsync } from "@/app/utils/retryOpernation";
 import HamBurger from "@/app/components/chatbot/UI/HamBurger";
 import ChatHistoryCupboard from "@/app/components/chatbot/UI/ChatHistoryCupboard";
-import FullStoryViewContainer from "@/app/components/chatbot/UI/FullStoryViewContainer";
+import FullViewStoryContainer from "@/app/components/chatbot/UI/FullViewStoryContainer";
 import StoryModeExtraOptions from "@/app/components/chatbot/UI/StoryModeExtraOptions";
 import ImageContainer from "@/app/components/chatbot/UI/ImageContainer";
 
@@ -102,6 +102,7 @@ function ChatContent() {
   const [reportedMessageIDs, setReportedMessageIDs] = useState<string[] | null>(
     [],
   );
+  const heightCheckRef = useRef<number>(24)
   const [openImageContainer, setOpenImageContainer] = useState<boolean>(false)
   const [currentMode, setCurrentMode] = useState<"normal" | "story" | null>("normal");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -126,7 +127,7 @@ function ChatContent() {
   };
   const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
   const [paragraphCount, setParagraphCount] = useState<number>(3);
-
+  const [isInputBoxAdaptable, setIsInputBoxAdaptable] = useState<boolean>(false)
   const pendingPromptRef = useRef<{
     input: string;
     guidelines: string | null;
@@ -429,6 +430,15 @@ function ChatContent() {
       window.removeEventListener("tadabbur-stt-result", handleSTTResult);
     };
   }, []);
+
+
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.textContent = ""
+      setShowPlaceholder(true)
+    }
+    setIsInputBoxAdaptable(false)
+  }, [currentMode])
 
   useEffect(() => {
     const checkPersonalization = async () => {
@@ -887,8 +897,6 @@ function ChatContent() {
               targetMessage.responses.push({ role: "assistant", message_id: message_id, content: "", reply_to_message_id: reply_to_message_id, feedback: null, audio_link: null, audio_state: null, has_verse_audio: has_verse_audio, verse_audio_data: audio_data, has_verse_image: has_verse_image, verse_images: verse_images, story_data: story_data });
               targetMessage.active_message_index = targetMessage.number_of_responses - 1;
 
-              console.log("All Responses", targetMessage.responses)
-
               return updated;
             });
 
@@ -1036,9 +1044,7 @@ function ChatContent() {
 
   }, [reconnectTrigger]);
 
-  useEffect(() => {
-    console.log("Logged in messages", messages)
-  }, [messages])
+
   useEffect(() => {
     let isCancelled = false;
 
@@ -1083,6 +1089,7 @@ function ChatContent() {
       isCancelled = true;
     };
   }, [attachedFile, sessionID]);
+
 
   const stopGeneration = () => {
     if (!currentStreamingMsgRef.current || !wsRef.current) return;
@@ -1283,6 +1290,18 @@ function ChatContent() {
     }
   };
 
+  const manageInputHeight = (boxHeight: number, inputText: string) => {
+
+    if (boxHeight > 24 && !isInputBoxAdaptable) {
+      setIsInputBoxAdaptable(true)
+     
+    }
+    else if (inputText === "" && isInputBoxAdaptable) {
+     
+      setIsInputBoxAdaptable(false)
+    }
+  }
+
   const sendPrompt = () => {
     if (!inputRef.current) return;
     if (attachedFile && isUploading) {
@@ -1356,7 +1375,7 @@ function ChatContent() {
               : "#000000",
           }}
           transition={{ duration: 0.3 }}
-          className="relative w-screen h-svh flex flex-col items-center">
+          className="relative w-screen h-svh flex flex-col justify-center items-center overflow-hidden">
           {/* --- UI STATUS INDICATOR --- */}
           <AnimatePresence>
             {showDeleteSuccess && (
@@ -1441,12 +1460,12 @@ function ChatContent() {
             </AnimatePresence>
             <AnimatePresence>
               {openFullStoryView && (
-                <FullStoryViewContainer story_data={storyData} />
+                <FullViewStoryContainer story_data={storyData} />
               )}
             </AnimatePresence>
 
 
-            <div className={`w-full h-full flex flex-col items-center relative ${currentMode === "normal" ? "" : "black-scrollbar"} ${messages.length > 0 ? "" : " justify-center"} overflow-y-auto`}>
+            <div className={`w-full flex flex-col items-center relative ${currentMode === "normal" ? "" : "black-scrollbar"} ${messages.length > 0 ? "h-full" : " justify-center"} overflow-y-auto`}>
 
               {/* navbar for top options background */}
               <div id="navbar" style={{ backgroundColor: currentMode === "normal" ? "#F9FAFB99" : "#00000099" }} className={`fixed top-0 w-[98%] z-20 h-14 flex items-center shrink-0 backdrop-blur-md border-b ${currentMode === "normal" ? "border-black/5" : "border-white/10"} ${messages.length > 0 ? "pr-2 pl-4" : "px-2"}`}>
@@ -1470,8 +1489,6 @@ function ChatContent() {
                 </div>
 
               </div>
-
-
 
               <div
                 id="chat-bot"
@@ -1985,12 +2002,16 @@ function ChatContent() {
               )}
             </AnimatePresence>
 
-            <motion.div animate={{ paddingTop: currentMode === "normal" ? 16 : 20, paddingBottom: currentMode === "normal" ? 16 : 28 }} className={`mr-1.5 px-4 ${currentMode === "normal" ? "w-full lg:w-2/3 mt-4" : "w-[95%] sm:w-[70%] lg:w-1/2 mt-2 flex gap-x-2 items-center"} input-box`}>
-
+            <motion.div animate={{ paddingTop: currentMode === "normal" ? 16 : 20, paddingBottom: currentMode === "normal" ? 16 : 28 }} className={`mr-1.5 px-4 h-max ${currentMode === "normal" ? "w-full lg:w-2/3 mt-4" : "w-[95%] sm:w-[70%] lg:w-1/2 mt-2 flex flex-col gap-x-2 items-center"} input-box`}>
               <motion.div
-                animate={{ height: currentMode === "normal" ? attachedFile ? 200 : 160 : 45 }}
-                transition={{ duration: 0.2, ease: easeInOut }}
-                className={`flex relative shadow-md py-2 border gap-x-1 ${currentMode === "normal" ? "bg-white rounded-lg shadow-md px-3 border-black/10 flex-col" : "bg-[##001e1e] rounded-full px-1 border border-white/15 shadow-md justify-between items-center w-full py-2"} `}
+                animate={{
+                  borderRadius: currentMode === "normal" ? 8 : isInputBoxAdaptable ? 8 : 500, paddingTop: currentMode === "normal" ? 8 : isInputBoxAdaptable ? 12 : 4, paddingBottom: currentMode === "normal" ? 8 : isInputBoxAdaptable ? 12 : 4, paddingLeft: currentMode === "normal" ? 12 : isInputBoxAdaptable ? 8 : 4, paddingRight: currentMode === "normal" ? 12 : isInputBoxAdaptable ? 8 : 4,
+                }}
+                transition={{ duration: 0.2, ease: "linear" }}
+                className={`relative shadow-md border gap-x-1 ${currentMode === "normal"
+                  ? `${attachedFile ? "h-[200px]" : "h-[160px]"} flex bg-white rounded-lg shadow-md border-black/10 px-3 py-2 flex-col`
+                  : `h-auto bg-[##001e1e] border border-white/15 shadow-md w-full ${isInputBoxAdaptable ? "flex-col" : "flex  justify-center items-center"}`
+                  }`}
               >
                 {attachedFile && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative w-max bg-white border border-black/10 px-3 py-2 rounded-md text-xs flex items-center gap-x-2 z-10">
@@ -2015,6 +2036,13 @@ function ChatContent() {
                   </motion.div>
                 )}
                 {currentMode === "story" && (
+                  <AnimatePresence>
+                    {openStoryModeExtraOptions && (
+                      <StoryModeExtraOptions />
+                    )}
+                  </AnimatePresence>
+                )}
+                {currentMode === "story" && !isInputBoxAdaptable && (
                   <motion.div onClick={() => {
                     setOpenStoryModeExtraOptions(prev => !prev)
                   }} whileHover={{ backgroundColor: "#FFFFFF1A" }} className="p-2 rounded-full cursor-pointer">
@@ -2027,12 +2055,17 @@ function ChatContent() {
                     const target = e.target as HTMLDivElement;
                     const text = target.textContent.trim() ?? "";
                     setShowPlaceholder(text === "");
+                    if (inputRef.current && currentMode === "story") {
+                      const newHeight = inputRef.current.scrollHeight ?? 24
+                      manageInputHeight(newHeight, text)
+
+                    }
                   }}
                   onKeyDown={(e) => {
                     handleInput(e);
                   }}
                   contentEditable
-                  className={`switzer-500 focus:outline-none ${currentMode === "normal" ? attachedFile ? "pt-[0.3rem] text-black h-2/3 overflow-y-auto" : "text-black h-2/3 overflow-y-auto" : "text-white pt-[0.02rem]"} overflow-hidden w-full h-full`}
+                  className={`switzer-500 focus:outline-none w-full ${currentMode === "normal" ? attachedFile ? "pt-[0.3rem] text-black h-2/3 overflow-y-auto" : "text-black h-full overflow-y-auto" : "text-white pt-[0.02rem] overflow-hidden max-h-[100px]"}`}
                 ></div>
                 {showPlaceholder && (
                   <span
@@ -2041,8 +2074,7 @@ function ChatContent() {
                     {placeholder}
                   </span>
                 )}
-
-                <div className={`transition-opacity duration-300 ${connectionStatus !== "connected" ? "pointer-events-none opacity-50" : "opacity-100"} ${currentMode === "story" ? 'flex gap-x-1' : ''}`}>
+                <div className={`transition-opacity duration-300 ${connectionStatus !== "connected" ? "pointer-events-none opacity-50" : "opacity-100"}`}>
                   {currentMode === "normal" && (
                     <>
                       <BottomOptions />
@@ -2050,23 +2082,39 @@ function ChatContent() {
                       {/* <ModelBox modelList={ModelList} /> */}
                     </>
                   )}
-                  {currentMode === "story" && (
-                    <>
+                  {currentMode === "story" && !isInputBoxAdaptable ? (
+                    <div className="flex">
+
                       <MicStoryMode />
+                      <motion.div onClick={sendPrompt} style={{ cursor: showPlaceholder ? "default" : "pointer" }} animate={{ backgroundColor: showPlaceholder ? "#FFFFFFCC" : "#ffffff" }} className="p-2 rounded-full scale-90">
+                        <SendIcon className="w-5.5 h-5.5 fill-current text-black" />
+                      </motion.div>
+
+                    </div>
+                  ) : currentMode === "story" && isInputBoxAdaptable ? (
+                    <div className="flex mt-2">
+                      <motion.div onClick={() => {
+                        setOpenStoryModeExtraOptions(prev => !prev)
+                      }} whileHover={{ backgroundColor: "#FFFFFF1A" }} className="p-2 rounded-full cursor-pointer">
+                        <PlusIcon className="w-5.5 h-5.5" />
+                      </motion.div>
                       <AnimatePresence>
                         {openStoryModeExtraOptions && (
                           <StoryModeExtraOptions />
                         )}
                       </AnimatePresence>
-                    </>
-                  )}
-                  {currentMode === "story" && (
-                    <motion.div onClick={sendPrompt} style={{ cursor: showPlaceholder ? "default" : "pointer" }} animate={{ backgroundColor: showPlaceholder ? "#FFFFFFCC" : "#ffffff" }} className="p-2 rounded-full scale-90">
-                      <SendIcon className="w-5.5 h-5.5 fill-current text-black" />
-                    </motion.div>
-                  )}
+                      <div className="ml-auto flex gap-x-1">
+                        <MicStoryMode />
+                        <motion.div onClick={sendPrompt} style={{ cursor: showPlaceholder ? "default" : "pointer" }} animate={{ backgroundColor: showPlaceholder ? "#FFFFFFCC" : "#ffffff" }} className="p-2 rounded-full scale-90">
+                          <SendIcon className="w-5.5 h-5.5 fill-current text-black" />
+                        </motion.div>
+                      </div>
+                    </div>
+                  )
+                    : (null)}
                 </div>
               </motion.div>
+
             </motion.div>
             <AnimatePresence>
               {openImageContainer && (
@@ -2074,11 +2122,14 @@ function ChatContent() {
               )}
             </AnimatePresence>
 
-
-            <ReportContentDialogueBox
-              hideReportContentDialogueBox={hideReportContentDialogueBox}
-              setHideReportContentDialogueBox={setHideReportContentDialogueBox}
-            />
+            <AnimatePresence>
+              {!hideReportContentDialogueBox && (
+                <ReportContentDialogueBox
+                  hideReportContentDialogueBox={hideReportContentDialogueBox}
+                  setHideReportContentDialogueBox={setHideReportContentDialogueBox}
+                />
+              )}
+            </AnimatePresence>
 
             <audio className="hidden" controls ref={audioRef} />
           </ChatProvider >

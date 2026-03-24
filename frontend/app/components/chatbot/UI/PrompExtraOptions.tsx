@@ -170,7 +170,6 @@ const PromptExtraOptions = ({
                 onClick={() => {
                   const activeIndex =
                     messages?.[parent_index]?.active_message_index;
-                  console.log("Active index", active_message_index)
                   // check if activeIndex is below zero
                   if (active_message_index != null && active_message_index <= 0) {
                     return;

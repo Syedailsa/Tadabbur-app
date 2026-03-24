@@ -55,13 +55,13 @@ async def signup(req: SignupRequest):
     async with get_db_connection() as conn:
         # Check if user exists
         existing = await conn.fetchrow(
-            "SELECT email FROM users WHERE email = $1 OR firstname = $2",
+            "SELECT email FROM users WHERE email = $1",
             req.email,
-            req.firstname,
+           
         )
 
         if existing:
-            raise HTTPException(status_code=400, detail="Email or firstname already registered")
+            raise HTTPException(status_code=400, detail="Email already registered")
 
         # Create user
         user_id = generate_uuid()
@@ -91,6 +91,7 @@ async def signup(req: SignupRequest):
             firstname=req.firstname
         )
 
+            
 @auth_router.post("/login", response_model=AuthResponse)
 async def login(req: LoginRequest):
     """Login with email & password"""
