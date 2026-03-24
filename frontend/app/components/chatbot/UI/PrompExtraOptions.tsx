@@ -57,6 +57,7 @@ const PromptExtraOptions = ({
 
   const active_message_index = messages?.[parent_index]?.active_message_index ?? 0
   const hidePromptExtraOptionsModelBox = hidePromptExtraOptionsModelBoxArray.find((m: hidePromptExtraOptionsModelBoxArray) => m.assistant_message_id == message_id)?.hidePromptExtraOptionsModelBox
+
   const theme = currentMode === "normal" ? "black" : "white"
   type OptionType = "copy" | "resend" | "liked" | "disliked";
   const handleOptionClick = ({ type }: { type: OptionType }) => {
@@ -169,7 +170,6 @@ const PromptExtraOptions = ({
                 onClick={() => {
                   const activeIndex =
                     messages?.[parent_index]?.active_message_index;
-                  console.log("Active index", active_message_index)
                   // check if activeIndex is below zero
                   if (active_message_index != null && active_message_index <= 0) {
                     return;
@@ -305,6 +305,8 @@ const PromptExtraOptions = ({
               setOverlayTranslateAmount(hasMultipleResponses ? 132 : 102);
             }}
             onClick={() => {
+              console.log("Toggle hidepromptExtraOptions!")
+              console.log("message id", message_id)
               setHidePromptExtraOptionsModelBoxArray((prev: hidePromptExtraOptionsModelBoxArray[]) => prev.map(m => m.assistant_message_id === message_id ? { ...m, hidePromptExtraOptionsModelBox: !m.hidePromptExtraOptionsModelBox } : m))
             }}
 

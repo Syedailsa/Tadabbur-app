@@ -63,7 +63,7 @@ const StoryModeExtraOptions = () => {
             ref={overlayRef}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 0.2, ease: easeInOut }} className="absolute bg-black/80 backdrop-blur-md border border-white/10 w-48 h-max bottom-12 left-0 rounded-lg shadow-md p-1.5 z-20">
+            transition={{ duration: 0.2, ease: easeInOut }} className="absolute bg-black/80 backdrop-blur-md border border-white/10 w-48 h-max -top-13 left-0 rounded-lg shadow-md p-1.5 z-20">
             <div onClick={() => {
                 initializeTadabburMode()
                 setOpenStoryModeExtraOptions(false)

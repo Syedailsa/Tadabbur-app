@@ -55,7 +55,7 @@ import {
 import { retryOperation, wsSendAsync } from "@/app/utils/retryOpernation";
 import HamBurger from "@/app/components/chatbot/UI/HamBurger";
 import ChatHistoryCupboard from "@/app/components/chatbot/UI/ChatHistoryCupboard";
-import FullStoryViewContainer from "@/app/components/chatbot/UI/FullStoryViewContainer";
+import FullViewStoryContainer from "@/app/components/chatbot/UI/FullViewStoryContainer";
 import StoryModeExtraOptions from "@/app/components/chatbot/UI/StoryModeExtraOptions";
 import ImageContainer from "@/app/components/chatbot/UI/ImageContainer";
 
@@ -102,6 +102,7 @@ function ChatContent() {
   const [reportedMessageIDs, setReportedMessageIDs] = useState<string[] | null>(
     [],
   );
+  const heightCheckRef = useRef<number>(24)
   const [openImageContainer, setOpenImageContainer] = useState<boolean>(false)
   const [currentMode, setCurrentMode] = useState<"normal" | "story" | null>("normal");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -126,7 +127,7 @@ function ChatContent() {
   };
   const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
   const [paragraphCount, setParagraphCount] = useState<number>(3);
-
+  const [isInputBoxAdaptable, setIsInputBoxAdaptable] = useState<boolean>(false)
   const pendingPromptRef = useRef<{
     input: string;
     guidelines: string | null;
@@ -153,7 +154,7 @@ function ChatContent() {
   >(false);
 
   const x = useMotionValue(0)
-  const animationRef = useRef<any>(null)
+  const animationRef = useRef<ReturnType<typeof animate> | null>(null)
 
   const startAnimation = () => {
     animationRef.current = animate(x, -1000, {
@@ -266,12 +267,6 @@ function ChatContent() {
 
     return processed;
   }
-
-  const handleLogout = () => {
-    Cookies.remove('auth_token');
-    localStorage.clear();
-    router.push('/pages/auth');
-  };
 
   useEffect(() => {
     const audioEl = audioRef.current;
@@ -430,6 +425,15 @@ function ChatContent() {
     };
   }, []);
 
+
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.textContent = ""
+      setShowPlaceholder(true)
+    }
+    setIsInputBoxAdaptable(false)
+  }, [currentMode])
+
   useEffect(() => {
     const checkPersonalization = async () => {
       try {
@@ -457,7 +461,6 @@ function ChatContent() {
           return await response.json();
         }, 5, 1000);
         console.log("📊 Personalization data received:", data);
-
         if (data.is_personalized && data.username && data.age) {
 
           // console.log("✅ User already personalized");
@@ -588,6 +591,7 @@ function ChatContent() {
         switch (type) {
           case "pong":
             console.log("Pong received - connection alive");
+            lastPongRef.current = Date.now();
             break;
           case "undo-report":
             const id = data.message_id;
@@ -819,8 +823,8 @@ function ChatContent() {
 
           case "assistance_response":
             const reply: string = data.content.response ?? "No reply from server";
-            const has_verse_audio: boolean = data.content.has_verse_audio
-            const has_verse_image: boolean = data.content.has_verse_image
+            const has_verse_audio: boolean = data.content.has_verse_audio || false
+            const has_verse_image: boolean = data.content.has_verse_image || false
             const message_id: string = data.message_id;
             // assign reply to message ID with order data.reply_to_message_id >> currentMessageIDRef.current >> null
             const reply_to_message_id =
@@ -882,24 +886,10 @@ function ChatContent() {
               } else {
                 targetMessage.number_of_responses += 1;
               }
-
-              targetMessage.responses = resend_flag ? oldMessagesRef.current : [];
-              targetMessage.responses.push({
-                role: "assistant",
-                message_id: message_id,
-                content: "",
-                reply_to_message_id: reply_to_message_id,
-                feedback: null,
-                audio_link: null,
-                audio_state: null,
-                has_verse_audio: has_verse_audio,
-                verse_audio_data: audio_data,
-                has_verse_image: has_verse_image,
-                verse_images: verse_images,
-                story_data: story_data
-              });
-
+              targetMessage.responses = oldMessagesRef.current ?? []
+              targetMessage.responses.push({ role: "assistant", message_id: message_id, content: "", reply_to_message_id: reply_to_message_id, feedback: null, audio_link: null, audio_state: null, has_verse_audio: has_verse_audio, verse_audio_data: audio_data, has_verse_image: has_verse_image, verse_images: verse_images, story_data: story_data });
               targetMessage.active_message_index = targetMessage.number_of_responses - 1;
+
               return updated;
             });
 
@@ -926,13 +916,14 @@ function ChatContent() {
 
                 if (stopFlag) break;
 
-
                 setMessages((prev) => {
                   if (!prev || prev.length === 0) return prev;
                   const updated = [...prev];
+
                   const streamIndex = streamingMessageIndex ?? updated.length - 1;
                   if (streamIndex >= 0 && streamIndex < updated.length) {
                     const lastMsg = updated[streamIndex];
+                    // console.log("Last User Message", lastMsg)
                     if (!lastMsg.responses || lastMsg.responses.length === 0) return prev;
                     const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
 
@@ -1032,7 +1023,6 @@ function ChatContent() {
     };
 
     connect();
-
     return () => {
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
@@ -1090,6 +1080,7 @@ function ChatContent() {
       isCancelled = true;
     };
   }, [attachedFile, sessionID]);
+
 
   const stopGeneration = () => {
     if (!currentStreamingMsgRef.current || !wsRef.current) return;
@@ -1290,6 +1281,18 @@ function ChatContent() {
     }
   };
 
+  const manageInputHeight = (boxHeight: number, inputText: string) => {
+
+    if (boxHeight > 24 && !isInputBoxAdaptable) {
+      setIsInputBoxAdaptable(true)
+     
+    }
+    else if (inputText === "" && isInputBoxAdaptable) {
+     
+      setIsInputBoxAdaptable(false)
+    }
+  }
+
   const sendPrompt = () => {
     if (!inputRef.current) return;
     if (attachedFile && isUploading) {
@@ -1327,7 +1330,7 @@ function ChatContent() {
   if (isCheckingPersonalization) {
     return (
       <ProtectedRoute>
-        <div className="w-screen flex items-center justify-center bg-gray-50">
+        <div className="w-screen h-screen flex items-center justify-center bg-gray-50">
           <div className="flex flex-col items-center gap-y-4">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-black"></div>
             <p className="switzer-500 text-gray-600">Loading your profile...</p>
@@ -1363,7 +1366,7 @@ function ChatContent() {
               : "#000000",
           }}
           transition={{ duration: 0.3 }}
-          className="relative w-screen h-svh flex flex-col items-center">
+          className="relative w-screen h-svh flex flex-col justify-center items-center overflow-hidden">
           {/* --- UI STATUS INDICATOR --- */}
           <AnimatePresence>
             {showDeleteSuccess && (
@@ -1448,25 +1451,17 @@ function ChatContent() {
             </AnimatePresence>
             <AnimatePresence>
               {openFullStoryView && (
-                <FullStoryViewContainer story_data={storyData} />
+                <FullViewStoryContainer story_data={storyData} />
               )}
             </AnimatePresence>
 
 
-            <div className={`w-full h-full flex flex-col items-center relative ${currentMode === "normal" ? "" : "black-scrollbar"} ${messages.length > 0 ? "" : " justify-center"} overflow-y-auto`}>
+            <div className={`w-full flex flex-col items-center relative ${currentMode === "normal" ? "" : "black-scrollbar"} ${messages.length > 0 ? "h-full" : " justify-center"} overflow-y-auto`}>
 
               {/* navbar for top options background */}
               <div id="navbar" style={{ backgroundColor: currentMode === "normal" ? "#F9FAFB99" : "#00000099" }} className={`fixed top-0 w-[98%] z-20 h-14 flex items-center shrink-0 backdrop-blur-md border-b ${currentMode === "normal" ? "border-black/5" : "border-white/10"} ${messages.length > 0 ? "pr-2 pl-4" : "px-2"}`}>
                 <div className="mr-4 z-40">
                   <HamBurger wsRef={wsRef} openChatHistoryDialogueBox={openChatHistoryDialogueBox} setOpenChatHistoryDialogueBox={setOpenChatHistoryDialogueBox} currentMode={currentMode} />
-                </div>
-                <div>
-                  <button
-                    onClick={handleLogout}
-                    className="cursor-pointer px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm font-medium rounded-md shadow-md transition-colors"
-                  >
-                    Logout
-                  </button>
                 </div>
                 <div className="ml-auto">
                   {currentMode === "story" ? (
@@ -1477,8 +1472,6 @@ function ChatContent() {
                 </div>
 
               </div>
-
-
 
               <div
                 id="chat-bot"
@@ -1506,7 +1499,7 @@ function ChatContent() {
                           color: currentMode === "normal" ? "#000000E6" : "#FFFFFF"
                         }}
                         transition={{ duration: 0.3 }}
-                          className={`text-center px-6 ${currentMode === "normal" ? "switzer-500 tracking-tight text-4xl" : "inter-600 text-[2.6rem] sm:text-[2.8rem] tracking-tighter lg:text-[3.2rem] leading-9 lg:leading-11 subpixel-antialiased"}`}
+                        className={`text-center px-6 ${currentMode === "normal" ? "switzer-500 tracking-tight text-4xl" : "inter-600 text-[2.6rem] sm:text-[2.8rem] tracking-tighter lg:text-[3.2rem] leading-9 lg:leading-11 subpixel-antialiased"}`}
                       >
                         {currentMode === "story" ? (
                           <>
@@ -1538,10 +1531,11 @@ function ChatContent() {
                                             `${record.prompt}`,
                                           );
                                         }} className="cursor-pointer w-max flex flex-row gap-x-3 sm:flex-col gap-y-1 p-2 rounded-lg border border-white/10 shadow-sm">
-                                        <Image className="rounded-md md:w-36 md:h-34 w-30 h-28 object-cover object-top" alt="smiling-boy" src={record.imageSrc} />
-                                        
-                                        <p className="w-45 switzer-500 text-white/80">{record.prompt}</p>
-                                        
+                                        <Image className="rounded-md sm:w-36 sm:h-34 w-30 h-28 object-cover object-top" alt="smiling-boy" src={record.imageSrc} />
+
+                                        <p className="w-45 sm:hidden switzer-500 text-white/80">{record.prompt}</p>
+                                        <p className="hidden w-36 sm:block switzer-500 text-white/80">{record.shortPrompt}</p>
+
                                       </motion.div>
                                     )
                                   })}
@@ -1678,9 +1672,9 @@ function ChatContent() {
                                   className={`w-3 h-3 rounded-full ${currentMode === "normal" ? "bg-black" : "bg-white"}`}
                                 ></motion.div>
                               </div>
-                            ) : !loading && loadingMessage && !ai_msg.content ? (
-                              <div key={ai_msg_idx} className="flex flex-col gap-y-6 mt-4 w-full">
-                                <p className="switzer-500 text-white/60 text-sm animate-pulse mb-2">{loadingMessage}</p>
+                            ) : loadingMessage && !ai_msg.content ? (
+                              <div key={ai_msg_idx} className="flex flex-col gap-y-2 mt-2 px-1">
+                                <p className={`switzer-500 text-sm animate-pulse ${currentMode === "normal" ? "text-black/40" : "text-white/60"}`}>{loadingMessage}</p>
                                 {Array.from({ length: paragraphCount }).map((_, i) => (
                                   <div key={i} className="flex flex-col gap-y-3">
                                     <div className="h-4 w-36 rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
@@ -1991,12 +1985,16 @@ function ChatContent() {
               )}
             </AnimatePresence>
 
-            <motion.div animate={{ paddingTop: currentMode === "normal" ? 16 : 20, paddingBottom: currentMode === "normal" ? 16 : 28 }} className={`mr-1.5 px-4 ${currentMode === "normal" ? "w-full lg:w-2/3 mt-4" : "w-[95%] sm:w-[70%] lg:w-1/2 mt-2 flex gap-x-2 items-center"} input-box`}>
-
+            <motion.div animate={{ paddingTop: currentMode === "normal" ? 16 : 20, paddingBottom: currentMode === "normal" ? 16 : 28 }} className={`mr-1.5 px-4 h-max ${currentMode === "normal" ? "w-full lg:w-2/3 mt-4" : "w-[95%] sm:w-[70%] lg:w-1/2 mt-2 flex flex-col gap-x-2 items-center"} input-box`}>
               <motion.div
-                animate={{ height: currentMode === "normal" ? attachedFile ? 200 : 160 : 45 }}
-                transition={{ duration: 0.2, ease: easeInOut }}
-                className={`flex relative shadow-md py-2 border gap-x-1 ${currentMode === "normal" ? "bg-white rounded-lg shadow-md px-3 border-black/10 flex-col" : "bg-[##001e1e] rounded-full px-1 border border-white/15 shadow-md justify-between items-center w-full py-2"} `}
+                animate={{
+                  borderRadius: currentMode === "normal" ? 8 : isInputBoxAdaptable ? 8 : 500, paddingTop: currentMode === "normal" ? 8 : isInputBoxAdaptable ? 12 : 4, paddingBottom: currentMode === "normal" ? 8 : isInputBoxAdaptable ? 12 : 4, paddingLeft: currentMode === "normal" ? 12 : isInputBoxAdaptable ? 8 : 4, paddingRight: currentMode === "normal" ? 12 : isInputBoxAdaptable ? 8 : 4,
+                }}
+                transition={{ duration: 0.2, ease: "linear" }}
+                className={`relative shadow-md border gap-x-1 ${currentMode === "normal"
+                  ? `${attachedFile ? "h-[200px]" : "h-[160px]"} flex bg-white rounded-lg shadow-md border-black/10 px-3 py-2 flex-col`
+                  : `h-auto bg-[##001e1e] border border-white/15 shadow-md w-full ${isInputBoxAdaptable ? "flex-col" : "flex  justify-center items-center"}`
+                  }`}
               >
                 {attachedFile && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative w-max bg-white border border-black/10 px-3 py-2 rounded-md text-xs flex items-center gap-x-2 z-10">
@@ -2021,6 +2019,13 @@ function ChatContent() {
                   </motion.div>
                 )}
                 {currentMode === "story" && (
+                  <AnimatePresence>
+                    {openStoryModeExtraOptions && (
+                      <StoryModeExtraOptions />
+                    )}
+                  </AnimatePresence>
+                )}
+                {currentMode === "story" && !isInputBoxAdaptable && (
                   <motion.div onClick={() => {
                     setOpenStoryModeExtraOptions(prev => !prev)
                   }} whileHover={{ backgroundColor: "#FFFFFF1A" }} className="p-2 rounded-full cursor-pointer">
@@ -2033,12 +2038,17 @@ function ChatContent() {
                     const target = e.target as HTMLDivElement;
                     const text = target.textContent.trim() ?? "";
                     setShowPlaceholder(text === "");
+                    if (inputRef.current && currentMode === "story") {
+                      const newHeight = inputRef.current.scrollHeight ?? 24
+                      manageInputHeight(newHeight, text)
+
+                    }
                   }}
                   onKeyDown={(e) => {
                     handleInput(e);
                   }}
                   contentEditable
-                  className={`switzer-500 focus:outline-none ${currentMode === "normal" ? attachedFile ? "pt-[0.3rem] text-black h-2/3 overflow-y-auto" : "text-black h-2/3 overflow-y-auto" : "text-white pt-[0.02rem]"} overflow-hidden w-full h-full`}
+                  className={`switzer-500 focus:outline-none w-full ${currentMode === "normal" ? attachedFile ? "pt-[0.3rem] text-black h-2/3 overflow-y-auto" : "text-black h-full overflow-y-auto" : "text-white pt-[0.02rem] overflow-hidden max-h-[100px]"}`}
                 ></div>
                 {showPlaceholder && (
                   <span
@@ -2047,8 +2057,7 @@ function ChatContent() {
                     {placeholder}
                   </span>
                 )}
-
-                <div className={`transition-opacity duration-300 ${connectionStatus !== "connected" ? "pointer-events-none opacity-50" : "opacity-100"} ${currentMode === "story" ? 'flex gap-x-1' : ''}`}>
+                <div className={`transition-opacity duration-300 ${connectionStatus !== "connected" ? "pointer-events-none opacity-50" : "opacity-100"}`}>
                   {currentMode === "normal" && (
                     <>
                       <BottomOptions />
@@ -2056,23 +2065,39 @@ function ChatContent() {
                       {/* <ModelBox modelList={ModelList} /> */}
                     </>
                   )}
-                  {currentMode === "story" && (
-                    <>
+                  {currentMode === "story" && !isInputBoxAdaptable ? (
+                    <div className="flex">
+
                       <MicStoryMode />
+                      <motion.div onClick={sendPrompt} style={{ cursor: showPlaceholder ? "default" : "pointer" }} animate={{ backgroundColor: showPlaceholder ? "#FFFFFFCC" : "#ffffff" }} className="p-2 rounded-full scale-90">
+                        <SendIcon className="w-5.5 h-5.5 fill-current text-black" />
+                      </motion.div>
+
+                    </div>
+                  ) : currentMode === "story" && isInputBoxAdaptable ? (
+                    <div className="flex mt-2">
+                      <motion.div onClick={() => {
+                        setOpenStoryModeExtraOptions(prev => !prev)
+                      }} whileHover={{ backgroundColor: "#FFFFFF1A" }} className="p-2 rounded-full cursor-pointer">
+                        <PlusIcon className="w-5.5 h-5.5" />
+                      </motion.div>
                       <AnimatePresence>
                         {openStoryModeExtraOptions && (
                           <StoryModeExtraOptions />
                         )}
                       </AnimatePresence>
-                    </>
-                  )}
-                  {currentMode === "story" && (
-                    <motion.div onClick={sendPrompt} style={{ cursor: showPlaceholder ? "default" : "pointer" }} animate={{ backgroundColor: showPlaceholder ? "#FFFFFFCC" : "#ffffff" }} className="p-2 rounded-full scale-90">
-                      <SendIcon className="w-5.5 h-5.5 fill-current text-black" />
-                    </motion.div>
-                  )}
+                      <div className="ml-auto flex gap-x-1">
+                        <MicStoryMode />
+                        <motion.div onClick={sendPrompt} style={{ cursor: showPlaceholder ? "default" : "pointer" }} animate={{ backgroundColor: showPlaceholder ? "#FFFFFFCC" : "#ffffff" }} className="p-2 rounded-full scale-90">
+                          <SendIcon className="w-5.5 h-5.5 fill-current text-black" />
+                        </motion.div>
+                      </div>
+                    </div>
+                  )
+                    : (null)}
                 </div>
               </motion.div>
+
             </motion.div>
             <AnimatePresence>
               {openImageContainer && (
@@ -2080,11 +2105,14 @@ function ChatContent() {
               )}
             </AnimatePresence>
 
-
-            <ReportContentDialogueBox
-              hideReportContentDialogueBox={hideReportContentDialogueBox}
-              setHideReportContentDialogueBox={setHideReportContentDialogueBox}
-            />
+            <AnimatePresence>
+              {!hideReportContentDialogueBox && (
+                <ReportContentDialogueBox
+                  hideReportContentDialogueBox={hideReportContentDialogueBox}
+                  setHideReportContentDialogueBox={setHideReportContentDialogueBox}
+                />
+              )}
+            </AnimatePresence>
 
             <audio className="hidden" controls ref={audioRef} />
           </ChatProvider >

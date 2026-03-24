@@ -4,19 +4,19 @@ import json
 import asyncio
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse, Response
+import httpx
 from fastapi.websockets import WebSocketState
 from pydantic import BaseModel
 from typing import List
 import asyncio 
-from models.models import NormalOutputSchema, SurahForAudio, SurahForImage, StoryParagraph, StoryOutputSchema
+from models.models import NormalOutputSchema, SurahForAudio, SurahForImage, StoryOutputSchema, StoryParagraph
 from langchain.messages import ToolMessage, SystemMessage, HumanMessage
 from collections import defaultdict
-from generators.image_generator import generate_image, pil_to_img_url
 from contextlib import asynccontextmanager
 import tadabbur_agents.agent as agent_module
 from tadabbur_agents.story_agent import story_agent
 from utils.handle_feedback import handle_feedback
-from builders.prompt_builder import prompt_builder, prompt_builder_instructions
 from utils.generate_title_description import generate_title_description
 from utils.generate_uuid import generate_uuid
 from utils.report_rule import insert_report_rule, delete_report_rule
@@ -26,7 +26,6 @@ from utils.Clean_text import clean_text_with_groq
 import logging
 from utils.speech_to_text import SpeechToTextEngine
 from murf import Murf
-from data.database import init_db_pool, close_db_pool
 from api.reset_password_api import password_reset_router
 from fastapi import UploadFile, File, Form, HTTPException
 from tools.file_service import process_uploaded_file
@@ -42,7 +41,7 @@ from api.api import (
 )
 from api.quran_api import quran_router , parah_router, story_router
 from api.reflection_api import reflection_router
-from data.database import init_db_pool, close_db_pool, delete_all_user_sessions, delete_user_session
+from data.database import init_db_pool, close_db_pool, delete_all_user_sessions, delete_user_session, get_db_connection
 from fastapi.openapi.utils import get_openapi
 from config.db import get_supabase_client
 from utils.db_retry import db_retry, DBRetryError
@@ -76,7 +75,7 @@ async def lifespan(app: FastAPI):
     
 # ------------------- APP CONFIG -------------------
 app = FastAPI(title="Tadabbur Agent API", lifespan=lifespan)
-# ------------------- APP CONFIG -------------------
+
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 ALGORITHM = "HS256"
 
@@ -139,6 +138,93 @@ try:
 except Exception as e:
     print("Some error occured initiating supabase connection", e)
     raise
+
+TOOL_MESSAGES = {
+    "searchAsbabNuzul": {
+        "start": "Searching Asbab al-Nuzul...",
+        "end": "Narrations found.."
+    },
+    "Search_Quran_By_filters": {
+        "start": "Searching Quran verses...",
+        "end": "Verses retrieved.."
+    },
+    "get_Quran_Audio": {
+        "start": "Fetching Quran recitation...",
+        "end": "Audio ready.."
+    },
+    "get_verse_image": {
+        "start": "Loading verse images...",
+        "end": "Images loaded.."
+    },
+    "story_agent_tool": {
+        "start": "Structuring your story...",
+        "end": "Story structure ready.."
+    },
+    "Submit_Quran_Response": {
+        "start": "Composing response...",
+        "end": "Response ready.."
+    },
+}
+
+async def run_agent_with_progress(active_agent, messages, context: agent_module.UserContext, websocket) -> dict | None:
+    final_messages = []
+    tools_called = set()
+
+    async for event in active_agent.astream_events(
+        {"messages": messages},
+        context=context,
+        version="v2"
+    ):
+        event_type = event["event"]
+        tool_name = event.get("name", "")
+
+        if event_type == "on_tool_start" and tool_name in TOOL_MESSAGES:
+            if tool_name not in tools_called:
+                tools_called.add(tool_name)
+                try:
+                    await ws_send(websocket, {
+                        "type": "loading_message",
+                        "content": TOOL_MESSAGES[tool_name]["start"]
+                    }, label="tool_start")
+                except WSDisconnectedError:
+                    break
+
+        elif event_type == "on_tool_end" and tool_name in TOOL_MESSAGES:
+            if tool_name in tools_called:
+                end_msg = TOOL_MESSAGES[tool_name].get("end")
+                if end_msg:
+                    try:
+                        await ws_send(websocket, {
+                            "type": "loading_message",
+                            "content": end_msg
+                        }, label="tool_end")
+                    except WSDisconnectedError:
+                        break
+
+        elif event_type == "on_chain_end":
+            output = event.get("data", {}).get("output")
+            if isinstance(output, dict) and "messages" in output:
+                final_messages = output["messages"]
+
+    return {"messages": final_messages}
+
+@app.get("/api/story-image/{filename}")
+async def get_story_image(filename: str, token: str = Query(...)):
+    user_id = get_user_from_token(token)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    signed = supabase_client.storage.from_(
+        os.getenv("GENERATED_IMAGES_BUCKET", "generated-images")
+    ).create_signed_url(path=filename, expires_in=60)
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        img_response = await client.get(signed["signedURL"])
+    
+    return Response(
+        content=img_response.content,
+        media_type="image/png"
+    )
 
 def get_chat_messages(session_id: str, user_id: str, supabase_client) -> List[str]:
     """Get all messages of a specific session"""
@@ -302,7 +388,25 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
     await websocket.accept()
     logger.info(f"WebSocket connected successfully for User ID: {user_id}")
 
-    
+    user_age = 25
+    user_name = 'User'
+    try:
+        async with get_db_connection() as conn:
+            result = await conn.fetchrow("""
+                SELECT username, age 
+                FROM users 
+                WHERE user_id = $1 AND is_personalized = TRUE
+            """, user_id)
+            
+            if result:
+                user_age = result['age'] or 25
+                user_name = result['username'] or 'User'
+                logger.info(f"Personalization loaded: {user_name}, age={user_age}")
+            else:
+                logger.info(f"No personalization found for {user_id}, using defaults")
+    except Exception as e:
+        logger.warning(f"Could not load personalization for {user_id}, using defaults: {e}")
+
     dynamic_system_instruction = {"text":""}
     asyncio.create_task(refresh_system_instructions(dynamic_system_instruction, user_id))
 
@@ -315,8 +419,8 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
     current_mode = "normal"
     # ====== SESSION CODE START ======
     session_id = None
-    session_model_key: str = "gpt-oss-20b"
-    active_agent = agent_module.main_agent
+    session_model_key: str = agent_module.DEFAULT_CHAT_MODEL
+    active_agent = agent_module.get_agent(session_model_key)
     current_agent_name = active_agent.name
     initialized = False
     try:
@@ -434,8 +538,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     requested_session_id = data.get("session_id", "").strip()
                     mode = data.get("mode", "normal")
                     current_mode = mode
-                    # set the active agent
-                    active_agent = agent_module.main_agent if current_mode == "normal" else story_agent
+                    active_agent = active_agent if current_mode == "normal" else story_agent
                     logger.info(f"Session mode: {mode}")
 
                     if not initialized or requested_session_id != current_session_id:
@@ -601,7 +704,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     else:
                         current_mode = session.get("mode", "normal")
                     # set the active agent
-                    active_agent = agent_module.main_agent if current_mode == "normal" else story_agent
+                    active_agent = active_agent if current_mode == "normal" else story_agent
                     # print("Session mode", current_mode)
                     files_response = files_response.data
                     combined_file_content = ""
@@ -807,14 +910,10 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
             # === AGENT SWITCH ===
             if data.get("type") == "agent":
-                agent_name = data.get("agent")
-                if agent_name:
-                    if agent_name == "story-telling":
-                        print("Main agent set to story")
-                        active_agent = story_agent        
-                    else:
-                        active_agent = agent_module.main_agent
-                        print("Main agent sent to main agent")
+                if current_agent_name == "QuranStoryAgent":
+                    active_agent = story_agent        
+                else:
+                    active_agent = agent_module.get_agent(session_model_key)
                 continue
             # ============================= MODEL SELECTION HANDLER =============================
             if data.get("type") == "model-selection":
@@ -829,14 +928,11 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     display_name = requested_model
                     if requested_model in agent_module.SUPPORTED_CHAT_MODELS:
                         display_name = requested_model 
+                        logger.info("Model Name: ",display_name)
                     
                     if current_agent_name == "QuranTadabburAgent":
                         print(f"🔄 Hot-swapping Main Agent to model: {session_model_key}")
-                        active_agent = agent_module.get_agent_by_user_age(
-                            age=25, 
-                            username="DefaultUser", 
-                            model_key=session_model_key
-                        )
+                        active_agent = agent_module.get_agent(session_model_key)
                     else:
                         print(f"⚠️ Model pref saved as {session_model_key}, but not applied immediately because user is in {current_agent_name} mode.")
                     
@@ -989,14 +1085,14 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 continue
 
             if data.get("type") in ["liked", "disliked"]:
-                type = data.get("type")
+                feedback_type  = data.get("type")
                 session_id = data.get('session_id')
                 message_id = data.get('message_id')
                 message = data.get("message")
                 if not session_id or not message_id or not message:
                     print("No message or session ID, can't proceed to feedback submission")
                     continue
-                asyncio.create_task(asyncio.to_thread(handle_feedback, type, message, message_id, user_id))
+                asyncio.create_task(asyncio.to_thread(handle_feedback, feedback_type , message, message_id, user_id))
                 continue
 
             # === MAIN CHAT MESSAGE ===
@@ -1017,7 +1113,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
                 user_message_id = user_message_id if not resend_flag else resend_message_id
 
-                if user_message_id:
+                if user_message_id and not resend_flag:
                     try:
                         existing_response = supabase_client.table('chat_messages')\
                             .select('message_id', 'content', 'has_verse_audio', 'has_verse_image', 
@@ -1025,7 +1121,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             .eq('reply_to_message_id', user_message_id)\
                             .eq('role', 'assistant')\
                             .eq('session_id', session_id)\
-                            .execute()
+                            .order('created_at', desc=True).limit(1).execute()
                         
                         if existing_response.data and len(existing_response.data) > 0:
                             existing_msg = existing_response.data[0]
@@ -1046,9 +1142,9 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                     "resend_flag": False,
                                     "final": True,
                                 }, label="assistance_response_cached")
+                                continue
                             except WSDisconnectedError:
                                 break
-                            continue  
                     except Exception as e:
                         logger.warning(f"⚠️ Could not check for existing response: {e}, proceeding with agent call")
                             
@@ -1196,14 +1292,23 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         messages = base_messages + conversation_history + [{"role": "user", "content": message_string}]
 
 
-                    agent_response = None  
+                    agent_response = None 
 
                     session_agent_running[session_id] = True
                     try:
-                        for attempt in range(3): 
+                        for attempt in range(3):
                             try:
-                                agent_response = await asyncio.to_thread(
-                                    active_agent.invoke,{"messages": messages},
+                                context = agent_module.UserContext(
+                                    user_name=user_name,
+                                    user_age=user_age,
+                                    user_id=user_id,
+                                    session_id=session_id
+                                )
+                                agent_response = await run_agent_with_progress(
+                                    active_agent,
+                                    messages,
+                                    context,
+                                    websocket
                                 )
                                 break
                             except Exception as e: 
@@ -1213,16 +1318,20 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                 else:
                                     raise RuntimeError(f"Agent failed after 3 attempts: {e}")
                     finally:
-                        session_agent_running.pop(session_id, None)
+                        session_agent_running.pop(session_id, None) 
 
-                    messages_array = agent_response['messages']
+                    messages_array = agent_response.get('messages', []) if agent_response else []
+
+                    logger.info(f" messages_array length: {len(messages_array)}")
+                    logger.info(f" messages_array types: {[type(m).__name__ for m in messages_array]}")
+
                     # print("=======================")
                     # print("Messages Array", messages_array)
                     # print("=======================")
                     # initialize a response object
                     response_object = None
                     ai_response = None
-                    if active_agent == agent_module.main_agent:
+                    if active_agent.name == "QuranTadabburAgent":
                         # Create a new instance of OutputSchema
                         response_object = NormalOutputSchema(
                             response=messages_array[-1].content or "",
@@ -1328,56 +1437,35 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             if data_flag:
                                 break
                             if isinstance(message, ToolMessage):
-                                if message.name == "story_structure":
-                                    data = json.loads(message.content)
-                                    # initialize the story data array to store results
-                                    story_data: List[StoryParagraph] = []
-                                    await websocket.send_json({
-                                        "type": "loading_message",
-                                        "content": "Preparing your story",
-                                        "paragraph_count": len(data)
-                                    })
-                                    for i, story_chunk in enumerate(data, start = 1):
-                                        story_paragraph = story_chunk.get("story_paragraph")
-                                        paragraph_title = story_chunk.get("paragraph_title")
-                                        scene_summary = story_chunk.get("scene_summary")
-                                        important_characters = story_chunk.get("important_characters")
-                                        important_objects = story_chunk.get("important_objects")
-                                        forbidden_elements = story_chunk.get("forbidden_elements")
+                                if message.name == "generate_ai_images_story":
+                                    try:
+                                        data = json.loads(message.content)
+                                        story_dicts = data.get("story_data") or []         
 
-                                        if None in (scene_summary, important_characters, important_objects, forbidden_elements, paragraph_title, story_paragraph):
-                                            continue
-                                        # build the pipeline
-
-                                        # build the AI Prompt builder's prompt                                       
-                                        prompt_builder_prompt = [
-                                            SystemMessage(content = prompt_builder_instructions),
-                                            HumanMessage(content=f"""
-                                            Scene Summary: {scene_summary} \n\n 
-                                            Important Characters: {important_characters}\n\n 
-                                            Important Objects: {important_objects} \n\n 
-                                            Forbidden Elements: {forbidden_elements}
-                                            """)
-                                        ]
-                                        response = prompt_builder.invoke(prompt_builder_prompt)
-                                        image_prompt = response.image_prompt
-                                        # print(f"Image prompt for image {i}: {image_prompt}")
-                                        # pass the image prompt to the AI image generator
-                                        if not image_prompt:
-                                            continue
-                                        for try_number in range(8):
-                                            try:
-                                                image = generate_image(image_prompt)
-                                                image_url = pil_to_img_url(image)
-                                                story_data.append(StoryParagraph(story_paragraph = story_paragraph, paragraph_title = paragraph_title, image = image_url))
-                                                # print(f"Image pipeline successfully completed for image {i}")
-                                                break
-                                            except Exception as e:
-                                                print(f"Image generation pipeline failed for image {i}, error: {e},Try number {try_number + 1}, retrying...")
+                                        story_data: List[StoryParagraph] = []
+                                        # Only process if it's a list of dicts
+                                        if isinstance(story_dicts, list):
+                                            story_data = [
+                                                StoryParagraph(**item) 
+                                                for item in story_dicts 
+                                                if isinstance(item, dict)  # Filter out non-dict items
+                                            ]
                                         else:
-                                            print(f"Image pipeline failed for 8 retries for image {i}")
-                                    response_object.story_segments = story_data
-                                    data_flag = True      
+                                            logger.warning(f"Expected list for story_data, got {type(story_dicts)}")
+                                            continue
+
+                                        await websocket.send_json({
+                                            "type": "loading_message",
+                                            "content": "Preparing your story",
+                                            "paragraph_count": len(story_data)
+                                        })
+                                        
+                                        response_object.story_segments = story_data
+                                        data_flag = True
+                                    except json.JSONDecodeError as e:
+                                        logger.error(f"Invalid JSON in tool message: {e}")
+                                    except Exception as e:  
+                                        logger.error(f"Unexpected error parsing tool message: {e}")
                         try:
                             await db_retry(
                                 lambda:supabase_client.table('chat_messages').insert({
@@ -1394,7 +1482,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             print("✅ Assistant message saved successfully!")
                         except DBRetryError as e:
                             logger.error(f"❌ Assistant message failed to save after retries: {e}")
-                            raise 
+                             
                         except Exception as e:
                             print("Some error occured while inserting assistant messages", e)
                             raise                  
@@ -1406,18 +1494,16 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
                     # generate title and description for the current chat history if there are 2 user/assistant messages each
                     # run the below logic in a seperate thread
-                    asyncio.create_task(
-                        asyncio.to_thread(
-                            generate_title_description,
-                            conversation_history,
-                            session_id,
-                            supabase_client
-                        )
+                    await asyncio.to_thread(
+                        generate_title_description,
+                        conversation_history,
+                        session_id,
+                        supabase_client
                     )
+                
 
                     if response_object:
-                        try:
-                            await ws_send(websocket, {
+                        send_result = await ws_send(websocket, {
                             "type": "assistance_response",
                             "message_id": response_message_id,
                             "content": response_object.model_dump(mode = "json"),
@@ -1426,13 +1512,11 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             "db_saved" :True,
                             "final": True
                         }, label="assistance_response")
-                        except WSDisconnectedError:
-                            logger.info("Failed to send assistance response with DB save failure flag (Socket closed?)")
-                            break   
-                        except Exception as e:
-                            logger.error(f"Failed to send assistance response after DB save failure: {e}")
-                            break
-
+                        
+                        if send_result is False:
+                            # WebSocket was disconnected, message saved in DB will be loaded via get_chat
+                            logger.info("⚠️ Assistance response saved but not sent (client disconnected). Will be retrieved on reconnect.")
+                        
                 except WebSocketDisconnect:
                     logger.info("Client disconnected")
                     print("Closing websocket...")
