@@ -16,8 +16,13 @@ const ProtectedImage = ({ filename, className, alt }: { filename: string, classN
             .catch(err => console.error("Image load failed:", err))
     }, [filename])
 
-    if (!src) return <div className={`${className} bg-white/10 animate-pulse rounded-md`} />
+    if (!src) return (
+    <div 
     
+        className="animate-pulse rounded-md w-full" 
+        style={{ height: "160px", backgroundColor: "rgba(255,255,255,0.45)" }} 
+    />
+)
     return <img src={src} className={className} alt={alt || ""} />
 }
 

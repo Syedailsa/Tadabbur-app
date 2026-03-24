@@ -132,7 +132,7 @@ const FullViewStoryContainer = ({ story_data }: { story_data: StoryParagraph[] }
                             else if (activeIndex === idx) {
                                 return (
                                     <div key={idx} className="flex justify-center w-full shrink-0">
-                                        <motion.div animate={{ width: "70%", height: "max-content" }}
+                                        <motion.div initial={{ width: "80%", height: "max-content" }} 
                                             transition={{ duration: 0.5, ease: "linear" }}
                                         >
                                             <ProtectedImage

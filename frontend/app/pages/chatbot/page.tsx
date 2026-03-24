@@ -268,12 +268,6 @@ function ChatContent() {
     return processed;
   }
 
-  const handleLogout = () => {
-    Cookies.remove('auth_token');
-    localStorage.clear();
-    router.push('/pages/auth');
-  };
-
   useEffect(() => {
     const audioEl = audioRef.current;
     if (!audioEl) return;
@@ -467,7 +461,6 @@ function ChatContent() {
           return await response.json();
         }, 5, 1000);
         console.log("📊 Personalization data received:", data);
-
         if (data.is_personalized && data.username && data.age) {
 
           // console.log("✅ User already personalized");
@@ -1030,7 +1023,6 @@ function ChatContent() {
     };
 
     connect();
-
     return () => {
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
@@ -1043,7 +1035,6 @@ function ChatContent() {
     };
 
   }, [reconnectTrigger]);
-
 
   useEffect(() => {
     let isCancelled = false;
@@ -1339,7 +1330,7 @@ function ChatContent() {
   if (isCheckingPersonalization) {
     return (
       <ProtectedRoute>
-        <div className="w-screen flex items-center justify-center bg-gray-50">
+        <div className="w-screen h-screen flex items-center justify-center bg-gray-50">
           <div className="flex flex-col items-center gap-y-4">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-black"></div>
             <p className="switzer-500 text-gray-600">Loading your profile...</p>
@@ -1471,14 +1462,6 @@ function ChatContent() {
               <div id="navbar" style={{ backgroundColor: currentMode === "normal" ? "#F9FAFB99" : "#00000099" }} className={`fixed top-0 w-[98%] z-20 h-14 flex items-center shrink-0 backdrop-blur-md border-b ${currentMode === "normal" ? "border-black/5" : "border-white/10"} ${messages.length > 0 ? "pr-2 pl-4" : "px-2"}`}>
                 <div className="mr-4 z-40">
                   <HamBurger wsRef={wsRef} openChatHistoryDialogueBox={openChatHistoryDialogueBox} setOpenChatHistoryDialogueBox={setOpenChatHistoryDialogueBox} currentMode={currentMode} />
-                </div>
-                <div>
-                  <button
-                    onClick={handleLogout}
-                    className="cursor-pointer px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm font-medium rounded-md shadow-md transition-colors"
-                  >
-                    Logout
-                  </button>
                 </div>
                 <div className="ml-auto">
                   {currentMode === "story" ? (
@@ -1689,9 +1672,9 @@ function ChatContent() {
                                   className={`w-3 h-3 rounded-full ${currentMode === "normal" ? "bg-black" : "bg-white"}`}
                                 ></motion.div>
                               </div>
-                            ) : !loading && loadingMessage && !ai_msg.content ? (
-                              <div key={ai_msg_idx} className="flex flex-col gap-y-6 mt-4 w-full">
-                                <p className="switzer-500 text-white/60 text-sm animate-pulse mb-2">{loadingMessage}</p>
+                            ) : loadingMessage && !ai_msg.content ? (
+                              <div key={ai_msg_idx} className="flex flex-col gap-y-2 mt-2 px-1">
+                                <p className={`switzer-500 text-sm animate-pulse ${currentMode === "normal" ? "text-black/40" : "text-white/60"}`}>{loadingMessage}</p>
                                 {Array.from({ length: paragraphCount }).map((_, i) => (
                                   <div key={i} className="flex flex-col gap-y-3">
                                     <div className="h-4 w-36 rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />

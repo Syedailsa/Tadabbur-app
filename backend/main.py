@@ -26,7 +26,6 @@ from utils.Clean_text import clean_text_with_groq
 import logging
 from utils.speech_to_text import SpeechToTextEngine
 from murf import Murf
-from data.database import init_db_pool, close_db_pool
 from api.reset_password_api import password_reset_router
 from fastapi import UploadFile, File, Form, HTTPException
 from tools.file_service import process_uploaded_file
@@ -42,7 +41,7 @@ from api.api import (
 )
 from api.quran_api import quran_router , parah_router, story_router
 from api.reflection_api import reflection_router
-from data.database import init_db_pool, close_db_pool, delete_all_user_sessions, delete_user_session
+from data.database import init_db_pool, close_db_pool, delete_all_user_sessions, delete_user_session, get_db_connection
 from fastapi.openapi.utils import get_openapi
 from config.db import get_supabase_client
 from utils.db_retry import db_retry, DBRetryError
@@ -139,6 +138,75 @@ try:
 except Exception as e:
     print("Some error occured initiating supabase connection", e)
     raise
+
+TOOL_MESSAGES = {
+    "searchAsbabNuzul": {
+        "start": "Searching Asbab al-Nuzul...",
+        "end": "Narrations found.."
+    },
+    "Search_Quran_By_filters": {
+        "start": "Searching Quran verses...",
+        "end": "Verses retrieved.."
+    },
+    "get_Quran_Audio": {
+        "start": "Fetching Quran recitation...",
+        "end": "Audio ready.."
+    },
+    "get_verse_image": {
+        "start": "Loading verse images...",
+        "end": "Images loaded.."
+    },
+    "story_agent_tool": {
+        "start": "Structuring your story...",
+        "end": "Story structure ready.."
+    },
+    "Submit_Quran_Response": {
+        "start": "Composing response...",
+        "end": "Response ready.."
+    },
+}
+
+async def run_agent_with_progress(active_agent, messages, context: agent_module.UserContext, websocket) -> dict | None:
+    final_messages = []
+    tools_called = set()
+
+    async for event in active_agent.astream_events(
+        {"messages": messages},
+        context=context,
+        version="v2"
+    ):
+        event_type = event["event"]
+        tool_name = event.get("name", "")
+
+        if event_type == "on_tool_start" and tool_name in TOOL_MESSAGES:
+            if tool_name not in tools_called:
+                tools_called.add(tool_name)
+                try:
+                    await ws_send(websocket, {
+                        "type": "loading_message",
+                        "content": TOOL_MESSAGES[tool_name]["start"]
+                    }, label="tool_start")
+                except WSDisconnectedError:
+                    break
+
+        elif event_type == "on_tool_end" and tool_name in TOOL_MESSAGES:
+            if tool_name in tools_called:
+                end_msg = TOOL_MESSAGES[tool_name].get("end")
+                if end_msg:
+                    try:
+                        await ws_send(websocket, {
+                            "type": "loading_message",
+                            "content": end_msg
+                        }, label="tool_end")
+                    except WSDisconnectedError:
+                        break
+
+        elif event_type == "on_chain_end":
+            output = event.get("data", {}).get("output")
+            if isinstance(output, dict) and "messages" in output:
+                final_messages = output["messages"]
+
+    return {"messages": final_messages}
 
 @app.get("/api/story-image/{filename}")
 async def get_story_image(filename: str, token: str = Query(...)):
@@ -320,7 +388,25 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
     await websocket.accept()
     logger.info(f"WebSocket connected successfully for User ID: {user_id}")
 
-    
+    user_age = 25
+    user_name = 'User'
+    try:
+        async with get_db_connection() as conn:
+            result = await conn.fetchrow("""
+                SELECT username, age 
+                FROM users 
+                WHERE user_id = $1 AND is_personalized = TRUE
+            """, user_id)
+            
+            if result:
+                user_age = result['age'] or 25
+                user_name = result['username'] or 'User'
+                logger.info(f"Personalization loaded: {user_name}, age={user_age}")
+            else:
+                logger.info(f"No personalization found for {user_id}, using defaults")
+    except Exception as e:
+        logger.warning(f"Could not load personalization for {user_id}, using defaults: {e}")
+
     dynamic_system_instruction = {"text":""}
     asyncio.create_task(refresh_system_instructions(dynamic_system_instruction, user_id))
 
@@ -333,8 +419,8 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
     current_mode = "normal"
     # ====== SESSION CODE START ======
     session_id = None
-    session_model_key: str = "gpt-oss-20b"
-    active_agent = agent_module.main_agent
+    session_model_key: str = agent_module.DEFAULT_CHAT_MODEL
+    active_agent = agent_module.get_agent(session_model_key)
     current_agent_name = active_agent.name
     initialized = False
     try:
@@ -452,8 +538,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     requested_session_id = data.get("session_id", "").strip()
                     mode = data.get("mode", "normal")
                     current_mode = mode
-                    # set the active agent
-                    active_agent = agent_module.main_agent if current_mode == "normal" else story_agent
+                    active_agent = active_agent if current_mode == "normal" else story_agent
                     logger.info(f"Session mode: {mode}")
 
                     if not initialized or requested_session_id != current_session_id:
@@ -619,7 +704,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     else:
                         current_mode = session.get("mode", "normal")
                     # set the active agent
-                    active_agent = agent_module.main_agent if current_mode == "normal" else story_agent
+                    active_agent = active_agent if current_mode == "normal" else story_agent
                     # print("Session mode", current_mode)
                     files_response = files_response.data
                     combined_file_content = ""
@@ -825,14 +910,10 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
             # === AGENT SWITCH ===
             if data.get("type") == "agent":
-                agent_name = data.get("agent")
-                if agent_name:
-                    if agent_name == "story-telling":
-                        print("Main agent set to story")
-                        active_agent = story_agent        
-                    else:
-                        active_agent = agent_module.main_agent
-                        print("Main agent sent to main agent")
+                if current_agent_name == "QuranStoryAgent":
+                    active_agent = story_agent        
+                else:
+                    active_agent = agent_module.get_agent(session_model_key)
                 continue
             # ============================= MODEL SELECTION HANDLER =============================
             if data.get("type") == "model-selection":
@@ -847,14 +928,11 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     display_name = requested_model
                     if requested_model in agent_module.SUPPORTED_CHAT_MODELS:
                         display_name = requested_model 
+                        logger.info("Model Name: ",display_name)
                     
                     if current_agent_name == "QuranTadabburAgent":
                         print(f"🔄 Hot-swapping Main Agent to model: {session_model_key}")
-                        active_agent = agent_module.get_agent_by_user_age(
-                            age=25, 
-                            username="DefaultUser", 
-                            model_key=session_model_key
-                        )
+                        active_agent = agent_module.get_agent(session_model_key)
                     else:
                         print(f"⚠️ Model pref saved as {session_model_key}, but not applied immediately because user is in {current_agent_name} mode.")
                     
@@ -1007,14 +1085,14 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 continue
 
             if data.get("type") in ["liked", "disliked"]:
-                type = data.get("type")
+                feedback_type  = data.get("type")
                 session_id = data.get('session_id')
                 message_id = data.get('message_id')
                 message = data.get("message")
                 if not session_id or not message_id or not message:
                     print("No message or session ID, can't proceed to feedback submission")
                     continue
-                asyncio.create_task(asyncio.to_thread(handle_feedback, type, message, message_id, user_id))
+                asyncio.create_task(asyncio.to_thread(handle_feedback, feedback_type , message, message_id, user_id))
                 continue
 
             # === MAIN CHAT MESSAGE ===
@@ -1043,7 +1121,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             .eq('reply_to_message_id', user_message_id)\
                             .eq('role', 'assistant')\
                             .eq('session_id', session_id)\
-                            .execute()
+                            .order('created_at', desc=True).limit(1).execute()
                         
                         if existing_response.data and len(existing_response.data) > 0:
                             existing_msg = existing_response.data[0]
@@ -1214,14 +1292,23 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         messages = base_messages + conversation_history + [{"role": "user", "content": message_string}]
 
 
-                    agent_response = None  
+                    agent_response = None 
 
                     session_agent_running[session_id] = True
                     try:
-                        for attempt in range(3): 
+                        for attempt in range(3):
                             try:
-                                agent_response = await asyncio.to_thread(
-                                    active_agent.invoke,{"messages": messages},
+                                context = agent_module.UserContext(
+                                    user_name=user_name,
+                                    user_age=user_age,
+                                    user_id=user_id,
+                                    session_id=session_id
+                                )
+                                agent_response = await run_agent_with_progress(
+                                    active_agent,
+                                    messages,
+                                    context,
+                                    websocket
                                 )
                                 break
                             except Exception as e: 
@@ -1231,16 +1318,20 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                 else:
                                     raise RuntimeError(f"Agent failed after 3 attempts: {e}")
                     finally:
-                        session_agent_running.pop(session_id, None)
+                        session_agent_running.pop(session_id, None) 
 
-                    messages_array = agent_response['messages']
+                    messages_array = agent_response.get('messages', []) if agent_response else []
+
+                    logger.info(f" messages_array length: {len(messages_array)}")
+                    logger.info(f" messages_array types: {[type(m).__name__ for m in messages_array]}")
+
                     # print("=======================")
                     # print("Messages Array", messages_array)
                     # print("=======================")
                     # initialize a response object
                     response_object = None
                     ai_response = None
-                    if active_agent == agent_module.main_agent:
+                    if active_agent.name == "QuranTadabburAgent":
                         # Create a new instance of OutputSchema
                         response_object = NormalOutputSchema(
                             response=messages_array[-1].content or "",
