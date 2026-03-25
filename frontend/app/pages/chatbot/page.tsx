@@ -1364,14 +1364,6 @@ function ChatContent() {
     });
   }, []);
 
-  interface PromptExtraOptionsProviderProps {
-    children: ReactNode;
-    parent_index: number | null;
-    assistant_index: number | null;
-    message_id: string | null;
-    reply_to_message_id: string | null;
-  }
-
   if (isCheckingPersonalization) {
     return (
       <ProtectedRoute>
@@ -1385,6 +1377,8 @@ function ChatContent() {
     );
   }
 
+
+  
   return (
     <ProtectedRoute>
       {showPersonalizationForm ? (
@@ -1622,6 +1616,7 @@ function ChatContent() {
                             onMouseLeave={() => {
                               controls.start({ x: "-60%" });
                             }}
+                            
                             className="w-[1200%] md:w-[600%] flex gap-x-2"
                           >
                             {Array.from({ length: 3 }).map((_, i) => (
@@ -1885,7 +1880,7 @@ function ChatContent() {
               )}
             </AnimatePresence>
 
-            <motion.div animate={{ paddingTop: currentMode === "normal" ? 16 : 20, paddingBottom: currentMode === "normal" ? 16 : 28 }} className={`mr-1.5 px-4 h-max ${currentMode === "normal" ? "w-full lg:w-2/3 mt-4" : "w-[95%] sm:w-[70%] lg:w-1/2 mt-2 flex flex-col gap-x-2 items-center"} input-box`}>
+            <motion.div animate={{ paddingTop: currentMode === "normal" ? 16 : 20, paddingBottom: currentMode === "normal" ? 16 : 28 }} className={`mx-1.5 px-4 h-max ${currentMode === "normal" ? "w-full lg:w-2/3 mt-4" : "w-full sm:w-[70%] lg:w-1/2 mt-2 flex flex-col gap-x-2 items-center"} input-box`}>
               <motion.div
                 className={`relative shadow-md border gap-x-1 ${currentMode === "normal"
                   ? `${attachedFile ? "h-[200px]" : "h-[160px]"} flex bg-white rounded-lg shadow-md border-black/10 px-3 py-2 flex-col`
@@ -1962,7 +1957,7 @@ function ChatContent() {
                     </>
                   )}
                   {currentMode === "story" && !isInputBoxAdaptable ? (
-                    <div className="flex items-center gap-x-1 mr-1.5 sm:mr-3">
+                    <div className="flex items-center gap-x-1 mr-1.5">
                       <MicStoryMode />
                       {isGenerating ? (
                         <button
@@ -1990,7 +1985,7 @@ function ChatContent() {
                           <StoryModeExtraOptions />
                         )}
                       </AnimatePresence>
-                      <div className="ml-auto flex gap-x-1 items-center mr-1.5 sm:mr-3">
+                      <div className="ml-auto flex gap-x-1 items-center mr-1.5">
                         <MicStoryMode />
                         {isGenerating ? (
                           <button
@@ -2043,3 +2038,7 @@ export default function ChatPage() {
     </Suspense>
   )
 }
+
+
+
+
