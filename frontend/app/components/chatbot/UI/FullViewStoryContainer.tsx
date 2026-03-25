@@ -189,7 +189,7 @@ const FullViewStoryContainer = ({ story_data }: { story_data: StoryParagraph[] }
                     </motion.div>
                 )}
                 {/* Arrow layer (not blurred) */}
-                <div className={`absolute bottom-1 flex w-full gap-x-2 justify-center mb-2`}>
+                <div className={`absolute bottom-1 w-full gap-x-2 justify-center mb-2 hidden sm:flex`}>
                     <div
                         className="w-6 h-6 shadow-sm relative flex justify-center items-center rounded-full hover:bg-white/10 border hover:inset-shadow-white/10 border-white/20 pointer-events-auto cursor-pointer"
                         onMouseEnter={() => {
