@@ -449,14 +449,22 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 user_message_id = data.get("reply_to_message_id")
                 
                 if not message_id_ref or not user_message_id or not raw_text:
-                    print("Can't read aloud, important information is missing....")
+                    logger.warning("TTS request missing required fields")
+                    try:
+                        await ws_send(websocket, {
+                            "type": "tts_audio_url",
+                            "status": "error",
+                            "error": "Missing required fields for text-to-speech"
+                        }, label="tts_error")
+                    except WSDisconnectedError:
+                        break
                     continue
                 if raw_text:
-                    logger.info(f"≡ƒº╣ Cleaning text with Groq Agent...")
+                    logger.info(f"Cleaning text with Groq Agent...")
                     
                     clean_text = await clean_text_with_groq(raw_text)
                     
-                    logger.info(f"≡ƒÄñ Stream audio for: {clean_text[:50]}...")
+                    logger.info(f"Stream audio for: {clean_text[:50]}...")
                     client = Murf(
                         api_key=os.getenv("MURF_AI_API_KEY") 
                     )
@@ -476,9 +484,9 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                         'audio_url': res.audio_file
                                     }).eq('message_id', message_id_ref).execute()
                                 ))
-                                print(f"✅ Updated message {message_id_ref} with TTS audio URL in DB")
+                                logger.info(f"Updated message {message_id_ref} with TTS audio URL in DB")
                             except Exception as e:
-                                print("Some error occured while updating message with audio url", e)
+                                logger.error(f"Error updating message with audio URL: {e}")
                             
                             try:
                                 await ws_send(websocket, {
@@ -490,15 +498,16 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             except WSDisconnectedError:
                                 break
 
-                            # await websocket.send_json({
-                            #     "type": "tts_audio_url",
-                            #     "message_id": message_id_ref,
-                            #     "user_id": user_message_id,
-                            #     "audio_url": res.audio_file
-                            # })
-
                     except Exception as e:
-                        print("Some error occured while generating audio for text", e)
+                        logger.error(f"TTS generation failed: {e}")
+                        try:
+                            await ws_send(websocket, {
+                                "type": "tts_audio_url",
+                                "status": "error",
+                                "error": f"Text-to-speech generation failed: {str(e)}"
+                            }, label="tts_error")
+                        except WSDisconnectedError:
+                            break
                         continue
 
                 continue
@@ -538,6 +547,8 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     requested_session_id = data.get("session_id", "").strip()
                     mode = data.get("mode", "normal")
                     current_mode = mode
+                    # set the active agent
+                    # personalized_agent = agent_module.get_agent_by_user_age(age=user_age, username=user_name, model_key=session_model_key)
                     active_agent = active_agent if current_mode == "normal" else story_agent
                     logger.info(f"Session mode: {mode}")
 
@@ -678,14 +689,17 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
             if data.get("type") == "get_chat":
                 requested_session_id = data.get("session_id", "")
-                logger.info(f"📥 get_chat request for session: {requested_session_id}")
+                logger.info(f"get_chat request for session: {requested_session_id}")
                 if not requested_session_id:
-                    print("No session id present, can't proceed")
-                    await websocket.send_json({
-                        "type": "get_chat", 
-                        "status": "not-acknowledged",
-                        "error": "No session ID present"
-                    })
+                    logger.warning("get_chat request without session_id")
+                    try:
+                        await ws_send(websocket, {
+                            "type": "get_chat", 
+                            "status": "not-acknowledged",
+                            "error": "No session ID present"
+                        }, label="get_chat_error")
+                    except WSDisconnectedError:
+                        break
                     continue
                 try:
                     chat_history = await asyncio.to_thread(get_chat_messages, requested_session_id, user_id, supabase_client)
@@ -838,6 +852,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     continue
 
                 try:
+                    
                     success = await delete_user_session(user_id, session_id_to_delete)
                     if success:
                         try:
@@ -974,10 +989,10 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
             
 
             if data.get("type") == "undo-report":
-                print("Undo request")
+                logger.info("Undo report request received")
                 message_id = data.get("message_id")
                 if not message_id: 
-                    print("No message ID found for reported message")
+                    logger.warning("Undo report request without message_id")
                     continue
                 try:
                     # delete hard rule in a different thread for optimization
@@ -992,11 +1007,13 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     logger.info("Failed to send undo-report acknowledgment (Socket closed?)")
                     break
                 except Exception as e:
+                    logger.error(f"Undo report failed: {e}")
                     try:
                         await ws_send(websocket, {
-                        "type": "undo-report",
-                        "status": "not-acknowledged"
-                    }, label="undo_report_not_acknowledged")
+                            "type": "undo-report",
+                            "status": "not_acknowledged",
+                            "error": str(e)
+                        }, label="undo_report_error")
                     except WSDisconnectedError:
                         logger.error("Failed to send undo-report error response (Socket closed?)")
                         break
@@ -1005,21 +1022,22 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
 
             if data.get("type") == "report":
-                print("A response is reported")
+                logger.info("Report request received")
                 ack_sent = False
                 try:
                     message_id = data.get("message_id", "")
                     feedback = data.get("feedback", "")
                     
                     if not message_id or not feedback:
-                        print("No variant/message ID/feedback, can't proceed to report content")
+                        logger.warning("Report request missing required fields")
                         try:
                             await ws_send(websocket,{
-                            "type": "report",
-                            "status": "not-acknowledged"
-                        }, label="report_not_acknowledged")
+                                "type": "report",
+                                "status": "not_acknowledged",
+                                "error": "Missing message_id or feedback"
+                            }, label="report_error")
                         except WSDisconnectedError:
-                            logger.info("Failed to send report not-acknowledged response (Socket closed?)")
+                            logger.info("Failed to send report error response (Socket closed?)")
                             break
                         ack_sent = True
                         continue
@@ -1085,14 +1103,14 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 continue
 
             if data.get("type") in ["liked", "disliked"]:
-                feedback_type  = data.get("type")
+                type = data.get("type")
                 session_id = data.get('session_id')
                 message_id = data.get('message_id')
                 message = data.get("message")
                 if not session_id or not message_id or not message:
-                    print("No message or session ID, can't proceed to feedback submission")
+                    logger.warning(f"Feedback request missing required fields: session_id={session_id}, message_id={message_id}, message={bool(message)}")
                     continue
-                asyncio.create_task(asyncio.to_thread(handle_feedback, feedback_type , message, message_id, user_id))
+                asyncio.create_task(asyncio.to_thread(handle_feedback, type, message, message_id, user_id))
                 continue
 
             # === MAIN CHAT MESSAGE ===
