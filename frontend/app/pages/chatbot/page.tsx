@@ -113,6 +113,7 @@ function ChatContent() {
   const [reportedMessageIDs, setReportedMessageIDs] = useState<string[] | null>(
     [],
   );
+  const heightCheckRef = useRef<number>(24)
   const [openImageContainer, setOpenImageContainer] = useState<boolean>(false)
   const [currentMode, setCurrentMode] = useState<"normal" | "story" | null>("normal");
   const [isGenerating, setIsGenerating] = useState(false);
