@@ -14,12 +14,6 @@ load_dotenv(dotenv_path=env_path, override=True)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Print for debugging (remove in production)
-if DATABASE_URL:
-    print(f"DATABASE_URL loaded: {DATABASE_URL[:30]}...")
-else:
-    print("DATABASE_URL not found!")
-
 
 # Global connection pool
 db_pool = None
@@ -425,10 +419,10 @@ async def delete_all_user_sessions(user_id: str):
         supabase_client.table('chat_messages').delete().in_('session_id', session_ids).execute()
         supabase_client.table('chat_sessions').delete().in_('session_id', session_ids).execute()
 
-        print(f"✅ Fast-deleted {len(session_ids)} sessions for user {user_id}")
+        logger.info(f"Fast-deleted {len(session_ids)} sessions for user {user_id}")
         return True
     except Exception as e:
-        print(f"❌ Error in fast delete: {e}")
+        logger.error(f"Error in fast delete: {e}")
         return False
 
 async def delete_user_session(user_id: str, session_id: str):
@@ -460,8 +454,6 @@ async def delete_user_session(user_id: str, session_id: str):
         supabase_client.table('chat_messages').delete().eq('session_id', session_id).execute()
         supabase_client.table('chat_sessions').delete().eq('session_id', session_id).execute()
 
-        print(f"✅ Successfully deleted session {session_id}")
         return True
     except Exception as e:
-        print(f"❌ Error: {e}")
         return False

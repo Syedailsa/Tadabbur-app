@@ -55,7 +55,7 @@ async def signup(req: SignupRequest):
     async with get_db_connection() as conn:
         # Check if user exists
         existing = await conn.fetchrow(
-            "SELECT email FROM users WHERE email = $1",
+            "SELECT email FROM users WHERE email = $1 ",
             req.email,
            
         )

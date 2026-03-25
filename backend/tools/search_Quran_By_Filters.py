@@ -2,7 +2,6 @@ import operator
 import os
 import requests
 from data.data import surah_name_english_translation_array, surah_name_english_array
-# from agents import function_tool
 from pydantic import BaseModel, Field
 from typing import Optional
 from tools.normalizeName import normalize_surah

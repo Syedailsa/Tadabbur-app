@@ -41,7 +41,7 @@ def insert_report_rule(supabase_client, message_id: str, feedback:str, user_id: 
                     response_data = {
                         "type": "report",
                         "status": "not-acknowledged"
-                        }
+                    }
                     return response_data
             
             # insert hard rule

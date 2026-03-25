@@ -63,7 +63,7 @@ def submit_feedback(user_feedback:Literal['like', 'dislike'], assistant_response
                             rule_id = response.rule_id
                             if not rule_id:
                                 raise ValueError("No rule_id, can't adjust weight of the existing rule!")
-                                
+                            
                             print(f"Incrementing weight of rule with rule_id {rule_id}")
                             result = supabase_client.table("chat_rules").select("weight").eq("rule_id", rule_id).eq("user_id", user_id).limit(1).execute()
                             existing_weight = result.data[0]['weight']
@@ -99,8 +99,7 @@ def submit_feedback(user_feedback:Literal['like', 'dislike'], assistant_response
     except Exception as error:
         print("Some error occured while submitting feedback", error)
         raise
-         
-
+          
 
 def handle_feedback(type, message, message_id, user_id):
     try:    
