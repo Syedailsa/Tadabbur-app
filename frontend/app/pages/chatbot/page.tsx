@@ -1604,7 +1604,7 @@ function ChatContent() {
                         </div>
                       )}
                       {currentMode === "normal" && (
-                          <div ref={constraintRefNormalMode} className="default-prompts-box-normal w-full relative overflow-x-clip">
+                        <div ref={constraintRefNormalMode} className="default-prompts-box-normal w-full relative overflow-x-clip">
                           <motion.div
                             drag="x"
                             dragConstraints={constraintRefNormalMode}
