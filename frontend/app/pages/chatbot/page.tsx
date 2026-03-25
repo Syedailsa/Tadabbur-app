@@ -68,11 +68,11 @@ function ChatContent() {
     if (serverErrorToast) {
       const timer = setTimeout(() => {
         setServerErrorToast(null);
-      }, 5000); 
-      return () => clearTimeout(timer); 
+      }, 5000);
+      return () => clearTimeout(timer);
     }
   }, [serverErrorToast]);
-  
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const inputRef = useRef<HTMLDivElement | null>(null);
   const [showPlaceholder, setShowPlaceholder] = useState<boolean | null>(true);
@@ -113,7 +113,8 @@ function ChatContent() {
   const [reportedMessageIDs, setReportedMessageIDs] = useState<string[] | null>(
     [],
   );
-  const heightCheckRef = useRef<number>(24)
+  const constraintRefNormalMode = useRef(null)
+  const constraintRefStoryMode = useRef(null)
   const [openImageContainer, setOpenImageContainer] = useState<boolean>(false)
   const [currentMode, setCurrentMode] = useState<"normal" | "story" | null>("normal");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -602,18 +603,18 @@ function ChatContent() {
         const type = data.type;
 
         const FAILED_STATUSES = new Set([
-        "not-acknowledged",
-        "not_acknowledged", 
-        "Not_acknowledged",
-        "Not_acknowledeged", 
-        "error",
+          "not-acknowledged",
+          "not_acknowledged",
+          "Not_acknowledged",
+          "Not_acknowledeged",
+          "error",
         ]);
 
         const SKIP_TYPES = new Set(["tts_audio_url", "get_images", "chat_history"]);
 
         if (data.status && FAILED_STATUSES.has(data.status) && !SKIP_TYPES.has(type)) {
           showFriendlyError(type);
-          return; 
+          return;
         }
 
         switch (type) {
@@ -1134,22 +1135,22 @@ function ChatContent() {
   };
 
   const showFriendlyError = (type: string) => {
-  const messages: Record<string, string> = {
-    session_id:          "Couldn't load your session. Please refresh the page.",
-    delete_session:      "Session couldn't be deleted right now. Please try again.",
-    delete_all_sessions: "Couldn't delete all sessions. Please try again.",
-    "model-selection":   "Model switch failed. Your previous model is still active.",
-    report:              "Report couldn't be submitted. Please try again.",
-    "undo-report":       "Couldn't undo the report. Please try again.",
-    tts_audio_url:       "Audio generation failed. The text response is still available.",
-    get_images:          "Couldn't load your images. Please try again later.",
-    chat_history:        "Couldn't load chat history. Please try again.",
-    "session-init":      "Couldn't switch to Story Mode. Please try again.",
-    default:             "Something went wrong on our end. Please try again in a moment.",
-};
+    const messages: Record<string, string> = {
+      session_id: "Couldn't load your session. Please refresh the page.",
+      delete_session: "Session couldn't be deleted right now. Please try again.",
+      delete_all_sessions: "Couldn't delete all sessions. Please try again.",
+      "model-selection": "Model switch failed. Your previous model is still active.",
+      report: "Report couldn't be submitted. Please try again.",
+      "undo-report": "Couldn't undo the report. Please try again.",
+      tts_audio_url: "Audio generation failed. The text response is still available.",
+      get_images: "Couldn't load your images. Please try again later.",
+      chat_history: "Couldn't load chat history. Please try again.",
+      "session-init": "Couldn't switch to Story Mode. Please try again.",
+      default: "Something went wrong on our end. Please try again in a moment.",
+    };
 
-  setServerErrorToast(messages[type] ?? messages.default);
-  setTimeout(() => setServerErrorToast(null), 4000);
+    setServerErrorToast(messages[type] ?? messages.default);
+    setTimeout(() => setServerErrorToast(null), 4000);
   };
 
   const ask = async (
@@ -1230,7 +1231,7 @@ function ChatContent() {
         console.warn("⚠️ LocalStorage full, message only saved in memory:", error);
       }
       setShowOfflineToast(true);
-      setTimeout(() => setShowOfflineToast(false), 4000); 
+      setTimeout(() => setShowOfflineToast(false), 4000);
 
       return;
     }
@@ -1379,7 +1380,6 @@ function ChatContent() {
   }
 
 
-  
   return (
     <ProtectedRoute>
       {showPersonalizationForm ? (
@@ -1448,20 +1448,20 @@ function ChatContent() {
               )}
             </AnimatePresence>
 
-            
+
             <AnimatePresence>
-            {serverErrorToast && (
-              <motion.div
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="fixed top-10 left-1/2 -translate-x-1/2 z-9999 bg-red-50 border border-red-200 text-red-800 text-[0.75rem] switzer-600 px-4 py-2 rounded-full shadow-xl whitespace-nowrap flex items-center gap-2"
-              >
-                <span>⚠️</span>
-                <p>{serverErrorToast}</p>
-              </motion.div>
-            )}
-          </AnimatePresence>
+              {serverErrorToast && (
+                <motion.div
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="fixed top-10 left-1/2 -translate-x-1/2 z-9999 bg-red-50 border border-red-200 text-red-800 text-[0.75rem] switzer-600 px-4 py-2 rounded-full shadow-xl whitespace-nowrap flex items-center gap-2"
+                >
+                  <span>⚠️</span>
+                  <p>{serverErrorToast}</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           <ChatProvider
@@ -1567,9 +1567,11 @@ function ChatContent() {
                       </motion.p>
 
                       {currentMode === "story" && (
-                        <div id="default-prompts-box-story" className="w-full relative overflow-x-clip">
+                        <div ref={constraintRefStoryMode} id="default-prompts-box-story" className="w-full relative overflow-x-clip">
                           <motion.div
                             style={{ x }}
+                            drag="x"
+                            dragConstraints={constraintRefStoryMode}
                             onMouseEnter={() => animationRef.current?.pause()}
                             onMouseLeave={() => animationRef.current?.play()}
                             onViewportEnter={startAnimation}
@@ -1602,8 +1604,10 @@ function ChatContent() {
                         </div>
                       )}
                       {currentMode === "normal" && (
-                        <div className="default-prompts-box-normal w-full relative overflow-x-clip">
+                          <div ref={constraintRefNormalMode} className="default-prompts-box-normal w-full relative overflow-x-clip">
                           <motion.div
+                            drag="x"
+                            dragConstraints={constraintRefNormalMode}
                             animate={controls}
                             transition={{
                               duration: 25,
@@ -1617,13 +1621,14 @@ function ChatContent() {
                             onMouseLeave={() => {
                               controls.start({ x: "-60%" });
                             }}
-                            
+                            style={{ width: "1200%" }}
                             className="w-[1200%] md:w-[600%] flex gap-x-2"
                           >
                             {Array.from({ length: 3 }).map((_, i) => (
                               <motion.div key={i} id="carousel-default-prompts-normal" className="carousel w-1/2">
                                 <div className="carousel-controls-slider flex">
-                                  <div className="h-max grid grid-cols-6 grid-rows-1 rounded-md gap-4 w-full">
+                                  <div
+                                    className="h-max grid grid-cols-6 grid-rows-1 rounded-md gap-4 w-full">
                                     {defaultPromptsNormalMode.map((prompt, index) => (
                                       <motion.div
                                         key={index}
