@@ -1460,7 +1460,7 @@ function ChatContent() {
                 initial={{ opacity: 0, y: -20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
-                className="fixed top-10 left-1/2 -translate-x-1/2 z-[9999] bg-red-50 border border-red-200 text-red-800 text-[0.75rem] switzer-600 px-4 py-2 rounded-full shadow-xl whitespace-nowrap flex items-center gap-2"
+                className="fixed top-10 left-1/2 -translate-x-1/2 z-9999 bg-red-50 border border-red-200 text-red-800 text-[0.75rem] switzer-600 px-4 py-2 rounded-full shadow-xl whitespace-nowrap flex items-center gap-2"
               >
                 <span>⚠️</span>
                 <p>{serverErrorToast}</p>
