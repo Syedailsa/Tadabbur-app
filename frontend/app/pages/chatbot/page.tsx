@@ -63,6 +63,15 @@ import ImageContainer from "@/app/components/chatbot/UI/ImageContainer";
 
 function ChatContent() {
   const [serverErrorToast, setServerErrorToast] = useState<string | null>(null);
+  useEffect(() => {
+    if (serverErrorToast) {
+      const timer = setTimeout(() => {
+        setServerErrorToast(null);
+      }, 5000); 
+      return () => clearTimeout(timer); 
+    }
+  }, [serverErrorToast]);
+  
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const inputRef = useRef<HTMLDivElement | null>(null);
   const [showPlaceholder, setShowPlaceholder] = useState<boolean | null>(true);
