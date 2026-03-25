@@ -164,7 +164,7 @@ const FullViewStoryContainer = ({ story_data }: { story_data: StoryParagraph[] }
                 </motion.div>
                 {story_data[activeIndex] && (
                     <motion.div ref={containerRef} className="w-[80%] h-30 md:h-45 overflow-y-hidden relative overflow-x-clip">
-                        <motion.div ref={contentRef} animate={controls} className="flex flex-col gap-y-1 items-center ">
+                        <motion.div ref={contentRef} drag="y" dragConstraints={containerRef} animate={controls} className="flex flex-col gap-y-1 items-center ">
                             <p className="roboto-600 text-xl tracking-tight text-white self-start">
                                 {activeIndex + 1}. {story_data[activeIndex].paragraph_title}
                             </p>
