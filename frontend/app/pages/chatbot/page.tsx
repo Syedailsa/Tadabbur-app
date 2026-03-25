@@ -63,6 +63,16 @@ import Markdown from "@/app/components/markdown/Markdown";
 
 
 function ChatContent() {
+  const [serverErrorToast, setServerErrorToast] = useState<string | null>(null);
+  useEffect(() => {
+    if (serverErrorToast) {
+      const timer = setTimeout(() => {
+        setServerErrorToast(null);
+      }, 5000); 
+      return () => clearTimeout(timer); 
+    }
+  }, [serverErrorToast]);
+  
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const inputRef = useRef<HTMLDivElement | null>(null);
   const [showPlaceholder, setShowPlaceholder] = useState<boolean | null>(true);
@@ -199,6 +209,7 @@ function ChatContent() {
       }
       catch (error) {
         console.error("❌ Failed to initialize WebSocket session:", error);
+        showFriendlyError("session-init");
       }
     }
     initializeStoryMode()
@@ -588,6 +599,22 @@ function ChatContent() {
         console.log("Data from websocket", event.data);
 
         const type = data.type;
+
+        const FAILED_STATUSES = new Set([
+        "not-acknowledged",
+        "not_acknowledged", 
+        "Not_acknowledged",
+        "Not_acknowledeged", 
+        "error",
+        ]);
+
+        const SKIP_TYPES = new Set(["tts_audio_url", "get_images", "chat_history"]);
+
+        if (data.status && FAILED_STATUSES.has(data.status) && !SKIP_TYPES.has(type)) {
+          showFriendlyError(type);
+          return; 
+        }
+
         switch (type) {
           case "pong":
             console.log("Pong received - connection alive");
@@ -663,7 +690,7 @@ function ChatContent() {
             if (history_status === "acknowledged") {
               setChatHistory(chat_history);
             } else if (history_status === "error") {
-              alert("Error loading chat history: " + data.error);
+              showFriendlyError("chat_history");
             }
             break;
 
@@ -750,8 +777,6 @@ function ChatContent() {
                 })(),
                 model: "kimi-k2-instruct-0905",
               });
-            } else {
-              alert("Error deleting sessions: " + data.error);
             }
             break;
           case "get_images":
@@ -1107,6 +1132,25 @@ function ChatContent() {
     streamingContentRef.current = "";
   };
 
+  const showFriendlyError = (type: string) => {
+  const messages: Record<string, string> = {
+    session_id:          "Couldn't load your session. Please refresh the page.",
+    delete_session:      "Session couldn't be deleted right now. Please try again.",
+    delete_all_sessions: "Couldn't delete all sessions. Please try again.",
+    "model-selection":   "Model switch failed. Your previous model is still active.",
+    report:              "Report couldn't be submitted. Please try again.",
+    "undo-report":       "Couldn't undo the report. Please try again.",
+    tts_audio_url:       "Audio generation failed. The text response is still available.",
+    get_images:          "Couldn't load your images. Please try again later.",
+    chat_history:        "Couldn't load chat history. Please try again.",
+    "session-init":      "Couldn't switch to Story Mode. Please try again.",
+    default:             "Something went wrong on our end. Please try again in a moment.",
+};
+
+  setServerErrorToast(messages[type] ?? messages.default);
+  setTimeout(() => setServerErrorToast(null), 4000);
+  };
+
   const ask = async (
     input: string,
     guidelines: string | null = null,
@@ -1185,7 +1229,7 @@ function ChatContent() {
         console.warn("⚠️ LocalStorage full, message only saved in memory:", error);
       }
       setShowOfflineToast(true);
-      setTimeout(() => setShowOfflineToast(false), 4000); // 4 seconds
+      setTimeout(() => setShowOfflineToast(false), 4000); 
 
       return;
     }
@@ -1408,6 +1452,21 @@ function ChatContent() {
                 </motion.div>
               )}
             </AnimatePresence>
+
+            
+            <AnimatePresence>
+            {serverErrorToast && (
+              <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="fixed top-10 left-1/2 -translate-x-1/2 z-[9999] bg-red-50 border border-red-200 text-red-800 text-[0.75rem] switzer-600 px-4 py-2 rounded-full shadow-xl whitespace-nowrap flex items-center gap-2"
+              >
+                <span>⚠️</span>
+                <p>{serverErrorToast}</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
           </div>
 
           <ChatProvider
