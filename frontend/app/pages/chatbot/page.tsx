@@ -1380,7 +1380,6 @@ function ChatContent() {
   }
 
 
-
   return (
     <ProtectedRoute>
       {showPersonalizationForm ? (
