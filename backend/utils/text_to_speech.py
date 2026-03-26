@@ -37,14 +37,6 @@ class TextToSpeechEngine:
                         "pitch": 0,
                         "variation": 1
                     }
-                    # "voice_config": {
-                    #     "voiceId": "River", 
-                    #     "multiNativeLocale": "en-US",
-                    #     "style": "Conversation",
-                    #     "rate": 0,
-                    #     "pitch": 0,
-                    #     "variation": 1
-                    # }
                 }
                 {}
                 await ws.send(json.dumps(voice_config_msg))

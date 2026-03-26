@@ -55,13 +55,24 @@ import {
 import { retryOperation, wsSendAsync } from "@/app/utils/retryOpernation";
 import HamBurger from "@/app/components/chatbot/UI/HamBurger";
 import ChatHistoryCupboard from "@/app/components/chatbot/UI/ChatHistoryCupboard";
-import FullStoryViewContainer from "@/app/components/chatbot/UI/FullStoryViewContainer";
+import FullViewStoryContainer from "@/app/components/chatbot/UI/FullViewStoryContainer";
 import StoryModeExtraOptions from "@/app/components/chatbot/UI/StoryModeExtraOptions";
 import ImageContainer from "@/app/components/chatbot/UI/ImageContainer";
+import Markdown from "@/app/components/markdown/Markdown";
 
 
 
 function ChatContent() {
+  const [serverErrorToast, setServerErrorToast] = useState<string | null>(null);
+  useEffect(() => {
+    if (serverErrorToast) {
+      const timer = setTimeout(() => {
+        setServerErrorToast(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [serverErrorToast]);
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const inputRef = useRef<HTMLDivElement | null>(null);
   const [showPlaceholder, setShowPlaceholder] = useState<boolean | null>(true);
@@ -102,6 +113,8 @@ function ChatContent() {
   const [reportedMessageIDs, setReportedMessageIDs] = useState<string[] | null>(
     [],
   );
+  const constraintRefNormalMode = useRef(null)
+  const constraintRefStoryMode = useRef(null)
   const [openImageContainer, setOpenImageContainer] = useState<boolean>(false)
   const [currentMode, setCurrentMode] = useState<"normal" | "story" | null>("normal");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -126,7 +139,7 @@ function ChatContent() {
   };
   const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
   const [paragraphCount, setParagraphCount] = useState<number>(3);
-
+  const [isInputBoxAdaptable, setIsInputBoxAdaptable] = useState<boolean>(false)
   const pendingPromptRef = useRef<{
     input: string;
     guidelines: string | null;
@@ -198,6 +211,7 @@ function ChatContent() {
       }
       catch (error) {
         console.error("❌ Failed to initialize WebSocket session:", error);
+        showFriendlyError("session-init");
       }
     }
     initializeStoryMode()
@@ -424,6 +438,15 @@ function ChatContent() {
     };
   }, []);
 
+
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.textContent = ""
+      setShowPlaceholder(true)
+    }
+    setIsInputBoxAdaptable(false)
+  }, [currentMode])
+
   useEffect(() => {
     const checkPersonalization = async () => {
       try {
@@ -578,6 +601,22 @@ function ChatContent() {
         console.log("Data from websocket", event.data);
 
         const type = data.type;
+
+        const FAILED_STATUSES = new Set([
+          "not-acknowledged",
+          "not_acknowledged",
+          "Not_acknowledged",
+          "Not_acknowledeged",
+          "error",
+        ]);
+
+        const SKIP_TYPES = new Set(["tts_audio_url", "get_images", "chat_history"]);
+
+        if (data.status && FAILED_STATUSES.has(data.status) && !SKIP_TYPES.has(type)) {
+          showFriendlyError(type);
+          return;
+        }
+
         switch (type) {
           case "pong":
             console.log("Pong received - connection alive");
@@ -670,7 +709,7 @@ function ChatContent() {
             if (history_status === "acknowledged") {
               setChatHistory(chat_history);
             } else if (history_status === "error") {
-              alert("Error loading chat history: " + data.error);
+              showFriendlyError("chat_history");
             }
             break;
           
@@ -757,8 +796,6 @@ function ChatContent() {
                 })(),
                 model: "kimi-k2-instruct-0905",
               });
-            } else {
-              alert("Error deleting sessions: " + data.error);
             }
             break;
           case "get_images":
@@ -898,8 +935,6 @@ function ChatContent() {
               targetMessage.responses = oldMessagesRef.current ?? []
               targetMessage.responses.push({ role: "assistant", message_id: message_id, content: "", reply_to_message_id: reply_to_message_id, feedback: null, audio_link: null, audio_state: null, has_verse_audio: has_verse_audio, verse_audio_data: audio_data, has_verse_image: has_verse_image, verse_images: verse_images,is_error: is_error, story_data: story_data });
               targetMessage.active_message_index = targetMessage.number_of_responses - 1;
-
-              console.log("All Responses", targetMessage.responses)
 
               return updated;
             });
@@ -1048,10 +1083,6 @@ function ChatContent() {
   }, [reconnectTrigger]);
 
   useEffect(() => {
-    if (isGenerating) return; // skip during streaming
-    console.log("Logged in messages", messages);
-  }, [messages])
-  useEffect(() => {
     let isCancelled = false;
 
     const processFile = async () => {
@@ -1096,6 +1127,7 @@ function ChatContent() {
     };
   }, [attachedFile, sessionID]);
 
+
   const stopGeneration = () => {
     if (!currentStreamingMsgRef.current || !wsRef.current) return;
 
@@ -1119,6 +1151,25 @@ function ChatContent() {
 
     currentStreamingMsgRef.current = null;
     streamingContentRef.current = "";
+  };
+
+  const showFriendlyError = (type: string) => {
+    const messages: Record<string, string> = {
+      session_id: "Couldn't load your session. Please refresh the page.",
+      delete_session: "Session couldn't be deleted right now. Please try again.",
+      delete_all_sessions: "Couldn't delete all sessions. Please try again.",
+      "model-selection": "Model switch failed. Your previous model is still active.",
+      report: "Report couldn't be submitted. Please try again.",
+      "undo-report": "Couldn't undo the report. Please try again.",
+      tts_audio_url: "Audio generation failed. The text response is still available.",
+      get_images: "Couldn't load your images. Please try again later.",
+      chat_history: "Couldn't load chat history. Please try again.",
+      "session-init": "Couldn't switch to Story Mode. Please try again.",
+      default: "Something went wrong on our end. Please try again in a moment.",
+    };
+
+    setServerErrorToast(messages[type] ?? messages.default);
+    setTimeout(() => setServerErrorToast(null), 4000);
   };
 
   const ask = async (
@@ -1199,7 +1250,7 @@ function ChatContent() {
         console.warn("⚠️ LocalStorage full, message only saved in memory:", error);
       }
       setShowOfflineToast(true);
-      setTimeout(() => setShowOfflineToast(false), 4000); // 4 seconds
+      setTimeout(() => setShowOfflineToast(false), 4000);
 
       return;
     }
@@ -1240,7 +1291,9 @@ function ChatContent() {
       setStreamingMessageIndexSynced(updated.length - 1);
       return updated;
     });
-
+    if (currentMode === "story") {
+      setIsInputBoxAdaptable(false)
+    }
     currentMessageIDRef.current = messageID;
 
     try {
@@ -1295,12 +1348,23 @@ function ChatContent() {
     }
   };
 
+  const manageInputHeight = (boxHeight: number, inputText: string) => {
+
+    if (boxHeight > 24 && !isInputBoxAdaptable) {
+      setIsInputBoxAdaptable(true)
+
+    }
+    else if (inputText === "" && isInputBoxAdaptable) {
+
+      setIsInputBoxAdaptable(false)
+    }
+  }
+
   const sendPrompt = () => {
     if (!inputRef.current) return;
     if (attachedFile && isUploading) {
       alert("File is still uploading, please wait a moment...");
       return;
-
     }
 
     const input = inputRef.current?.innerText;
@@ -1321,14 +1385,6 @@ function ChatContent() {
     });
   }, []);
 
-  interface PromptExtraOptionsProviderProps {
-    children: ReactNode;
-    parent_index: number | null;
-    assistant_index: number | null;
-    message_id: string | null;
-    reply_to_message_id: string | null;
-  }
-
   if (isCheckingPersonalization) {
     return (
       <ProtectedRoute>
@@ -1341,6 +1397,7 @@ function ChatContent() {
       </ProtectedRoute>
     );
   }
+
 
   return (
     <ProtectedRoute>
@@ -1368,7 +1425,7 @@ function ChatContent() {
               : "#000000",
           }}
           transition={{ duration: 0.3 }}
-          className="relative w-screen h-svh flex flex-col items-center">
+          className="relative w-screen h-svh flex flex-col justify-center items-center overflow-hidden">
           {/* --- UI STATUS INDICATOR --- */}
           <AnimatePresence>
             {showDeleteSuccess && (
@@ -1406,6 +1463,21 @@ function ChatContent() {
                   <p className="switzer-500 text-sm">
                     {"You're offline check your network connection ! "}
                   </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+
+            <AnimatePresence>
+              {serverErrorToast && (
+                <motion.div
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="fixed top-10 left-1/2 -translate-x-1/2 z-9999 bg-red-50 border border-red-200 text-red-800 text-[0.75rem] switzer-600 px-4 py-2 rounded-full shadow-xl whitespace-nowrap flex items-center gap-2"
+                >
+                  <span>⚠️</span>
+                  <p>{serverErrorToast}</p>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -1453,12 +1525,12 @@ function ChatContent() {
             </AnimatePresence>
             <AnimatePresence>
               {openFullStoryView && (
-                <FullStoryViewContainer story_data={storyData} />
+                <FullViewStoryContainer story_data={storyData} />
               )}
             </AnimatePresence>
 
 
-            <div className={`w-full h-full flex flex-col items-center relative ${currentMode === "normal" ? "" : "black-scrollbar"} ${messages.length > 0 ? "" : " justify-center"} overflow-y-auto`}>
+            <div className={`w-full flex flex-col items-center relative ${currentMode === "normal" ? "" : "black-scrollbar"} ${messages.length > 0 ? "h-full" : " justify-center"} overflow-y-auto`}>
 
               {/* navbar for top options background */}
               <div id="navbar" style={{ backgroundColor: currentMode === "normal" ? "#F9FAFB99" : "#00000099" }} className={`fixed top-0 w-[98%] z-20 h-14 flex items-center shrink-0 backdrop-blur-md border-b ${currentMode === "normal" ? "border-black/5" : "border-white/10"} ${messages.length > 0 ? "pr-2 pl-4" : "px-2"}`}>
@@ -1474,8 +1546,6 @@ function ChatContent() {
                 </div>
 
               </div>
-
-
 
               <div
                 id="chat-bot"
@@ -1516,9 +1586,11 @@ function ChatContent() {
                       </motion.p>
 
                       {currentMode === "story" && (
-                        <div id="default-prompts-box-story" className="w-full relative overflow-x-clip">
+                        <div ref={constraintRefStoryMode} id="default-prompts-box-story" className="w-full relative overflow-x-clip">
                           <motion.div
                             style={{ x }}
+                            drag="x"
+                            dragConstraints={constraintRefStoryMode}
                             onMouseEnter={() => animationRef.current?.pause()}
                             onMouseLeave={() => animationRef.current?.play()}
                             onViewportEnter={startAnimation}
@@ -1551,8 +1623,10 @@ function ChatContent() {
                         </div>
                       )}
                       {currentMode === "normal" && (
-                        <div className="default-prompts-box-normal w-full relative overflow-x-clip">
+                        <div ref={constraintRefNormalMode} className="default-prompts-box-normal w-full relative overflow-x-clip">
                           <motion.div
+                            drag="x"
+                            dragConstraints={constraintRefNormalMode}
                             animate={controls}
                             transition={{
                               duration: 25,
@@ -1571,7 +1645,8 @@ function ChatContent() {
                             {Array.from({ length: 3 }).map((_, i) => (
                               <motion.div key={i} id="carousel-default-prompts-normal" className="carousel w-1/2">
                                 <div className="carousel-controls-slider flex">
-                                  <div className="h-max grid grid-cols-6 grid-rows-1 rounded-md gap-4 w-full">
+                                  <div
+                                    className="h-max grid grid-cols-6 grid-rows-1 rounded-md gap-4 w-full">
                                     {defaultPromptsNormalMode.map((prompt, index) => (
                                       <motion.div
                                         key={index}
@@ -1649,7 +1724,7 @@ function ChatContent() {
                             })
                           )}
                           <div>
-                            <p className={`ml-auto w-max min-w-40 max-w-[20rem] rounded-md switzer-500 py-2 shadow-md px-3 text-white ${currentMode === "normal" ? "border bg-neutral-900 border-black/5" : "bg-linear-to-b from-[#570900] to-[#8A0F00]"}`}>
+                            <p className={`ml-auto w-max min-w-40 wrap-break-word max-w-[20rem] rounded-md switzer-500 py-2 shadow-md px-3 text-white ${currentMode === "normal" ? "border bg-neutral-900 border-black/5" : "bg-linear-to-b from-[#570900] to-[#8A0F00]"}`}>
                               {record.content}
                             </p>
                           </div>
@@ -1696,179 +1771,13 @@ function ChatContent() {
                               ai_msg_idx === record.active_message_index ? (
                               <div key={ai_msg_idx}>
                                 <div className={`w-max min-w-40 max-w-full switzer-500 mt-2 rounded-md px-3 ${
-                                  ai_msg.is_error
-                                    ? "bg-red-50 border border-red-200 py-2"
-                                    : currentMode === "normal" 
-                                      ? "bg-white shadow-md py-2" 
-                                      : ""
+                                ai_msg.is_error
+                                ? "bg-red-50 border border-red-200 py-2"
+                                : currentMode === "normal"
+                                ? "bg-white shadow-md py-2"
+                                : ""
                                 }`}>
-                                  <ReactMarkdown
-                                    remarkPlugins={[remarkGfm]}
-                                    rehypePlugins={[rehypeRaw]}
-                                    components={{
-                                      // HEADERS
-                                      h1: ({ node, ...props }) => (
-                                        <h1
-                                          className={`text-3xl font-bold ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
-                                          {...props}
-                                        />
-                                      ),
-                                      h2: ({ node, ...props }) => (
-                                        <h2
-                                          className={`text-2xl font-semibold ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
-                                          {...props}
-                                        />
-                                      ),
-                                      h3: ({ node, ...props }) => (
-                                        <h3
-                                          className={`text-xl font-semibold ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
-                                          {...props}
-                                        />
-                                      ),
-
-                                      // PARAGRAPH
-                                      p: ({ node, ...props }) => (
-                                        <p
-                                          className={`leading-7 my-2 wrap-break-word ${
-                                            ai_msg.is_error
-                                              ? "text-red-600"
-                                              : currentMode === "normal" 
-                                                ? "text-gray-700" 
-                                                : "text-white"
-                                          }`}
-                                          {...props}
-                                        />
-                                      ),
-
-                                      // STRONG ( **bold** )
-                                      strong: ({ node, ...props }) => (
-                                        <strong
-                                          className={`font-bold text-black ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
-                                          {...props}
-                                        />
-                                      ),
-
-                                      // EMPHASIS ( *italic* )
-                                      em: ({ node, ...props }) => (
-                                        <em
-                                          className={`italic ${currentMode === "normal" ? "text-gray-700" : "text-white"}`}
-                                          {...props}
-                                        />
-                                      ),
-
-                                      // LINE BREAK
-                                      br: ({ node, ...props }) => <br />,
-
-                                      // LINKS
-                                      a: ({ node, ...props }) => (
-                                        <a
-                                          className={`${currentMode === "normal" ? "text-blue-600" : "text-blue-400"}  underline wrap-break-word`}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          {...props}
-                                        />
-                                      ),
-
-                                      // LISTS
-                                      ul: ({ node, ...props }) => (
-                                        <ul
-                                          className={`list-disc pl-6 ${currentMode === "normal" ? "text-black" : "text-white"}`}
-                                          {...props}
-                                        />
-                                      ),
-                                      ol: ({ node, ...props }) => (
-                                        <ol
-                                          className={`list-decimal pl-6 ${currentMode === "normal" ? "text-black" : "text-white"}`}
-                                          {...props}
-                                        />
-                                      ),
-                                      li: ({ node, ...props }) => (
-                                        <li className={`my-1 ${currentMode === "normal" ? "text-black" : "text-white"}`} {...props} />
-                                      ),
-                                      blockquote: ({ node, ...props }) => (
-                                        <blockquote
-                                          className={`border-l-4 border-gray-400 pl-4 italic my-3 ${currentMode === "normal" ? "text-black" : "text-white"}`}
-                                          {...props}
-                                        />
-                                      ),
-
-                                      // HORIZONTAL RULE
-                                      hr: () => (
-                                        <hr className="my-4 border-gray-300" />
-                                      ),
-
-                                      table: ({ node, ...props }) => (
-                                        <div className="overflow-x-auto my-4 border border-black/20 rounded-lg shadow-sm">
-                                          <table className="min-w-full divide-y divide-gray-200" {...props} />
-                                        </div>
-                                      ),
-                                      thead: ({ node, ...props }) => (
-                                        <thead
-                                          className="bg-gray-50"
-                                          {...props}
-                                        />
-                                      ),
-                                      tbody: ({ node, ...props }) => (
-                                        <tbody
-                                          className="bg-white divide-y divide-gray-200"
-                                          {...props}
-                                        />
-                                      ),
-                                      tr: ({ node, ...props }) => (
-                                        <tr
-                                          className="hover:bg-gray-50"
-                                          {...props}
-                                        />
-                                      ),
-                                      th: ({ node, ...props }) => (
-                                        <th className={`px-4 py-3 text-left text-sm font-medium ${currentMode === "normal" ? "text-black" : "text-white"} uppercase tracking-wider border-b`} {...props} />
-                                      ),
-                                      td: ({ node, ...props }) => (
-                                        <td className={`px-4 py-3 text-sm border-b border-black/20 whitespace-pre-wrap ${currentMode === "normal" ? "text-gray-700" : "text-white"}`} {...props} />
-                                      ),
-                                      code({
-                                        inline,
-                                        className,
-                                        children,
-                                        ...props
-                                      }: {
-                                        inline?: boolean;
-                                        className?: string;
-                                        children?: ReactNode;
-                                      } & HTMLAttributes<HTMLElement>) {
-                                        const match = /language-(\w+)/.exec(className || '');
-
-                                        if (!inline && match) {
-                                          // Create a clean props object without HTML attributes that conflict
-                                          const syntaxHighlighterProps = {
-                                            language: match[1],
-                                            PreTag: "div" as const,
-                                            className: "rounded-md shadow-sm my-4",
-                                            style: dracula as { [key: string]: CSSProperties }
-                                          };
-
-                                          return (
-                                            <SyntaxHighlighter
-                                              {...syntaxHighlighterProps}
-                                            >
-                                              {String(children).replace(/\n$/, "")}
-                                            </SyntaxHighlighter>
-                                          );
-                                        } else {
-                                          return (
-                                            <code
-                                              className={`bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono ${currentMode === "normal" ? "text-black" : "text-white"}`}
-                                              {...props}
-                                            >
-                                              {children}
-                                            </code>
-                                          );
-                                        }
-                                      },
-                                    }}
-                                  >
-                                    {preprocessContent(ai_msg.content)}
-                                  </ReactMarkdown>
+                                  <Markdown textContent={ai_msg.content} isError={ai_msg.is_error} />
                                 </div>
 
                                 {ai_msg.has_verse_audio && ai_msg.verse_audio_data.length > 0 && streamingMessageIndex != record_index && (
@@ -2009,12 +1918,12 @@ function ChatContent() {
                 <p className="text-red-500 switzer-500 text-sm">{error}</p>
               </motion.div>
             )}
-            <motion.div animate={{ paddingTop: currentMode === "normal" ? 16 : 20, paddingBottom: currentMode === "normal" ? 16 : 28 }} className={`mr-1.5 px-4 ${currentMode === "normal" ? "w-full lg:w-2/3 mt-4" : "w-[95%] sm:w-[70%] lg:w-1/2 mt-2 flex gap-x-2 items-center"} input-box`}>
-
+            <motion.div animate={{ paddingTop: currentMode === "normal" ? 16 : 20, paddingBottom: currentMode === "normal" ? 16 : 28 }} className={`mx-1.5 px-4 h-max ${currentMode === "normal" ? "w-full lg:w-2/3 mt-4" : "w-full sm:w-[70%] lg:w-1/2 mt-2 flex flex-col gap-x-2 items-center"} input-box`}>
               <motion.div
-                animate={{ height: currentMode === "normal" ? attachedFile ? 200 : 160 : 45 }}
-                transition={{ duration: 0.2, ease: easeInOut }}
-                className={`flex relative shadow-md py-2 border gap-x-1 ${currentMode === "normal" ? "bg-white rounded-lg shadow-md px-3 border-black/10 flex-col" : "bg-[##001e1e] rounded-full px-1 border border-white/15 shadow-md justify-between items-center w-full py-2"} `}
+                className={`relative shadow-md border gap-x-1 ${currentMode === "normal"
+                  ? `${attachedFile ? "h-[200px]" : `h-40`} flex bg-white rounded-lg shadow-md border-black/10 px-3 py-2 flex-col`
+                  : `h-auto bg-[##001e1e] border border-white/15 shadow-md w-full ${isInputBoxAdaptable ? "flex-col rounded-lg py-3 px-2" : "flex justify-center items-center rounded-full p-1"}`
+                  }`}
               >
                 {attachedFile && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative w-max bg-white border border-black/10 px-3 py-2 rounded-md text-xs flex items-center gap-x-2 z-10">
@@ -2039,6 +1948,13 @@ function ChatContent() {
                   </motion.div>
                 )}
                 {currentMode === "story" && (
+                  <AnimatePresence>
+                    {openStoryModeExtraOptions && (
+                      <StoryModeExtraOptions />
+                    )}
+                  </AnimatePresence>
+                )}
+                {currentMode === "story" && !isInputBoxAdaptable && (
                   <motion.div onClick={() => {
                     setOpenStoryModeExtraOptions(prev => !prev)
                   }} whileHover={{ backgroundColor: "#FFFFFF1A" }} className="p-2 rounded-full cursor-pointer">
@@ -2051,12 +1967,17 @@ function ChatContent() {
                     const target = e.target as HTMLDivElement;
                     const text = target.textContent.trim() ?? "";
                     setShowPlaceholder(text === "");
+                    if (inputRef.current && currentMode === "story") {
+                      const newHeight = inputRef.current.scrollHeight ?? 24
+                      manageInputHeight(newHeight, text)
+
+                    }
                   }}
                   onKeyDown={(e) => {
                     handleInput(e);
                   }}
                   contentEditable
-                  className={`switzer-500 focus:outline-none ${currentMode === "normal" ? attachedFile ? "pt-[0.3rem] text-black h-2/3 overflow-y-auto" : "text-black h-2/3 overflow-y-auto" : "text-white pt-[0.02rem]"} overflow-hidden w-full h-full`}
+                  className={`switzer-500 focus:outline-none w-full ${currentMode === "normal" ? attachedFile ? "pt-[0.3rem] text-black h-2/3 overflow-y-auto" : "text-black h-full overflow-y-auto" : "text-white pt-[0.02rem] overflow-hidden max-h-[100px]"}`}
                 ></div>
                 {showPlaceholder && (
                   <span
@@ -2065,8 +1986,7 @@ function ChatContent() {
                     {placeholder}
                   </span>
                 )}
-
-                <div className={`transition-opacity duration-300 ${connectionStatus !== "connected" ? "pointer-events-none opacity-50" : "opacity-100"} ${currentMode === "story" ? 'flex gap-x-1' : ''}`}>
+                <div className={`transition-opacity duration-300 ${connectionStatus !== "connected" ? "pointer-events-none opacity-50" : "opacity-100"}`}>
                   {currentMode === "normal" && (
                     <>
                       <BottomOptions />
@@ -2074,23 +1994,56 @@ function ChatContent() {
                       {/* <ModelBox modelList={ModelList} /> */}
                     </>
                   )}
-                  {currentMode === "story" && (
-                    <>
+                  {currentMode === "story" && !isInputBoxAdaptable ? (
+                    <div className="flex items-center gap-x-1 mr-1.5">
                       <MicStoryMode />
+                      {isGenerating ? (
+                        <button
+                          onClick={stopGeneration}
+                          className="flex items-center gap-x-2 w-5 h-5 p-1.5 bg-white/80 opacity-75 hover:opacity-100 rounded-xs transition-colors cursor-pointer"
+                        >
+                          <div className="w-2 h-2 bg-black"></div>
+                        </button>
+                      ) : (
+                        <motion.div onClick={sendPrompt} style={{ cursor: showPlaceholder ? "default" : "pointer" }} initial={{ backgroundColor: "#FFFFFFCC" }} animate={{ backgroundColor: showPlaceholder ? "#FFFFFFCC" : "#ffffff" }} className="p-2 rounded-full scale-90">
+                          <SendIcon className="w-5.5 h-5.5 fill-current text-black" />
+                        </motion.div>
+                      )}
+
+                    </div>
+                  ) : currentMode === "story" && isInputBoxAdaptable ? (
+                    <div className="flex mt-2">
+                      <motion.div onClick={() => {
+                        setOpenStoryModeExtraOptions(prev => !prev)
+                      }} whileHover={{ backgroundColor: "#FFFFFF1A" }} className="p-2 rounded-full cursor-pointer">
+                        <PlusIcon className="w-5.5 h-5.5" />
+                      </motion.div>
                       <AnimatePresence>
                         {openStoryModeExtraOptions && (
                           <StoryModeExtraOptions />
                         )}
                       </AnimatePresence>
-                    </>
-                  )}
-                  {currentMode === "story" && (
-                    <motion.div onClick={sendPrompt} style={{ cursor: showPlaceholder ? "default" : "pointer" }} animate={{ backgroundColor: showPlaceholder ? "#FFFFFFCC" : "#ffffff" }} className="p-2 rounded-full scale-90">
-                      <SendIcon className="w-5.5 h-5.5 fill-current text-black" />
-                    </motion.div>
-                  )}
+                      <div className="ml-auto flex gap-x-1 items-center mr-1.5">
+                        <MicStoryMode />
+                        {isGenerating ? (
+                          <button
+                            onClick={stopGeneration}
+                            className="flex items-center gap-x-2 w-5 h-5 p-1.5 bg-white/80 opacity-75 hover:opacity-100 rounded-sm transition-colors cursor-pointer"
+                          >
+                            <div className="w-2 h-2 bg-black"></div>
+                          </button>
+                        ) : (
+                          <motion.div onClick={sendPrompt} style={{ cursor: showPlaceholder ? "default" : "pointer" }} initial={{ backgroundColor: "#FFFFFFCC" }} animate={{ backgroundColor: showPlaceholder ? "#FFFFFFCC" : "#ffffff" }} className="p-2 rounded-full scale-90">
+                            <SendIcon className="w-5.5 h-5.5 fill-current text-black" />
+                          </motion.div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                    : (null)}
                 </div>
               </motion.div>
+
             </motion.div>
             <AnimatePresence>
               {openImageContainer && (
@@ -2098,11 +2051,14 @@ function ChatContent() {
               )}
             </AnimatePresence>
 
-
-            <ReportContentDialogueBox
-              hideReportContentDialogueBox={hideReportContentDialogueBox}
-              setHideReportContentDialogueBox={setHideReportContentDialogueBox}
-            />
+            <AnimatePresence>
+              {!hideReportContentDialogueBox && (
+                <ReportContentDialogueBox
+                  hideReportContentDialogueBox={hideReportContentDialogueBox}
+                  setHideReportContentDialogueBox={setHideReportContentDialogueBox}
+                />
+              )}
+            </AnimatePresence>
 
             <audio className="hidden" controls ref={audioRef} />
           </ChatProvider >
@@ -2120,3 +2076,7 @@ export default function ChatPage() {
     </Suspense>
   )
 }
+
+
+
+

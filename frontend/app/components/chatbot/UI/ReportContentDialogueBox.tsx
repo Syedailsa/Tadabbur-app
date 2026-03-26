@@ -16,11 +16,14 @@ const ReportContentDialogueBox: React.FC<ReportContenDialogueBoxProps> = ({
   hideReportContentDialogueBox,
   setHideReportContentDialogueBox,
 }) => {
-  const { wsRef, reportedMessageID } = useContext(ChatContext)!;
+  const { wsRef, reportedMessageID,currentMode } = useContext(ChatContext)!;
   const [hidePlaceholder, setHidePlaceholder] = useState<boolean>(true);
   const [selectedReason, setSelectedReason] = useState<string | null>("");
   const [customFeedback, setCustomFeedback] = useState<string | null>("");
-  if (hideReportContentDialogueBox) return null;
+  
+    const backgroundTheme = currentMode === "normal" ? "white" : "black"
+    const fontTheme = currentMode === "normal" ? "black" : "white"
+  
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     setSelectedReason(e.target.value);
@@ -54,21 +57,21 @@ const ReportContentDialogueBox: React.FC<ReportContenDialogueBoxProps> = ({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.4, ease: "easeInOut" }}
-        className="w-[90%] max-w-120 h-max bg-white px-2 py-3 border border-black/10 rounded-md shadow-md"
+        className={`w-[90%] max-w-120 h-max bg-${backgroundTheme} px-2 py-3 border border-${fontTheme}/10 rounded-md shadow-md`}
       >
         <div className="w-full h-full flex flex-col">
           <div className="w-full flex pl-2 justify-between">
-            <p className="mb-1 inter-600 tracking-tight">
+            <p className={`mb-1 inter-500 tracking-tight text-${fontTheme}`}>
               What is wrong in the response
             </p>
             <DisclaimerIcon className="w-5 h-5" />
           </div>
-          <form className="overflow-y-auto px-2 max-h-80">
+          <form className={`${currentMode === "normal" ? "overflow-y-auto":"black-scrollbar"} px-2 max-h-80`}>
             <div className="radio-group">
               {reportOptions?.map((option) => (
                 <div
                   key={option.id}
-                  className="radio-option border-b border-black/5 py-1"
+                  className={`radio-option border-b border-${fontTheme}/5 py-1`}
                 >
                   <input
                     type="radio"
@@ -85,7 +88,7 @@ const ReportContentDialogueBox: React.FC<ReportContenDialogueBoxProps> = ({
                     }}
                   />
                   <label
-                    className="ml-2 switzer-500 tracking-tight text-black/70"
+                    className={`ml-2 switzer-500 tracking-tight text-${fontTheme}/70`}
                     htmlFor={option.id}
                   >
                     {option.label}
@@ -122,7 +125,7 @@ const ReportContentDialogueBox: React.FC<ReportContenDialogueBoxProps> = ({
               onClick={handleSubmit}
               whileHover={{ scale: 1.02 }}
               transition={{ duration: 0.25, ease: easeInOut }}
-              className="bg-black cursor-pointer text-white rounded-md px-2 py-1 switzer-500"
+              className={`bg-black cursor-pointer text-white rounded-md px-2 py-1 switzer-500 border border-${fontTheme}/10`}
             >
               Submit
             </motion.button>

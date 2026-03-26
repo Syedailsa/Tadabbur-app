@@ -1,7 +1,6 @@
 import { useCallback, useContext, useEffect, useRef } from "react";
 import { ChatContext } from "@/app/context/chatbot/ChatContext";
 import { motion } from "framer-motion";
-import DownArrow from "../../../../icons/arrow-down-head.svg";
 import AttachIcon from "../../../../icons/attach_icon.svg";
 import PlusIcon from "../../../../icons/plus-icon-black.svg";
 import StoryIcon from "../../../../icons/story_telling_icon.svg";
@@ -15,8 +14,6 @@ const BottomOptions = () => {
     wsRef,
     hideExtraOptions,
     setHideExtraOptions,
-    selectedModel,
-    setHideModelBox,
     active,
     setActive,
     attachedFile,

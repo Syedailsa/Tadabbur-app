@@ -144,11 +144,11 @@ const ChatHistoryCupboard = () => {
                                 }}
                                 whileHover={{ backgroundColor: "#ffffff0d" }}
                                 key={chat.session_id || index}
-                                className={`w-full h-max border-b border-${fontTheme}/10 px-1 py-1 flex flex-col gap-y-1 relative group`}
+                                className={`w-full h-max border-b border-${fontTheme}/10 px-1 py-1 flex flex-col gap-y-1 relative group cursor-pointer`}
                             >
 
                                 <div
-                                    className="flex justify-between cursor-pointer"
+                                    className="flex justify-between"
                                 >
                                     <p className={`switzer-500 text-sm text-${fontTheme} tracking-tight`}>
                                         {index + 1}. {chat.title}

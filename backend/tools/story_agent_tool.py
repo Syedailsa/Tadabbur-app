@@ -16,5 +16,3 @@ def story_agent_tool(query: str) -> str:
     print(f"Story agent result: {result}")
 
     return result.get("output", str(result))
-
-print("Story agent tool defined.")
