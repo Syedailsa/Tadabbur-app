@@ -19,7 +19,7 @@ const ProtectedImage = ({ filename, className, alt }: { filename: string, classN
     if (!src) return (
     <div 
     
-        className="animate-pulse rounded-md min-w-40 min-h-40 h-full w-full" 
+        className="animate-pulse rounded-md min-h-40 h-full w-full" 
             style={{ backgroundColor: "rgba(255,255,255,0.45)" }} 
     />
 )

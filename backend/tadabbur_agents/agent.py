@@ -1082,7 +1082,7 @@ standard_system_instructions = """
 def build_agent(model_key: str = None):
     llm = get_llm(model_key)
     tool_protection = ToolRetryMiddleware(
-        max_retries=1,
+        max_retries=2,
         on_failure=custom_tool_error_handler,
         backoff_factor=1.0,
     )

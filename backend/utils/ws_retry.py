@@ -90,7 +90,6 @@ async def ws_send(
                 ) from exc
 
         except Exception as exc:
-           
             if attempt < retries:
                 logger.warning(
                     f"⚠️ [{label}] Transient error on attempt {attempt}/{retries} "
