@@ -617,6 +617,7 @@ function ChatContent() {
 
           case "session_id":
             setCurrentMode(null)
+            setError(null)
             const session_id = data.session_id;
             const session_status = data.status;
             const message_ids = data.message_ids;
@@ -646,6 +647,22 @@ function ChatContent() {
             }
 
             break;
+
+            case "error":
+              setMessages(prev => {
+                const updated = [...prev];
+                const lastMsg = updated[updated.length - 1];
+                if (lastMsg && lastMsg.responses) {
+                  lastMsg.responses = lastMsg.responses.filter(r => r.content !== "");
+                }
+                return updated;
+              });
+              setLoading(false);
+              setLoadingMessage(null);
+              setIsGenerating(false);
+              setError(data.message); 
+              break;
+
           case "chat_history":
             const chat_history = data.chat_history;
             const history_status = data.status;
@@ -656,7 +673,7 @@ function ChatContent() {
               alert("Error loading chat history: " + data.error);
             }
             break;
-
+          
           case "delete_session":
             const delete_status = data.status;
             if (delete_status === "success") {
@@ -755,6 +772,7 @@ function ChatContent() {
             break
 
           case "get_chat":
+            setError(null)
             const status = data.status;
             const mode: "story" | "normal" = data.mode;
             if (status === "acknowledged") {
@@ -815,6 +833,7 @@ function ChatContent() {
             const reply: string = data.content.response ?? "No reply from server";
             const has_verse_audio: boolean = data.content.has_verse_audio || false
             const has_verse_image: boolean = data.content.has_verse_image || false
+            const is_error: boolean = data.is_error || false;
             const message_id: string = data.message_id;
             // assign reply to message ID with order data.reply_to_message_id >> currentMessageIDRef.current >> null
             const reply_to_message_id =
@@ -877,7 +896,7 @@ function ChatContent() {
                 targetMessage.number_of_responses += 1;
               }
               targetMessage.responses = oldMessagesRef.current ?? []
-              targetMessage.responses.push({ role: "assistant", message_id: message_id, content: "", reply_to_message_id: reply_to_message_id, feedback: null, audio_link: null, audio_state: null, has_verse_audio: has_verse_audio, verse_audio_data: audio_data, has_verse_image: has_verse_image, verse_images: verse_images, story_data: story_data });
+              targetMessage.responses.push({ role: "assistant", message_id: message_id, content: "", reply_to_message_id: reply_to_message_id, feedback: null, audio_link: null, audio_state: null, has_verse_audio: has_verse_audio, verse_audio_data: audio_data, has_verse_image: has_verse_image, verse_images: verse_images,is_error: is_error, story_data: story_data });
               targetMessage.active_message_index = targetMessage.number_of_responses - 1;
 
               console.log("All Responses", targetMessage.responses)
@@ -1676,7 +1695,13 @@ function ChatContent() {
                               !reportedMessageIDs.includes(ai_msg?.message_id) &&
                               ai_msg_idx === record.active_message_index ? (
                               <div key={ai_msg_idx}>
-                                <div className={`w-max min-w-40 max-w-full switzer-500 mt-2 rounded-md px-3 ${currentMode === "normal" ? "bg-white shadow-md py-2" : ""}`}>
+                                <div className={`w-max min-w-40 max-w-full switzer-500 mt-2 rounded-md px-3 ${
+                                  ai_msg.is_error
+                                    ? "bg-red-50 border border-red-200 py-2"
+                                    : currentMode === "normal" 
+                                      ? "bg-white shadow-md py-2" 
+                                      : ""
+                                }`}>
                                   <ReactMarkdown
                                     remarkPlugins={[remarkGfm]}
                                     rehypePlugins={[rehypeRaw]}
@@ -1704,7 +1729,13 @@ function ChatContent() {
                                       // PARAGRAPH
                                       p: ({ node, ...props }) => (
                                         <p
-                                          className={`leading-7 my-2 ${currentMode === "normal" ? "text-gray-700" : "text-white"} wrap-break-word`}
+                                          className={`leading-7 my-2 wrap-break-word ${
+                                            ai_msg.is_error
+                                              ? "text-red-600"
+                                              : currentMode === "normal" 
+                                                ? "text-gray-700" 
+                                                : "text-white"
+                                          }`}
                                           {...props}
                                         />
                                       ),
@@ -1969,6 +2000,15 @@ function ChatContent() {
                 </motion.div>
               )}
             </AnimatePresence>
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="w-full lg:w-2/3 px-4"
+              >
+                <p className="text-red-500 switzer-500 text-sm">{error}</p>
+              </motion.div>
+            )}
             <motion.div animate={{ paddingTop: currentMode === "normal" ? 16 : 20, paddingBottom: currentMode === "normal" ? 16 : 28 }} className={`mr-1.5 px-4 ${currentMode === "normal" ? "w-full lg:w-2/3 mt-4" : "w-[95%] sm:w-[70%] lg:w-1/2 mt-2 flex gap-x-2 items-center"} input-box`}>
 
               <motion.div
