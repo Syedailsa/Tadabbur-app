@@ -1621,7 +1621,6 @@ function ChatContent() {
                             onMouseLeave={() => {
                               controls.start({ x: "-60%" });
                             }}
-                            style={{ width: "1200%" }}
                             className="w-[1200%] md:w-[600%] flex gap-x-2"
                           >
                             {Array.from({ length: 3 }).map((_, i) => (

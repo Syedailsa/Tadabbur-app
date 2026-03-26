@@ -10,9 +10,11 @@ from fastapi.websockets import WebSocketState
 from pydantic import BaseModel
 from typing import List
 import asyncio 
+from generators.image_generator import generate_image
 from models.models import NormalOutputSchema, SurahForAudio, SurahForImage, StoryOutputSchema, StoryParagraph
 from langchain.messages import ToolMessage, SystemMessage, HumanMessage
 from collections import defaultdict
+from huggingface_hub.utils import HfHubHTTPError
 from contextlib import asynccontextmanager
 import tadabbur_agents.agent as agent_module
 from tadabbur_agents.story_agent import story_agent
@@ -1291,9 +1293,66 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     else:
                         messages = base_messages + conversation_history + [{"role": "user", "content": message_string}]
 
+                    story_error = False 
+                    failure_reason = "Some technical error occured while generating an image - try again later"
+                    
+                    try:
+                        generate_image("A cat and his kittens") ## dummy prompt for testing credits
+                    except HfHubHTTPError as e:
+                        story_error = True
+                        if e.response.status_code == 402:
+                            print("Insufficient credits - add pre-paid credits")
+                            failure_reason = "Your Story generation credits have been depleted. Add pre-paid credits to generate a story"        
+                    except Exception as e:
+                        story_error = True        
+                    
+                    if story_error:
+                        db_success = False
+                        try:
+                            await db_retry(
+                                lambda:supabase_client.table('chat_messages').insert({
+                                    "message_id": response_message_id,
+                                    "session_id": session_id,
+                                    "user_id": user_id,
+                                    "role": "assistant",
+                                    "content": failure_reason,
+                                    "reply_to_message_id": user_message_id,
+                                    "story_data": [],
+                                }).execute(),
+                                label="insert_assistant_message"
+                            )
+                            print("✅ Assistant message saved successfully!")
+                            db_success = True
+                        except DBRetryError as e:
+                            logger.error(f"❌ Assistant message failed to save after retries: {e}")
+                            raise
+                        except Exception as e:
+                            print("Some error occured while inserting assistant message", e)
+                            raise
 
-                    agent_response = None 
+                        # Only send if DB was successful
+                        if db_success:
+                            await ws_send(websocket, {
+                                "type": "assistance_response",
+                                "message_id": response_message_id,
+                                "content": {"response": failure_reason},
+                                "resend_flag": resend_flag,
+                                "reply_to_message_id": user_message_id,
+                                "db_saved": True,
+                                "final": True
+                            }, label="assistance_response")
+                        else:
+                            logger.warning("⚠️ DB save failed, skipping websocket send")
+                        
+                        await asyncio.to_thread(
+                            generate_title_description,
+                            conversation_history,
+                            session_id,
+                            supabase_client
+                        )
+                        continue
 
+                    agent_response = None
                     session_agent_running[session_id] = True
                     try:
                         for attempt in range(3):
@@ -1322,12 +1381,9 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
                     messages_array = agent_response.get('messages', []) if agent_response else []
 
-                    logger.info(f" messages_array length: {len(messages_array)}")
-                    logger.info(f" messages_array types: {[type(m).__name__ for m in messages_array]}")
+                    logger.info(f"messages_array length: {len(messages_array)}")
+                    logger.info(f"messages_array types: {[type(m).__name__ for m in messages_array]}")
 
-                    # print("=======================")
-                    # print("Messages Array", messages_array)
-                    # print("=======================")
                     # initialize a response object
                     response_object = None
                     ai_response = None
@@ -1484,7 +1540,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             logger.error(f"❌ Assistant message failed to save after retries: {e}")
                              
                         except Exception as e:
-                            print("Some error occured while inserting assistant messages", e)
+                            print("Some error occured while inserting assistant message", e)
                             raise                  
                     else:
                         ai_response = ""
@@ -1501,7 +1557,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         supabase_client
                     )
                 
-
                     if response_object:
                         send_result = await ws_send(websocket, {
                             "type": "assistance_response",
@@ -1522,7 +1577,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     print("Closing websocket...")
                     
                     break
-
 
                 except Exception as e:
                     logger.error(f"Error during agent execution: {e}")

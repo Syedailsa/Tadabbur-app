@@ -11,6 +11,7 @@ from langchain.messages import HumanMessage, SystemMessage
 from builders.prompt_builder import prompt_builder
 from generators.image_generator import generate_image, pil_to_img_url
 from prompts.prompt_builder_instructions import prompt_builder_instructions
+from huggingface_hub.utils import HfHubHTTPError
 from typing import Dict, List, Union
 import logging
 
@@ -94,6 +95,7 @@ def generate_ai_images_story(args: List[StorySchema]) -> Dict[str, Union[bool, L
                     response = prompt_builder.invoke(prompt_builder_prompt)
                     image_prompt = response.image_prompt
                     break
+                
                 except Exception as e:
                     print(f"Prompt generation failed for image {i}, error: {e},Try number {try_number + 1}, retrying...")
             else:
@@ -111,8 +113,19 @@ def generate_ai_images_story(args: List[StorySchema]) -> Dict[str, Union[bool, L
                     story_data.append(StoryParagraph(story_paragraph = story_paragraph, paragraph_title = paragraph_title, image = image_url))
                     # print(f"Image pipeline successfully completed for image {i}")
                     break
+                except HfHubHTTPError as e:
+                    if e.response.status_code == 402:
+                        print("Insufficient credits - add pre-paid credits")
+                        response_object = {
+                            "success": False,
+                            "story_data": [],
+                            "error": "Insufficient credits for story generation - add pre-paid credits"
+                        }
+                        return response_object
+
                 except Exception as e:
                     print(f"Image generation pipeline failed for image {i}, error: {e},Try number {try_number + 1}, retrying...")
+                    
             else:
                 print(f"Image pipeline failed after 8 retries for image {i}")
                 continue
@@ -201,7 +214,9 @@ system_instructions = """
         - <A contextual, brief response acknowledging the generation of story with visuals>
 
         If the tool returns empty, null, or invalid data:
-        - Respond with: "The requested story data is currently unavailable."
+        - Respond with the <error> returned.
+        In case there is no error return:
+        - Sorry the story data is not available due to some technical issues
 
         Under no circumstances should the assistant expose the raw tool output.
 
