@@ -35,6 +35,7 @@ interface AssistantMessage {
   verse_audio_data: SurahForAudios[]
   has_verse_image: boolean;
   verse_images: SurahForVerseImages[]
+  is_error?: boolean
   story_data: StoryParagraph[]
 }
 

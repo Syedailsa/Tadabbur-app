@@ -166,6 +166,10 @@ TOOL_MESSAGES = {
         "start": "Composing response...",
         "end": "Response ready.."
     },
+    "generate_ai_images_story": {
+        "start": "Generating Images..",
+        "end": "Images are ready.."
+    }
 }
 
 async def run_agent_with_progress(active_agent, messages, context: agent_module.UserContext, websocket) -> dict | None:
@@ -234,7 +238,7 @@ def get_chat_messages(session_id: str, user_id: str, supabase_client) -> List[st
         print("Session id or supabase client none, so returning...")
         return []
 
-    chat_messages = supabase_client.table('chat_messages').select('message_id', 'user_id', 'role', 'content', 'reply_to_message_id', 'feedback', 'audio_url', 'has_verse_audio', 'audio_data', 'has_verse_image', 'verse_images', 'story_data').in_("role", ["user", "assistant"]).eq('session_id', session_id).eq('user_id', user_id).order('created_at').execute().data
+    chat_messages = supabase_client.table('chat_messages').select('message_id', 'user_id', 'role', 'content', 'reply_to_message_id', 'feedback', 'audio_url', 'has_verse_audio', 'audio_data', 'has_verse_image', 'verse_images', 'is_error','story_data').in_("role", ["user", "assistant"]).eq('session_id', session_id).eq('user_id', user_id).order('created_at').execute().data
 
     if chat_messages:
         return chat_messages
@@ -754,6 +758,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                         "audio_data": cached.get('audio_data', []),
                                         "verse_images": cached.get('verse_images', []),
                                         "story_segments": cached.get('story_data', []),
+                                        "is_error": cached.get('is_error', False), 
                                     },
                                     "reply_to_message_id": orphan_user_message_id,
                                     "resend_flag": False,
@@ -1182,6 +1187,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     try:
                          # Check if session exists in DB before inserting message
                         sess_check = supabase_client.table('chat_sessions').select('session_id').eq('session_id', session_id).execute()
+                        is_new_session = not sess_check.data
                         if not sess_check.data:
                             logger.info(f"📝 First message detected. Persisting session {session_id} to DB.")
                             await db_retry(
@@ -1207,6 +1213,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
 
                 if not resend_flag:
                     try:
+                        # raise Exception("Test DB error") 
                         await db_retry(
                             lambda:supabase_client.table('chat_messages').upsert({
                                 "message_id": user_message_id,
@@ -1220,11 +1227,17 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         print("✅ User message saved successfully!")
                     except DBRetryError as e:
                         logger.error(f"❌ User message failed to save after retries: {e}")
+                        if is_new_session:
+                            try:
+                                supabase_client.table('chat_sessions').delete().eq('session_id', session_id).execute()
+                                logger.info(f"🧹 Cleaned up empty session {session_id}")
+                            except Exception as cleanup_err:
+                                logger.warning(f"Failed to clean up session: {cleanup_err}")
                         try:
                             await ws_send(websocket, {
                             "type": "error",
                             "error_code": "MESSAGE_SAVE_FAILED",
-                            "message": "Failed to save your message. Please try again."
+                            "message": "Failed to send your message. Please try again."
                         }, label="message_save_failed")
                         except WSDisconnectedError:
                             logger.info("Failed to send message save error response (Socket closed?)")
@@ -1286,71 +1299,13 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         [{"role": "system", "content": dynamic_system_instruction["text"]}]
                         if dynamic_system_instruction["text"] else []
                     )
+                    # raise Exception("Test error")
                     if not resend_flag:
                         # append user message to conversation history
                         conversation_history.append({"role": "user", "content": message_string, "id": user_message_id})
                         messages = base_messages + conversation_history
                     else:
                         messages = base_messages + conversation_history + [{"role": "user", "content": message_string}]
-
-                    story_error = False 
-                    failure_reason = "Some technical error occured while generating an image - try again later"
-                    
-                    try:
-                        generate_image("A cat and his kittens") ## dummy prompt for testing credits
-                    except HfHubHTTPError as e:
-                        story_error = True
-                        if e.response.status_code == 402:
-                            print("Insufficient credits - add pre-paid credits")
-                            failure_reason = "Your Story generation credits have been depleted. Add pre-paid credits to generate a story"        
-                    except Exception as e:
-                        story_error = True        
-                    
-                    if story_error:
-                        db_success = False
-                        try:
-                            await db_retry(
-                                lambda:supabase_client.table('chat_messages').insert({
-                                    "message_id": response_message_id,
-                                    "session_id": session_id,
-                                    "user_id": user_id,
-                                    "role": "assistant",
-                                    "content": failure_reason,
-                                    "reply_to_message_id": user_message_id,
-                                    "story_data": [],
-                                }).execute(),
-                                label="insert_assistant_message"
-                            )
-                            print("✅ Assistant message saved successfully!")
-                            db_success = True
-                        except DBRetryError as e:
-                            logger.error(f"❌ Assistant message failed to save after retries: {e}")
-                            raise
-                        except Exception as e:
-                            print("Some error occured while inserting assistant message", e)
-                            raise
-
-                        # Only send if DB was successful
-                        if db_success:
-                            await ws_send(websocket, {
-                                "type": "assistance_response",
-                                "message_id": response_message_id,
-                                "content": {"response": failure_reason},
-                                "resend_flag": resend_flag,
-                                "reply_to_message_id": user_message_id,
-                                "db_saved": True,
-                                "final": True
-                            }, label="assistance_response")
-                        else:
-                            logger.warning("⚠️ DB save failed, skipping websocket send")
-                        
-                        await asyncio.to_thread(
-                            generate_title_description,
-                            conversation_history,
-                            session_id,
-                            supabase_client
-                        )
-                        continue
 
                     agent_response = None
                     session_agent_running[session_id] = True
@@ -1510,11 +1465,11 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                             logger.warning(f"Expected list for story_data, got {type(story_dicts)}")
                                             continue
 
-                                        await websocket.send_json({
-                                            "type": "loading_message",
-                                            "content": "Preparing your story",
-                                            "paragraph_count": len(story_data)
-                                        })
+                                        # await websocket.send_json({
+                                        #     "type": "loading_message",
+                                        #     "content": "Preparing your story",
+                                        #     "paragraph_count": len(story_data)
+                                        # })
                                         
                                         response_object.story_segments = story_data
                                         data_flag = True
@@ -1582,6 +1537,49 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     logger.error(f"Error during agent execution: {e}")
                     if conversation_history and conversation_history[-1].get("role") == "assistant":
                         conversation_history.pop() 
+
+                    fallback_message_id = generate_uuid()
+                    while fallback_message_id in unique_message_ids:
+                        fallback_message_id = generate_uuid()
+                    unique_message_ids.append(fallback_message_id)
+
+                    fallback_response = NormalOutputSchema(
+                        response="An error occurred while generating your response. Please try again.",
+                        has_verse_audio=False,
+                        has_verse_image=False,
+                    )
+
+                    try:
+                        await db_retry(
+                            lambda: supabase_client.table('chat_messages').insert({
+                                "message_id": fallback_message_id,
+                                "session_id": session_id,
+                                "user_id": user_id,
+                                "role": "assistant",
+                                "content": fallback_response.response,
+                                "reply_to_message_id": user_message_id,
+                                "has_verse_audio": False,
+                                "has_verse_image": False,
+                                "is_error": True,
+                            }).execute(),
+                            label="insert_fallback_error_message"
+                        )
+                    except DBRetryError as e:
+                        logger.error(f"Failed to save fallback error message: {e}")
+
+                    try:
+                        await ws_send(websocket, {
+                            "type": "assistance_response",
+                            "message_id": fallback_message_id,
+                            "content": fallback_response.model_dump(mode="json"),
+                            "resend_flag": resend_flag,
+                            "reply_to_message_id": user_message_id,
+                            "db_saved": True,
+                            "final": True,
+                            "is_error": True
+                        }, label="assistance_response_error")
+                    except WSDisconnectedError:
+                        logger.info("Could not send fallback error response — client already disconnected")
 
                 continue
                                  
