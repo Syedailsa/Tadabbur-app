@@ -1293,65 +1293,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     else:
                         messages = base_messages + conversation_history + [{"role": "user", "content": message_string}]
 
-                    story_error = False 
-                    failure_reason = "Some technical error occured while generating an image - try again later"
-                    
-                    try:
-                        generate_image("A cat and his kittens") ## dummy prompt for testing credits
-                    except HfHubHTTPError as e:
-                        story_error = True
-                        if e.response.status_code == 402:
-                            print("Insufficient credits - add pre-paid credits")
-                            failure_reason = "Your Story generation credits have been depleted. Add pre-paid credits to generate a story"        
-                    except Exception as e:
-                        story_error = True        
-                    
-                    if story_error:
-                        db_success = False
-                        try:
-                            await db_retry(
-                                lambda:supabase_client.table('chat_messages').insert({
-                                    "message_id": response_message_id,
-                                    "session_id": session_id,
-                                    "user_id": user_id,
-                                    "role": "assistant",
-                                    "content": failure_reason,
-                                    "reply_to_message_id": user_message_id,
-                                    "story_data": [],
-                                }).execute(),
-                                label="insert_assistant_message"
-                            )
-                            print("✅ Assistant message saved successfully!")
-                            db_success = True
-                        except DBRetryError as e:
-                            logger.error(f"❌ Assistant message failed to save after retries: {e}")
-                            raise
-                        except Exception as e:
-                            print("Some error occured while inserting assistant message", e)
-                            raise
-
-                        # Only send if DB was successful
-                        if db_success:
-                            await ws_send(websocket, {
-                                "type": "assistance_response",
-                                "message_id": response_message_id,
-                                "content": {"response": failure_reason},
-                                "resend_flag": resend_flag,
-                                "reply_to_message_id": user_message_id,
-                                "db_saved": True,
-                                "final": True
-                            }, label="assistance_response")
-                        else:
-                            logger.warning("⚠️ DB save failed, skipping websocket send")
-                        
-                        await asyncio.to_thread(
-                            generate_title_description,
-                            conversation_history,
-                            session_id,
-                            supabase_client
-                        )
-                        continue
-
                     agent_response = None
                     session_agent_running[session_id] = True
                     try:
@@ -1510,11 +1451,11 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                             logger.warning(f"Expected list for story_data, got {type(story_dicts)}")
                                             continue
 
-                                        await websocket.send_json({
-                                            "type": "loading_message",
-                                            "content": "Preparing your story",
-                                            "paragraph_count": len(story_data)
-                                        })
+                                        # await websocket.send_json({
+                                        #     "type": "loading_message",
+                                        #     "content": "Preparing your story",
+                                        #     "paragraph_count": len(story_data)
+                                        # })
                                         
                                         response_object.story_segments = story_data
                                         data_flag = True

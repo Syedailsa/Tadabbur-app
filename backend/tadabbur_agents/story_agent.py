@@ -53,6 +53,29 @@ def generate_ai_images_story(args: List[StorySchema]) -> Dict[str, Union[bool, L
     The list must follow the correct chronological order of the story.
     """
 
+    
+    image_generation_error = False 
+    failure_reason = "Some technical error occured while generating an image - try again later"
+    try:
+        generate_image("A cat and his kittens") ## dummy prompt for testing credits
+    except HfHubHTTPError as e:
+        image_generation_error = True
+        if e.response.status_code == 402:
+            print("Insufficient credits - add pre-paid credits")
+            failure_reason = "Story generation credits have been depleted. Add pre-paid credits to generate a story"        
+    except Exception as e:
+        image_generation_error = True        
+    
+    if image_generation_error:
+        response_object = {
+            "success": False,
+            "story_data": [],
+            "error": failure_reason
+        }
+
+        return response_object        
+
+
     story_data: List[StoryParagraph] = []
     if not args:
         logger.info("No story chunks provided to generate_ai_images_story")
@@ -214,7 +237,7 @@ system_instructions = """
         - <A contextual, brief response acknowledging the generation of story with visuals>
 
         If the tool returns empty, null, or invalid data:
-        - Respond with the <error> returned.
+        - Respond with the error field that is returned.
         In case there is no error return:
         - Sorry the story data is not available due to some technical issues
 
@@ -254,3 +277,4 @@ story_agent = create_agent(
         system_prompt=formatted_system_prompt,
         tools=[ generate_ai_images_story ],
 )
+
