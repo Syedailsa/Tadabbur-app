@@ -187,7 +187,7 @@ const Markdown = ({ textContent, isError = false }: textContentProp) => {
                     } else {
                         return (
                             <code
-                                className={`bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono ${currentMode === "normal" ? "text-black" : "text-white"}`}
+                                className={`px-1.5 py-0.5 rounded text-sm font-mono ${currentMode === "normal" ? "text-black bg-gray-100" : "text-white bg-black"}`}
                                 {...props}
                             >
                                 {children}
