@@ -36,6 +36,7 @@ function groupChatMessages(chatMessages: any) {
           verse_audio_data: msg.audio_data,
           has_verse_image: msg.has_verse_image,
           verse_images: msg.verse_images,
+          is_error: msg.is_error ?? false,
           story_data: msg.story_data
 
         };
