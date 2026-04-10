@@ -208,8 +208,6 @@ export interface BaseOutgoingMessage {
 export interface SessionInitMessage extends BaseOutgoingMessage {
   type: "session-init";
   session_id: string;
-  user_id: string | null;
-  model: string;
   mode:string | null;
 }
 
@@ -235,7 +233,6 @@ export interface ChatHistoryRequest extends BaseOutgoingMessage {
 export interface DeleteSessionRequest extends BaseOutgoingMessage {
   type: "delete_session";
   session_id: string;
-  user_id: string;
 }
 
 // Delete all sessions
@@ -646,4 +643,11 @@ export interface PersonalizationResponse {
   age: number | null;
   is_personalized: boolean;
   timestamp: string;
+}
+
+interface Action{
+  action: "assistance_response" | "get_chat" | "chat_history" | "voice_message_upload" | "attach_files" | "session-init" | "delete-session" | "delete-all-sessions" | "get-images"
+}
+export interface ResponseBasedActions {
+  
 }

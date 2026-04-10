@@ -48,7 +48,7 @@ def submit_feedback(user_feedback:Literal['like', 'dislike'], assistant_response
 
             if not trait_category or not trait:
                 print("Category or trait is not defined. Can't proceed!")
-                raise ValueError("Category or trait is not defined. Can't proceed!")
+                continue
             
             if categories:
                 for row in categories:
@@ -62,7 +62,8 @@ def submit_feedback(user_feedback:Literal['like', 'dislike'], assistant_response
                             # if rule exists increase weight by 0.1
                             rule_id = response.rule_id
                             if not rule_id:
-                                raise ValueError("No rule_id, can't adjust weight of the existing rule!")
+                                print("No rule_id, can't adjust weight of the existing rule!")
+                                continue
                             
                             print(f"Incrementing weight of rule with rule_id {rule_id}")
                             result = supabase_client.table("chat_rules").select("weight").eq("rule_id", rule_id).eq("user_id", user_id).limit(1).execute()
@@ -82,7 +83,8 @@ def submit_feedback(user_feedback:Literal['like', 'dislike'], assistant_response
                             rule = response.new_rule
                             category = response.category
                             if not rule or not category:
-                                raise ValueError("No rule and category, can't proceed")
+                                print("No rule and category, can't proceed")
+                                continue
                             # insert a new rule with a small weight
                             supabase_client.table("chat_rules").insert({"rule": rule, "category": category, "weight": 0.3, "hard_rule": False, "message_id": message_id, "user_id": user_id}).execute()
 
@@ -111,7 +113,6 @@ def handle_feedback(type, message, message_id, user_id):
         supabase_client.table("chat_messages") \
             .update({"feedback": type}) \
             .eq("message_id", message_id) \
-            .eq("user_id", user_id) \
             .execute()
 
         print("✅ Successfully submitted user feedback!")

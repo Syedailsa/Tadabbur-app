@@ -27,7 +27,6 @@ async def refresh_system_instructions(state: dict, user_id:str):
             supabase_client = get_supabase_client()
             # fetch those rules whose weight exceeds 0.8 and build the dynamic system instructions
             system_rules = supabase_client.table('chat_rules').select('rule','category', 'hard_rule').eq("user_id", user_id).or_("weight.gte.0.7,hard_rule.eq.True").execute().data
-            print("Refreshing system instructions")
             dynamic_system_instruction_string = ""
             if system_rules:
                 system_rules = group_by_category(system_rules)
@@ -71,7 +70,6 @@ async def refresh_system_instructions(state: dict, user_id:str):
                                 dynamic_system_instruction_string += f'{i}. {rule} \n'
                     
             state["text"] = dynamic_system_instruction_string       
-            print("Dynamic string in function", dynamic_system_instruction_string) 
         except Exception as e:
             print("Some error occured while building system instructions", e)
         

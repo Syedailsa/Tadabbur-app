@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import PromptExtraOptionsModelBox from "./PromptExtraOptionsModelBox";
 import ThumbsUp from "../../../../icons/thumbs-up.svg";
 import ThumbsDown from "../../../../icons/thumbs-down.svg";
+import ProgressCircle from "../../../../icons/progress_icon.svg"
 import Copy from "../../../../icons/copy.svg";
 import Refresh from "../../../../icons/refresh.svg";
 import MoreOptions from "../../../../icons/more_options.svg";
@@ -42,14 +43,18 @@ const PromptExtraOptions = ({
     boolean | null
   >(true);
 
+
+  // const hidePromptExtraOptionsModelBox = hidePromptExtraOptionsModelBoxArray.find((m: hidePromptExtraOptionsModelBoxArray) => m.assistant_message_id == message_id)?.hidePromptExtraOptionsModelBox
+  const inProcessLike = messages.find((m: ChatMessage) => m.message_id === reply_to_message_id)?.responses.find((n) => n.message_id === message_id)?.clicked_feedback[0] ?? false
+
+  const inProcessDislike = messages.find((m: ChatMessage) => m.message_id === reply_to_message_id)?.responses.find((n) => n.message_id === message_id)?.clicked_feedback[1] ?? false
   const feedback =
     assistant_index == null
       ? null
-      : messages?.[parent_index]?.responses?.[assistant_index]?.feedback ?? null;
+      : messages.find((m: ChatMessage) => m.message_id === reply_to_message_id)?.responses.find((n) => n.message_id === message_id)?.feedback ?? null;
 
-  const hasMultipleResponses =
+      const hasMultipleResponses =
     (messages?.[parent_index]?.number_of_responses ?? 0) > 1;
-
 
   useEffect(() => {
     setHidePromptExtraOptionsModelBoxArray((prev: hidePromptExtraOptionsModelBoxArray[]) => prev.map(m => m.assistant_message_id == message_id ? { ...m, hidePromptExtraOptionsModelBox: true } : m))
@@ -57,9 +62,9 @@ const PromptExtraOptions = ({
 
   const active_message_index = messages?.[parent_index]?.active_message_index ?? 0
   const hidePromptExtraOptionsModelBox = hidePromptExtraOptionsModelBoxArray.find((m: hidePromptExtraOptionsModelBoxArray) => m.assistant_message_id == message_id)?.hidePromptExtraOptionsModelBox
-
   const theme = currentMode === "normal" ? "black" : "white"
   type OptionType = "copy" | "resend" | "liked" | "disliked";
+
   const handleOptionClick = ({ type }: { type: OptionType }) => {
     if (parent_index === null) return
     switch (type) {
@@ -81,7 +86,7 @@ const PromptExtraOptions = ({
           .catch((err) => console.error("Failed to copy", err));
         break;
       case "liked":
-        if (feedback === "liked") {
+        if (feedback === "liked" || inProcessLike) {
           break
         }
         if (assistant_index != null) {
@@ -96,29 +101,15 @@ const PromptExtraOptions = ({
             }).catch(() => { })
 
         }
-
         setHidePromptExtraOptionsModelBoxArray((prev: hidePromptExtraOptionsModelBoxArray[]) => prev.map(m => m.assistant_message_id === message_id ? { ...m, hidePromptExtraOptionsModelBox: true } : m))
         if (messages && setMessages) {
-          setMessages((prev: ChatMessage[]) =>
-            prev.map((m, i) =>
-              i === parent_index
-                ? {
-                  ...m,
-                  responses: m.responses.map((r, j) =>
-                    j === assistant_index
-                      ? { ...r, feedback: "liked" }
-                      : r
-                  )
-                }
-                : m
-            )
-          );
-
+          setMessages((prev: ChatMessage[]) => {
+            return prev.map((m) => m.message_id === reply_to_message_id ? { ...m, responses: m.responses.map((n) => n.message_id === message_id ? { ...n, clicked_feedback: [true, n.clicked_feedback[1]] } : n) } : m)
+          })
         }
-
         break;
       case "disliked":
-        if (feedback === "disliked") {
+        if (feedback === "disliked" || inProcessDislike) {
           break
         }
         if (assistant_index != null) {
@@ -136,21 +127,9 @@ const PromptExtraOptions = ({
 
         setHidePromptExtraOptionsModelBoxArray((prev: hidePromptExtraOptionsModelBoxArray[]) => prev.map(m => m.assistant_message_id === message_id ? { ...m, hidePromptExtraOptionsModelBox: true } : m))
         if (messages && setMessages) {
-          setMessages((prev: ChatMessage[]) =>
-            prev.map((m, i) =>
-              i === parent_index
-                ? {
-                  ...m,
-                  responses: m.responses.map((r, j) =>
-                    j === assistant_index
-                      ? { ...r, feedback: "disliked" }
-                      : r
-                  )
-                }
-                : m
-            )
-          );
-
+          setMessages((prev: ChatMessage[]) => {
+            return prev.map((m) => m.message_id === reply_to_message_id ? { ...m, responses: m.responses.map((n) => n.message_id === message_id ? { ...n, clicked_feedback: [n.clicked_feedback[0], true] } : n) } : m)
+          })
         }
         break;
       case "resend":
@@ -244,7 +223,7 @@ const PromptExtraOptions = ({
           <div
             onMouseOver={() => {
               setOverlayTranslateAmount(hasMultipleResponses ? 120 : 38);
-              setOverlayText("Like");
+              setOverlayText(inProcessLike ? "Submitting feedback" : "Like");
               setActive(true);
             }}
             onMouseLeave={() => {
@@ -254,19 +233,26 @@ const PromptExtraOptions = ({
               handleOptionClick({ type: "liked" });
             }}
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
-          ><div style={{
-            color: feedback === "liked" ? "#60A5FA" : currentMode === "normal" ? "#000000" : "#ffffff",
-          }}>
-              <ThumbsUp
-                className="w-4 h-4 fill-current"
-              />
-            </div>
+          >
+            {inProcessLike ? (
+              <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.3, repeat: Infinity, repeatType: "loop" }} style={{ color: currentMode === "normal" ? "#000000" : "#ffffff" }}>
+                <ProgressCircle className={`w-4.5 h-4.5 fill-current ${currentMode === "normal" ? "#000000" : "#ffffff"}`} />
+              </motion.div>
+            ) : (
+              <div style={{
+                color: feedback === "liked" ? "#60A5FA" : currentMode === "normal" ? "#000000" : "#ffffff",
+              }}>
+                <ThumbsUp
+                  className="w-4 h-4 fill-current"
+                />
+              </div>)}
+
           </div>
 
           <div
             onMouseOver={() => {
               setOverlayTranslateAmount(hasMultipleResponses ? 150 : 64);
-              setOverlayText("Dislike");
+              setOverlayText(inProcessDislike ? "Submitting feedback" : "DisLike");
               setActive(true);
             }}
             onMouseLeave={() => {
@@ -276,13 +262,17 @@ const PromptExtraOptions = ({
               handleOptionClick({ type: "disliked" });
             }}
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
-          ><div style={{
-            color: feedback === "disliked" ? "#F87171" : currentMode === "normal" ? "#000000" : "#ffffff"
+          >{inProcessDislike ? (
+            <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.2, repeat: Infinity, repeatType: "loop" }} style={{ color: currentMode === "normal" ? "#000000" : "#ffffff" }}>
+                <ProgressCircle className={`w-4.5 h-4.5 fill-current ${currentMode === "normal" ? "#000000" : "#ffffff"}`} />
+            </motion.div>
+          ) : (<div style={{
+            color: feedback === "disliked" ? "#F87171" : currentMode === "normal" ? "#000000" : "#ffffff",
           }}>
-              <ThumbsDown
-                className="w-4 h-4 fill-current"
-              />
-            </div>
+            <ThumbsDown
+              className="w-4 h-4 fill-current"
+            />
+          </div>)}
           </div>
           <div
             onMouseOver={() => {
@@ -305,8 +295,6 @@ const PromptExtraOptions = ({
               setOverlayTranslateAmount(hasMultipleResponses ? 132 : 102);
             }}
             onClick={() => {
-              console.log("Toggle hidepromptExtraOptions!")
-              console.log("message id", message_id)
               setHidePromptExtraOptionsModelBoxArray((prev: hidePromptExtraOptionsModelBoxArray[]) => prev.map(m => m.assistant_message_id === message_id ? { ...m, hidePromptExtraOptionsModelBox: !m.hidePromptExtraOptionsModelBox } : m))
             }}
 

@@ -72,7 +72,6 @@ const PromptExtraOptionsModelBox = ({
                 ?.content || "",
             message_id: message_id,
             reply_to_message_id: reply_to_message_id,
-            session_id: sessionID,
           });
 
           setMessages((prev: ChatMessage[]) =>
@@ -135,7 +134,6 @@ const PromptExtraOptionsModelBox = ({
         ) : audio_state === "playing" ? (
           <div onClick={() => {
             audioRef?.current?.pause()
-
           }} className={`w-full flex rounded-md items-center p-1 ${backgroundTheme === "white" ? "hover:bg-black/5" : "hover:bg-neutral-700/80"} cursor-pointer`}>
             <Pause className={`ml-2 w-5 h-5 fill-current ${fontTheme === "black" ? "text-black/80" : "text-white"}`} />
             <p className={`ml-2 switzer-500 text-[0.94rem] text-${fontTheme}`}>Pause</p>

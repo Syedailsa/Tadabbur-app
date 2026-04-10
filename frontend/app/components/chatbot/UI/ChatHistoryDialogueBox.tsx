@@ -126,7 +126,7 @@ const handleDeleteSession = (e: React.MouseEvent, chat: ChatRecord) => {
   }
 
   const pending = JSON.parse(localStorage.getItem("tadabbur_pending_deletes") || "[]");
-  pending.push({ type: "delete_session", user_id, session_id: chat.session_id });
+  pending.push({ type: "delete_session", session_id: chat.session_id });
   localStorage.setItem("tadabbur_pending_deletes", JSON.stringify(pending));
 
   const isSocketClosed = !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN;

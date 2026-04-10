@@ -37,6 +37,7 @@ interface AssistantMessage {
   verse_images: SurahForVerseImages[]
   is_error?: boolean
   story_data: StoryParagraph[]
+  clicked_feedback: [boolean, boolean]
 }
 
 type StoryParagraph = {
