@@ -37,8 +37,8 @@ function groupChatMessages(chatMessages: any) {
           has_verse_image: msg.has_verse_image,
           verse_images: msg.verse_images,
           is_error: msg.is_error ?? false,
-          story_data: msg.story_data
-
+          story_data: msg.story_data,
+          clicked_feedback: [false, false]
         };
         userMsg.responses.push(assistantMsg);
         userMsg.number_of_responses = userMsg.responses.length;

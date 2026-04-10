@@ -63,20 +63,3 @@ def insert_report_rule(supabase_client, message_id: str, feedback:str, user_id: 
         f"Failed to insert hard rule after 8 attempts"
     ) from last_error
 
-
-def delete_report_rule(supabase_client, message_id:str, user_id: str):
-    # insert rule in the feedback system
-    for i in range(8):
-        try:
-            print("Deleting hard rule...")
-            supabase_client.table('chat_rules').delete().eq("user_id", user_id).eq("message_id", message_id).execute()
-            print(f"✅ Hard rule with message_id {message_id} deleted successfully!")
-            return  # Success, return 
-        except Exception as e:
-            print("Some error occurred deleting the hard rule:", e)
-            print(f"Trying again, total tries {i+1}/8")
-            last_error = e
-    
-    raise RuntimeError(
-        f"Failed to delete hard rule after 8 attempts"
-    ) from last_error

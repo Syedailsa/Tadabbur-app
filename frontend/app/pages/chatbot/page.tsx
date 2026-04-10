@@ -1,10 +1,7 @@
 "use client";
 
 import type React from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeRaw from "rehype-raw";
-import { ReactNode, useEffect, useRef, useState, CSSProperties, HTMLAttributes, Suspense } from "react";
+import { useEffect, useRef, useState, HTMLAttributes, Suspense } from "react";
 import Image from "next/image"
 import ChatProvider from "@/app/providers/chatbot/ChatProvider";
 import DisclaimerIcon from "../../../icons/disclaimer.svg";
@@ -19,8 +16,6 @@ import EngagingIcon from "../../../icons/engage_icon.svg"
 import ArrowLeft from "../../../icons/arrow-left-bold.svg"
 import UndoArrow from "../../../icons/refresh.svg";
 import { AssistantMessage, Attachment, StoryParagraph } from "@/app/components/chatbot/interfaces/ChatMessage";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { dracula } from "react-syntax-highlighter/dist/esm/styles/prism";
 import {
   motion,
   easeInOut,
@@ -35,9 +30,9 @@ import { defaultPromptsNormalMode, defaultPromptsStoryMode } from "@/static/data
 import BottomOptions from "../../components/chatbot/UI/BottomOptions";
 import ExtraOptions from "../../components/chatbot/UI/ExtraOptions";
 import MicStoryMode from "@/app/components/chatbot/UI/MicStoryMode";
-import ModelBox from "../../components/chatbot/UI/ModelBox";
 import PromptExtraOptions from "../../components/chatbot/UI/PrompExtraOptions";
 import generateUUID from "@/app/utils/generateShortId";
+import generateSessionId from "@/app/utils/generateSessionID";
 import { SurahForAudios, SurahForVerseImages } from "@/app/components/chatbot/interfaces/Surah";
 import ReportContentDialogueBox from "../../components/chatbot/UI/ReportContentDialogueBox";
 import { ChatMessage } from "../../components/chatbot/interfaces/ChatMessage";
@@ -177,47 +172,6 @@ function ChatContent() {
     })
   }
 
-  const isStoryMode = active[1]
-
-  useEffect(() => {
-    if (!isStoryMode || !wsRef.current) return
-
-    const initializeStoryMode = async () => {
-      const user = localStorage.getItem("user");
-      let user_id = null;
-      if (user) {
-        try {
-          const userData = JSON.parse(user);
-          user_id = userData.id;
-        } catch (e) {
-          console.error("Error parsing user data:", e);
-        }
-      }
-      const sessionInit: SessionInitMessage = {
-        type: "session-init",
-        session_id: "",
-        user_id: user_id,
-        model: "",
-        mode: "story"
-      };
-
-      try {
-        await wsSendAsync(
-          wsRef.current,
-          sessionInit,
-          8,
-          500
-        );
-      }
-      catch (error) {
-        console.error("❌ Failed to initialize WebSocket session:", error);
-        showFriendlyError("session-init");
-      }
-    }
-    initializeStoryMode()
-
-  }, [isStoryMode])
-
   useEffect(() => {
     const savedPrompt = localStorage.getItem("tadabbur_pending_prompt");
     if (savedPrompt) {
@@ -290,6 +244,7 @@ function ChatContent() {
       if (currentPlayableAudio.current) {
         currentPlayableAudio.current.state = "playing"
       }
+      console.log("Play fired!")
       setMessages(prev =>
         prev.map(m =>
           m.message_id === currentPlayableAudio.current?.user_message_id
@@ -313,6 +268,7 @@ function ChatContent() {
       if (currentPlayableAudio.current) {
         currentPlayableAudio.current.state = "paused"
       }
+      console.log("Paused fired!")
       setMessages(prev =>
         prev.map(m =>
           m.message_id === currentPlayableAudio.current?.user_message_id
@@ -334,6 +290,7 @@ function ChatContent() {
       if (currentPlayableAudio.current) {
         currentPlayableAudio.current.state = "ended"
       }
+      console.log("Ended fired!")
       setMessages(prev =>
         prev.map(m =>
           m.message_id === currentPlayableAudio.current?.user_message_id
@@ -438,13 +395,14 @@ function ChatContent() {
     };
   }, []);
 
-
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.textContent = ""
       setShowPlaceholder(true)
     }
     setIsInputBoxAdaptable(false)
+    setIsRecording(false)
+    setIsTranscribing(false)
   }, [currentMode])
 
   useEffect(() => {
@@ -528,41 +486,29 @@ function ChatContent() {
         reconnectAttemptRef.current = 0;
         totalReconnectAttempts.current = 0;
         const user = localStorage.getItem("user");
-        let user_id = null;
-        if (user) {
-          try {
-            const userData = JSON.parse(user);
-            user_id = userData.id;
-          } catch (e) {
-            console.error("Error parsing user data:", e);
-          }
-        }
-
-        const sessionInit: SessionInitMessage = {
-          type: "session-init",
-          session_id: urlSessionId || "",
-          user_id: user_id,
-          model: "kimi-k2-instruct-0905",
-          mode: currentMode
-        };
 
         try {
-          await wsSendAsync(
-            websocket,
-            sessionInit,
-            8,
-            500
-          );
-          if (urlSessionId) {
+          if (typeof urlSessionId === 'string' && urlSessionId.length > 0) {
+            console.log("Sending get_chat")
             await wsSendAsync(
               websocket, {
               type: "get_chat",
               session_id: urlSessionId,
-              user_id: user_id,
             }, 8, 500)
           } else {
-            // If no history to fetch, we are ready immediately
-            setConnectionStatus("connected");
+            const sessionID = generateSessionId()
+            const sessionInit: SessionInitMessage = {
+              type: "session-init",
+              session_id: sessionID,
+              mode: currentMode
+            };
+            console.log("Sending session init")
+            await wsSendAsync(
+              websocket,
+              sessionInit,
+              8,
+              500
+            );
           }
 
         } catch (error) {
@@ -633,30 +579,51 @@ function ChatContent() {
             break;
 
           case "tts_audio_url":
-            const audio_url = data.audio_url;
-            const tts_message_id = data.message_id;
-            const user_message_id = data.user_id
-            if (audio_url && tts_message_id && user_message_id) {
-              // logic here
-              try {
-                // store the audio_url for next playback
-                setMessages(prev => prev.map(m => m.message_id === user_message_id ? { ...m, responses: m.responses.map(r => r.message_id === tts_message_id ? { ...r, audio_link: audio_url } : r) } : m))
+            const tts_audio_status = data.status
+            if (tts_audio_status === "acknowledged") {
+              const audio_url = data.audio_url;
+              const tts_message_id = data.message_id;
+              const user_message_id = data.user_id
+              if (audio_url && tts_message_id && user_message_id) {
+                // logic here
+                try {
+                  // store the audio_url for next playback
+                  setMessages(prev => prev.map(m => m.message_id === user_message_id ? { ...m, responses: m.responses.map(r => r.message_id === tts_message_id ? { ...r, audio_link: audio_url } : r) } : m))
 
-                // only play if current playable audio is the one that matches response ID
-                if (audioRef.current && currentPlayableAudio.current?.response_message_id == tts_message_id) {
-                  audioRef.current.src = ""
-                  audioRef.current.src = audio_url
-                  audioRef.current.play()
+                  // only play if current playable audio is the one that matches response ID
+                  if (audioRef.current && currentPlayableAudio.current?.response_message_id == tts_message_id) {
+                    audioRef.current.src = ""
+                    audioRef.current.src = audio_url
+                    audioRef.current.play()
+                  }
+                } catch (err) {
+                  console.log("Some error occured while assigning audio url", err)
                 }
-              } catch (err) {
-                console.log("Some error occured while assigning audio url", err)
               }
             }
+
             break;
 
           case "session_id":
+            // reset everything  
+            audioRef?.current?.pause()
             setCurrentMode(null)
             setError(null)
+            setMessages(prev =>
+              prev.map(m =>
+                m.message_id === currentPlayableAudio.current?.user_message_id
+                  ? {
+                    ...m,
+                    responses: m.responses.map(n =>
+                      n.message_id === currentPlayableAudio.current?.response_message_id
+                        ? { ...n, audio_state: "ended" }
+                        // nullify the rest
+                        : { ...n, audio_state: null }
+                    ),
+                  }
+                  : { ...m, responses: m.responses.map(b => ({ ...b, audio_state: null })) }
+              )
+            );
             const session_id = data.session_id;
             const session_status = data.status;
             const message_ids = data.message_ids;
@@ -687,20 +654,20 @@ function ChatContent() {
 
             break;
 
-            case "error":
-              setMessages(prev => {
-                const updated = [...prev];
-                const lastMsg = updated[updated.length - 1];
-                if (lastMsg && lastMsg.responses) {
-                  lastMsg.responses = lastMsg.responses.filter(r => r.content !== "");
-                }
-                return updated;
-              });
-              setLoading(false);
-              setLoadingMessage(null);
-              setIsGenerating(false);
-              setError(data.message); 
-              break;
+          case "error":
+            setMessages(prev => {
+              const updated = [...prev];
+              const lastMsg = updated[updated.length - 1];
+              if (lastMsg && lastMsg.responses) {
+                lastMsg.responses = lastMsg.responses.filter(r => r.content !== "");
+              }
+              return updated;
+            });
+            setLoading(false);
+            setLoadingMessage(null);
+            setIsGenerating(false);
+            setError(data.message);
+            break;
 
           case "chat_history":
             const chat_history = data.chat_history;
@@ -712,10 +679,10 @@ function ChatContent() {
               showFriendlyError("chat_history");
             }
             break;
-          
+
           case "delete_session":
             const delete_status = data.status;
-            if (delete_status === "success") {
+            if (delete_status === "acknowledged") {
               window.dispatchEvent(new CustomEvent("tadabbur-session-deleted", {
                 detail: { session_id: data.session_id }
               }));
@@ -732,12 +699,10 @@ function ChatContent() {
                 const u = localStorage.getItem("user");
                 let uid = null;
                 try { uid = u ? JSON.parse(u).id : null; } catch { }
-
+                const sessionID = generateSessionId()
                 wsSendAsync(wsRef.current, {
                   type: "session-init",
-                  session_id: "",
-                  user_id: uid,
-                  model: "kimi-k2-instruct-0905",
+                  session_id: sessionID,
                 });
               }
 
@@ -750,7 +715,6 @@ function ChatContent() {
                 user_id = userData.id;
               } catch (e) {
                 console.error("Error parsing user data:", e);
-
               }
 
               if (user_id) {
@@ -765,8 +729,6 @@ function ChatContent() {
               const pending: PendingDelete[] = JSON.parse(localStorage.getItem("tadabbur_pending_deletes") || "[]");
               const updated = pending.filter((op) => op.session_id !== data.session_id);
               localStorage.setItem("tadabbur_pending_deletes", JSON.stringify(updated));
-
-            } else {
 
             }
             break;
@@ -788,13 +750,6 @@ function ChatContent() {
               wsSendAsync(wsRef.current, {
                 type: "session-init",
                 session_id: "",
-                user_id: (() => {
-                  try {
-                    const u = localStorage.getItem("user");
-                    return u ? JSON.parse(u).id : null;
-                  } catch { return null; }
-                })(),
-                model: "kimi-k2-instruct-0905",
               });
             }
             break;
@@ -811,8 +766,25 @@ function ChatContent() {
           case "get_chat":
             setError(null)
             const status = data.status;
-            const mode: "story" | "normal" = data.mode;
             if (status === "acknowledged") {
+              // reset audio
+              audioRef?.current?.pause()
+              setMessages(prev =>
+                prev.map(m =>
+                  m.message_id === currentPlayableAudio.current?.user_message_id
+                    ? {
+                      ...m,
+                      responses: m.responses.map(n =>
+                        n.message_id === currentPlayableAudio.current?.response_message_id
+                          ? { ...n, audio_state: "ended" }
+                          // nullify the rest
+                          : { ...n, audio_state: null }
+                      ),
+                    }
+                    : { ...m, responses: m.responses.map(b => ({ ...b, audio_state: null })) }
+                )
+              );
+              const mode: "story" | "normal" = data.mode;
               const messageIDs = data.unique_message_ids;
               const session_id = data.session_id
               const chat_history = groupChatMessages(data.chat_history);
@@ -832,7 +804,6 @@ function ChatContent() {
 
                   if (isCorrectSession && pendingData.input) {
                     console.log("🚀 Connection restored. Sending pending prompt from localStorage...");
-
                     ask(
                       pendingData.input,
                       pendingData.guidelines,
@@ -867,138 +838,170 @@ function ChatContent() {
             break;
 
           case "assistance_response":
-            const reply: string = data.content.response ?? "No reply from server";
-            const has_verse_audio: boolean = data.content.has_verse_audio || false
-            const has_verse_image: boolean = data.content.has_verse_image || false
-            const is_error: boolean = data.is_error || false;
-            const message_id: string = data.message_id;
-            // assign reply to message ID with order data.reply_to_message_id >> currentMessageIDRef.current >> null
-            const reply_to_message_id =
-              data.reply_to_message_id || currentMessageIDRef.current || null;
-            const resend_flag = data.resend_flag;
-            const audio_data: SurahForAudios[] = data.content.audio_data || []
-            const verse_images: SurahForVerseImages[] = data.content.verse_images || []
-            const story_data: StoryParagraph[] = data.content.story_segments ?? []
-            // check if oldMessages is present with resend flag
-            if (resend_flag) {
-              if (
-                !oldMessagesRef.current ||
-                oldMessagesRef.current.length === 0
-              ) {
-                // console.log("No old messages so returning...");
-                break;
-              }
-            }
-
-            messageScrollFlag.current = false;
-            setLoadingMessage(null);
-
-            setHidePromptExtraOptionsModelBoxArray((prev) => {
-              return [
-                ...(prev || []),
-                { assistant_message_id: message_id, hidePromptExtraOptionsModelBox: true }
-              ];
-            });
-
-            // Add a new assistant message
-            setMessages((prev) => {
-              if (!prev || prev.length == 0) {
-                return prev;
-              }
-              const updated = [...(prev || [])];
-
-              const targetIndex = reply_to_message_id
-                ? updated.findIndex((m) => m.message_id === reply_to_message_id)
-                : updated.length - 1;
-
-              // If not found, return unchanged
-              if (targetIndex === -1) {
-                console.warn("⚠️ Could not find target message for assistance_response, skipping");
-                return prev;
+            const assistant_response_status = data.status
+            if (assistant_response_status === "acknowledged") {
+              const reply: string = data.content.response ?? "No reply from server";
+              const has_verse_audio: boolean = data.content.has_verse_audio || false
+              const has_verse_image: boolean = data.content.has_verse_image || false
+              const is_error: boolean = data.is_error || false;
+              const message_id: string = data.message_id;
+              // assign reply to message ID with order data.reply_to_message_id >> currentMessageIDRef.current >> null
+              const reply_to_message_id =
+                data.reply_to_message_id || currentMessageIDRef.current || null;
+              const resend_flag = data.resend_flag;
+              const audio_data: SurahForAudios[] = data.content.audio_data || []
+              const verse_images: SurahForVerseImages[] = data.content.verse_images || []
+              const story_data: StoryParagraph[] = data.content.story_segments ?? []
+              // check if oldMessages is present with resend flag
+              if (resend_flag) {
+                if (
+                  !oldMessagesRef.current ||
+                  oldMessagesRef.current.length === 0
+                ) {
+                  // console.log("No old messages so returning...");
+                  break;
+                }
               }
 
-              setStreamingMessageIndexSynced(targetIndex);
+              messageScrollFlag.current = false;
+              setLoadingMessage(null);
 
-              const targetMessage = updated[targetIndex];
+              setHidePromptExtraOptionsModelBoxArray((prev) => {
+                return [
+                  ...(prev || []),
+                  { assistant_message_id: message_id, hidePromptExtraOptionsModelBox: true }
+                ];
+              });
 
-              // Check if already rendered with content
-              const alreadyRendered = targetMessage.responses?.some(
-                (r) => r.message_id === message_id && r.content !== ""
-              );
-              if (alreadyRendered) return prev;
+              // Add a new assistant message
+              setMessages((prev) => {
+                if (!prev || prev.length == 0) {
+                  return prev;
+                }
+                const updated = [...(prev || [])];
 
-              if (!targetMessage.number_of_responses) {
-                targetMessage.number_of_responses = 1;
-              } else {
-                targetMessage.number_of_responses += 1;
-              }
-              targetMessage.responses = oldMessagesRef.current ?? []
-              targetMessage.responses.push({ role: "assistant", message_id: message_id, content: "", reply_to_message_id: reply_to_message_id, feedback: null, audio_link: null, audio_state: null, has_verse_audio: has_verse_audio, verse_audio_data: audio_data, has_verse_image: has_verse_image, verse_images: verse_images,is_error: is_error, story_data: story_data });
-              targetMessage.active_message_index = targetMessage.number_of_responses - 1;
+                const targetIndex = reply_to_message_id
+                  ? updated.findIndex((m) => m.message_id === reply_to_message_id)
+                  : updated.length - 1;
 
-              return updated;
-            });
+                // If not found, return unchanged
+                if (targetIndex === -1) {
+                  console.warn("⚠️ Could not find target message for assistance_response, skipping");
+                  return prev;
+                }
+
+                setStreamingMessageIndexSynced(targetIndex);
+
+                const targetMessage = updated[targetIndex];
+
+                // Check if already rendered with content
+                const alreadyRendered = targetMessage.responses?.some(
+                  (r) => r.message_id === message_id && r.content !== ""
+                );
+                if (alreadyRendered) return prev;
+
+                if (!targetMessage.number_of_responses) {
+                  targetMessage.number_of_responses = 1;
+                } else {
+                  targetMessage.number_of_responses += 1;
+                }
+                targetMessage.responses = oldMessagesRef.current ?? []
+                targetMessage.responses.push({ role: "assistant", message_id: message_id, content: "", reply_to_message_id: reply_to_message_id, feedback: null, audio_link: null, audio_state: null, has_verse_audio: has_verse_audio, verse_audio_data: audio_data, has_verse_image: has_verse_image, verse_images: verse_images, is_error: is_error, story_data: story_data, clicked_feedback: [false, false] });
+                targetMessage.active_message_index = targetMessage.number_of_responses - 1;
+
+                return updated;
+              });
 
 
-            setLoading(false);
-            setLoadingMessage(null);
-            setIsGenerating(true);
-            streamingContentRef.current = "";
-            currentStreamingMsgRef.current = {
-              message_id: message_id,
-              reply_to_message_id: reply_to_message_id || ""
-            };
-            const tokens = reply.split(/(\s+)/);
-
-            let stopFlag = false;
-            stopStreamRef.current = () => { stopFlag = true; };
-
-            (async () => {
-              for (let i = 0; i < tokens.length; i += 4) {
-                if (stopFlag) break;
-
-                const chunk = tokens.slice(i, i + 4).join("");
-                await new Promise((resolve) => setTimeout(resolve, 2));
-
-                if (stopFlag) break;
-
-                setMessages((prev) => {
-                  if (!prev || prev.length === 0) return prev;
-                  const updated = [...prev];
-
-                  const streamIndex = streamingMessageIndex ?? updated.length - 1;
-                  if (streamIndex >= 0 && streamIndex < updated.length) {
-                    const lastMsg = updated[streamIndex];
-                    // console.log("Last User Message", lastMsg)
-                    if (!lastMsg.responses || lastMsg.responses.length === 0) return prev;
-                    const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
-
-                    updated[streamIndex].responses[lastResIdx].content =
-                      (updated[streamIndex].responses[lastResIdx]?.content || "") +
-                      chunk;
-                    streamingContentRef.current = updated[streamIndex].responses[lastResIdx].content;
-                  }
-                  return updated;
-                });
-              }
-            })().then(() => {
-              stopStreamRef.current = null;
-              setStreamingMessageIndexSynced(null);
-              setIsGenerating(false);
-              currentStreamingMsgRef.current = null;
+              setLoading(false);
+              setLoadingMessage(null);
+              setIsGenerating(true);
               streamingContentRef.current = "";
-            });
+              currentStreamingMsgRef.current = {
+                message_id: message_id,
+                reply_to_message_id: reply_to_message_id || ""
+              };
+              const tokens = reply.split(/(\s+)/);
+
+              let stopFlag = false;
+              stopStreamRef.current = () => { stopFlag = true; };
+
+              (async () => {
+                for (let i = 0; i < tokens.length; i += 4) {
+                  if (stopFlag) break;
+
+                  const chunk = tokens.slice(i, i + 4).join("");
+                  await new Promise((resolve) => setTimeout(resolve, 2));
+
+                  if (stopFlag) break;
+
+                  setMessages((prev) => {
+                    if (!prev || prev.length === 0) return prev;
+                    const updated = [...prev];
+
+                    const streamIndex = streamingMessageIndex ?? updated.length - 1;
+                    if (streamIndex >= 0 && streamIndex < updated.length) {
+                      const lastMsg = updated[streamIndex];
+                      // console.log("Last User Message", lastMsg)
+                      if (!lastMsg.responses || lastMsg.responses.length === 0) return prev;
+                      const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
+
+                      updated[streamIndex].responses[lastResIdx].content =
+                        (updated[streamIndex].responses[lastResIdx]?.content || "") +
+                        chunk;
+                      streamingContentRef.current = updated[streamIndex].responses[lastResIdx].content;
+                    }
+                    return updated;
+                  });
+                }
+              })().then(() => {
+                stopStreamRef.current = null;
+                setStreamingMessageIndexSynced(null);
+                setIsGenerating(false);
+                currentStreamingMsgRef.current = null;
+                streamingContentRef.current = "";
+              });
+            }
             break;
 
           case "stop_acknowledged":
-            // reset states related to streaming
-            setIsGenerating(false);
-            setStreamingMessageIndexSynced(null);
-            setLoading(false);
-            currentStreamingMsgRef.current = null;
-            streamingContentRef.current = "";
-            break;
+            const stop_generation_status = data.status
+            if (stop_generation_status === "acknowledged") {
+              // reset states related to streaming
+              setIsGenerating(false);
+              setStreamingMessageIndexSynced(null);
+              setLoading(false);
+              currentStreamingMsgRef.current = null;
+              streamingContentRef.current = "";
+              break;
+            }
 
+          case "feedback":
+            const feedback_status = data.status
+            if (feedback_status === "acknowledged") {
+              const message_id = data.message_id
+              const feedback_type = data.feedback_type
+              const reply_to_message_id = data.reply_to_message_id
+              // add extra protection checks - even though not needed
+              if (message_id && ["liked", "disliked"].includes(feedback_type) && reply_to_message_id) {
+                setMessages((prev: ChatMessage[]) => {
+                  return prev.map((m) =>
+                    m.message_id === reply_to_message_id
+                      ? {
+                        ...m,
+                        responses: m.responses.map((r) =>
+                          r.message_id === message_id
+                            ? { ...r, feedback: feedback_type, clicked_feedback: feedback_type === "liked" ? [false, r.clicked_feedback[1]] : [r.clicked_feedback[0], false] }
+                            : r
+                        )
+                      }
+                      : m
+                  )
+                }
+                );
+              }
+            }
+            break
           case "agent":
             const agent_type = data.agent;
             switch (agent_type) {
@@ -1027,6 +1030,7 @@ function ChatContent() {
           case "regenerate_required":
             const orphanMsgId = data.message_id;
             const orphanContent = data.content;
+
             if (orphanMsgId && orphanContent) {
               console.log("🔄 Regenerating orphaned message:", orphanMsgId);
               setTimeout(() => {
@@ -1060,7 +1064,6 @@ function ChatContent() {
                 reported_message_id,
               ]);
             }
-
             break;
           default:
             break;
@@ -1224,13 +1227,12 @@ function ChatContent() {
     const attachments_array: Attachment[] = []
     if (fileContext) {
       if (attachedFile?.name && attachedFile?.type) {
-        attachments_array.push({ attachmentName: attachedFile.name, attachmentType: attachedFile?.type })
+        attachments_array.push({ attachmentName: attachedFile.name, attachmentType: attachedFile.type })
       }
       // Reset file states
       setAttachedFile(null);
 
     }
-
     if (connectionStatus !== "connected" && !bypassCheck) {
       console.log("📡 Socket not ready. Saving prompt to pending queue.");
       const pendingData = {
@@ -1247,11 +1249,10 @@ function ChatContent() {
         localStorage.setItem("tadabbur_pending_prompt", JSON.stringify(pendingData));
         console.log("prompt saved to pending queue:", pendingData);
       } catch (error) {
-        console.warn("⚠️ LocalStorage full, message only saved in memory:", error);
+        console.warn("⚠️ Some error occured while saving prompt to local Storage, message only saved in memory:", error);
       }
       setShowOfflineToast(true);
       setTimeout(() => setShowOfflineToast(false), 4000);
-
       return;
     }
 
@@ -1277,6 +1278,7 @@ function ChatContent() {
           has_verse_image: false,
           verse_images: [],
           story_data: [],
+          clicked_feedback: [false, false]
         },
       ],
     };
@@ -1303,11 +1305,11 @@ function ChatContent() {
         role: "user",
         system_instructions: guidelines || "",
         content: input,
-        file_name: attachedFile?.name,
-        file_type: attachedFile?.type,
         resend_flag: resend_flag,
         resend_message_id: resend_message_id || "",
-        new_file_context: fileContext,
+        new_file_context: fileContext ?? "",
+        file_name: attachedFile?.name ?? null,
+        file_type: attachedFile?.type ?? null,
       });
       localStorage.removeItem("tadabbur_pending_prompt");
       setFileContext(null);
@@ -1753,30 +1755,36 @@ function ChatContent() {
                               </div>
                             ) : loadingMessage && !ai_msg.content ? (
                               <div key={ai_msg_idx} className="flex flex-col gap-y-2 mt-2 px-1">
-                                <p className={`switzer-500 text-sm animate-pulse ${currentMode === "normal" ? "text-black/40" : "text-white/60"}`}>{loadingMessage}</p>
-                                {Array.from({ length: paragraphCount }).map((_, i) => (
-                                  <div key={i} className="flex flex-col gap-y-3">
-                                    <div className="h-4 w-36 rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
-                                    <div className="flex flex-col gap-y-2">
-                                      <div className="h-3 w-full rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
-                                      <div className="h-3 w-[85%] rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
-                                      <div className="h-3 w-[70%] rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
+                                <div className={`flex items-center animate-pulse ${currentMode === "normal" ? "text-black/40" : "text-white/60"} sm:scale-105 md:scale-110`}>
+                                  <p className={`switzer-500 text-sm `}>{loadingMessage}</p>
+                                  <motion.div initial={{ x: 0 }} animate={{ x: 20 }} transition={{ duration: 1, ease: "linear", repeat: Infinity }} className="ml-2 mb-[2px]">
+                                    <ArrowLeft className="-rotate-180 w-3 h-3 fill-current" />
+                                  </motion.div>
+                                </div>
+                                {ai_msg.story_data?.length > 0 && (
+                                  Array.from({ length: paragraphCount }).map((_, i) => (
+                                    <div key={i} className="flex flex-col gap-y-3">
+                                      <div className="h-4 w-36 rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
+                                      <div className="flex flex-col gap-y-2">
+                                        <div className="h-3 w-full rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
+                                        <div className="h-3 w-[85%] rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
+                                        <div className="h-3 w-[70%] rounded-md bg-linear-to-r from-white/5 via-white/15 to-white/5 animate-pulse" />
+                                      </div>
+                                      <div className="w-[80%] sm:w-[50%] md:w-[45%] lg:w-[30%] h-auto aspect-video rounded-md bg-linear-to-br from-white/5 via-white/10 to-white/5 animate-pulse border border-white/5" />
                                     </div>
-                                    <div className="w-[80%] sm:w-[50%] md:w-[45%] lg:w-[30%] h-auto aspect-video rounded-md bg-linear-to-br from-white/5 via-white/10 to-white/5 animate-pulse border border-white/5" />
-                                  </div>
-                                ))}
+                                  ))
+                                )}
                               </div>
                             ) : reportedMessageIDs &&
                               !reportedMessageIDs.includes(ai_msg?.message_id) &&
                               ai_msg_idx === record.active_message_index ? (
                               <div key={ai_msg_idx}>
-                                <div className={`w-max min-w-40 max-w-full switzer-500 mt-2 rounded-md px-3 ${
-                                ai_msg.is_error
-                                ? "bg-red-50 border border-red-200 py-2"
-                                : currentMode === "normal"
-                                ? "bg-white shadow-md py-2"
-                                : ""
-                                }`}>
+                                <div className={`w-max min-w-40 max-w-full switzer-500 mt-2 rounded-md px-3 ${ai_msg.is_error
+                                  ? "bg-red-50 border border-red-200 py-2"
+                                  : currentMode === "normal"
+                                    ? "bg-white shadow-md py-2"
+                                    : ""
+                                  }`}>
                                   <Markdown textContent={ai_msg.content} isError={ai_msg.is_error} />
                                 </div>
 

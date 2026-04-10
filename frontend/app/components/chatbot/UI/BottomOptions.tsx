@@ -7,6 +7,8 @@ import StoryIcon from "../../../../icons/story_telling_icon.svg";
 import MicIcon from "../../../../icons/mic_icon.svg";
 import SendIcon from "../../../../icons/send_icon.svg"
 import { retryOperation, wsSendAsync } from "@/app/utils/retryOpernation";
+import { SessionInitMessage } from "@/app/utils/types";
+import generateSessionId from "@/app/utils/generateSessionID";
 
 
 const BottomOptions = () => {
@@ -33,9 +35,7 @@ const BottomOptions = () => {
   const audioChunksRef = useRef<Blob[]>([]); // Store audio chunks locally
   const fileInputRef = useRef<HTMLInputElement>(null);
   const micActive = useRef<boolean>(false);
-
-
-
+  const skipMicProcess = useRef<boolean>(false)
   const isMicActive = active[2];
 
   const startRecording = useCallback(async () => {
@@ -52,19 +52,21 @@ const BottomOptions = () => {
       mediaRecorderRef.current = mediaRecorder;
 
       // Collect Data
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        if (!skipMicProcess.current && event.data.size > 0) {
           audioChunksRef.current.push(event.data);
         }
       };
 
-      mediaRecorder.onstop = async () => {
+      mediaRecorderRef.current.onstop = async () => {
+
         stream.getTracks().forEach((track) => track.stop());
-
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-
-        if (audioBlob.size > 0) {
-          await uploadAudioForTranscription(audioBlob);
+        // Skip upload if we're unmounting
+        if (!skipMicProcess.current && audioChunksRef.current.length > 0) {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          if (audioBlob.size > 0) {
+            await uploadAudioForTranscription(audioBlob);
+          }
         }
       };
 
@@ -131,6 +133,28 @@ const BottomOptions = () => {
   };
 
 
+  const initializeStoryMode = async () => {
+    if (!wsRef.current) return
+    const sessionID = generateSessionId()
+    const sessionInit: SessionInitMessage = {
+      type: "session-init",
+      session_id: sessionID,
+      mode: "story"
+    };
+
+    try {
+      await wsSendAsync(
+        wsRef.current,
+        sessionInit,
+        8,
+        500
+      );
+    }
+    catch (error) {
+      console.error("❌ Failed to initialize a new WebSocket session:", error);
+    }
+  }
+
   useEffect(() => {
     if (isMicActive) {
       console.log("Starting mic");
@@ -148,6 +172,17 @@ const BottomOptions = () => {
     };
   }, [isMicActive, startRecording, stopRecording]);
 
+
+  // clean listeners on unmount
+  useEffect(() => {
+    return () => {
+      skipMicProcess.current = true; // Signal to skip upload
+
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop(); // This will trigger onstop
+      }
+    };
+  }, []);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -207,7 +242,7 @@ const BottomOptions = () => {
         >
           <AttachIcon className="fill-current text-black w-5.5 h-5.5" />
         </motion.div>
-        
+
         <motion.div
           id="mic-icon-box"
           whileTap={{ backgroundColor: "#0000003D" }}
@@ -249,19 +284,7 @@ const BottomOptions = () => {
 
         <motion.div
           id="story-telling-box"
-          onClick={async () => {
-            setActive((prev: boolean[]) => {
-              const current = [...prev];
-              if (current[1]) {
-                wsSendAsync(wsRef.current, { type: "agent", agent: "normal" });
-              } else {
-                wsSendAsync(wsRef.current, { type: "agent", agent: "story-telling" });
-              }
-              current[1] = !current[1];
-              return current;
-            });
-          }}
-          animate={{ backgroundColor: active[1] ? "#0000000D" : "#00000000" }}
+          onClick={initializeStoryMode}
           whileTap={{ backgroundColor: "#0000003D" }}
           whileHover={{ backgroundColor: "#0000000D" }}
           className="flex gap-x-1 px-3 py-1 rounded-full cursor-pointer items-center"

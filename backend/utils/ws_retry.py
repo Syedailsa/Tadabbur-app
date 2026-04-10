@@ -54,10 +54,6 @@ async def ws_send(
             logger.info(f"✅ [{label}] Sent successfully")
             return True
 
-        except WSDisconnectedError:
-            # Already a permanent disconnect — re-raise immediately
-            raise
-
         except WebSocketDisconnect:
             
             logger.warning(f"🔌 [{label}] WebSocketDisconnect — client gone")

@@ -20,7 +20,7 @@ const ChatHistoryCupboard = () => {
         localStorage.clear();
         router.push('/pages/auth');
     };
-    const { wsRef, openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox, setSelectedSessionID, chatHistory, currentMode } = useContext(ChatContext)!
+    const { wsRef, openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox, setSelectedSessionID, chatHistory, currentMode, sessionID } = useContext(ChatContext)!
     const cupBoardRef = useRef<HTMLDivElement>(null)
 
     const [toasts, setToasts] = useState<{ id: number; message: string }[]>([])
@@ -67,11 +67,10 @@ const ChatHistoryCupboard = () => {
                 return
             }
         }
-        console.log("User Id", user_id)
         wsSendAsync(wsRef.current, {
             type: "get_images",
             user_id: user_id
-        }).catch((error) => { 
+        }).catch((error) => {
             console.error('Failed to send get_images request:', error);
         })
         setOpenChatHistoryDialogueBox(false)
@@ -137,10 +136,13 @@ const ChatHistoryCupboard = () => {
                                 onClick={() => {
                                     setSelectedSessionID(chat.session_id);
                                     setOpenChatHistoryDialogueBox(false);
-                                    wsSendAsync(wsRef.current, {
-                                        type: "get_chat",
-                                        session_id: chat.session_id,
-                                    });
+                                    // only send get_chat request if current session is different from required session
+                                    if (chat.session_id != sessionID) {
+                                        wsSendAsync(wsRef.current, {
+                                            type: "get_chat",
+                                            session_id: chat.session_id,
+                                        });
+                                    }
                                 }}
                                 whileHover={{ backgroundColor: "#ffffff0d" }}
                                 key={chat.session_id || index}
@@ -193,7 +195,6 @@ const ChatHistoryCupboard = () => {
                                                 if (!wsRef.current) { showToast("Connection lost. Please refresh."); setConfirmState(null); return; }
                                                 wsSendAsync(wsRef.current, {
                                                     type: "delete_session",
-                                                    user_id: confirmState.userId,
                                                     session_id: confirmState.sessionId,
                                                 }).catch(() => showToast(`Error deleting "${confirmState.title}". Please try again.`));
                                                 setConfirmState(null);
@@ -218,10 +219,10 @@ const ChatHistoryCupboard = () => {
 
                 <div className={`mt-auto pt-2 border-t border-${fontTheme}/10`}>
                     <motion.div
-                        whileTap={{ scale: 0.99 }} whileHover={{ scale: 1.01 }} 
+                        whileTap={{ scale: 0.99 }} whileHover={{ scale: 1.01 }}
                         transition={{ duration: 0.4, ease: "linear" }}
                         onClick={handleLogout}
-                        className={`w-full flex items-center cursor-pointer justify-between px-1.5 py-2 rounded-md`}                    
+                        className={`w-full flex items-center cursor-pointer justify-between px-1.5 py-2 rounded-md`}
                     >
                         <p className={`switzer-500 text-sm tracking-tight text-${fontTheme}`}>Logout</p>
                         <LogOut className={`text-${fontTheme}/80 hover:text-${fontTheme}/90`} size={16} />

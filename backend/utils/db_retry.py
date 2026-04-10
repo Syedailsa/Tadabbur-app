@@ -24,7 +24,7 @@ class DBRetryError(Exception):
         super().__init__(
             f"[{label}] Failed after {attempts} attempt(s). "
             f"Cause: {type(original_error).__name__}: {original_error}"
-        )
+    )
 
 async def db_retry(
     operation: Callable[[], Any],
@@ -41,8 +41,7 @@ async def db_retry(
                 asyncio.to_thread(operation),
                 timeout=timeout
             )
-            if attempt > 0:
-                logger.info(f"[{label}] Succeeded on attempt {attempt + 1}")
+            logger.info(f"[{label}] Succeeded on attempt {attempt + 1}")
             return result
 
         except asyncio.TimeoutError as e:
@@ -52,14 +51,12 @@ async def db_retry(
         except Exception as e:
             error_str = str(e).lower()
 
-            
             if any(msg in error_str for msg in NON_RETRIABLE_MESSAGES):
                 logger.error(f"[{label}] Non-retriable DB error on attempt {attempt+1}: {e}")
                 raise DBRetryError(label, attempt + 1, e) from e
 
             last_error = e
             logger.warning(f"[{label}] Attempt {attempt+1}/{max_retries} failed: {type(e).__name__}: {e}")
-
         
         if attempt < max_retries - 1:
             jitter = random.uniform(0, 0.3)

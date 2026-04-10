@@ -14,6 +14,7 @@ const MicStoryMode = () => {
     const audioChunksRef = useRef<Blob[]>([]); // Store audio chunks locally
     const isMicActive = active[2];
     const micActive = useRef<boolean>(false);
+    const skipMicProcess = useRef<boolean>(false)
 
     const startRecording = useCallback(async () => {
         try {
@@ -30,18 +31,19 @@ const MicStoryMode = () => {
 
             // Collect Data
             mediaRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0) {
+                if (!skipMicProcess.current && event.data.size > 0) {
                     audioChunksRef.current.push(event.data);
                 }
             };
 
             mediaRecorder.onstop = async () => {
                 stream.getTracks().forEach((track) => track.stop());
-
-                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-
-                if (audioBlob.size > 0) {
-                    await uploadAudioForTranscription(audioBlob);
+                // Skip upload if we're unmounting
+                if (!skipMicProcess.current && audioChunksRef.current.length > 0) {
+                    const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                    if (audioBlob.size > 0) {
+                        await uploadAudioForTranscription(audioBlob);
+                    }
                 }
             };
 
@@ -124,6 +126,18 @@ const MicStoryMode = () => {
             }
         };
     }, [isMicActive, startRecording, stopRecording]);
+
+
+    // clean listeners on unmount
+    useEffect(() => {
+        return () => {
+            skipMicProcess.current = true; // Signal to skip upload
+
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                mediaRecorderRef.current.stop(); // This will trigger onstop
+            }
+        };
+    }, []);
 
 
     return (
