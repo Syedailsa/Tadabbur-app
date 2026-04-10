@@ -40,8 +40,6 @@ const StoryModeExtraOptions = () => {
         const sessionInit: SessionInitMessage = {
             type: "session-init",
             session_id: "",
-            user_id: "",
-            model: "",
             mode: "normal"
         };
 
