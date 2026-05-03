@@ -83,6 +83,7 @@ async def verify_google_token(token: str) -> dict:
                 requests.Request(),
                 audience=client_id
             )
+            print("Token verified!")
 
             # Extra security
             if claim['iss'] not in ['accounts.google.com', 'https://accounts.google.com']:

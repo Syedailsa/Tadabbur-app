@@ -11,6 +11,7 @@ from langchain_core.tools import StructuredTool
 from langchain.agents import create_agent
 from tools.audio_playback import get_Quran_Audio
 from tools.verse_reader import get_verse_image
+from tools.searchTafseer import searchTafseer
 from tools.story_agent_tool import story_agent_tool
 from langchain.agents.middleware import ToolRetryMiddleware, SummarizationMiddleware, dynamic_prompt, ModelRequest
 from llms.summarizerLLM import summarizer_llm
@@ -558,13 +559,79 @@ child_system_instructions = """
 
 
     **Example Queries:**
-    - "Tell me the story of Adam."
-    - "What happened to Noah's Ark?"
-    - "Explain the story of Yusuf and his brothers."
+    - “Tell me the story of Adam.”
+    - “What happened to Noah's Ark?”
+    - “Explain the story of Yusuf and his brothers.”
+
+
+    ### 6. searchTafseer
+    Use searchTafseer when user asks for tafseer, explanation, or meaning of a surah or verse.
+
+    **Example Queries:**
+    - What does Surah Fatiha mean?
+    - Explain Ayat al-Kursi (Surah Baqarah verse 255) for me.
+    - What does Ibn Kathir say about patience?
+    - Explain the verses of Juz Amma.
+
+
+    **Important Guidelines:**
+    1. When calling `searchTafseer`, pass **only the arguments explicitly mentioned by the user**. Leave all others as `None`.
+    2. Do **not** infer metadata such as surah_number, verse_number, juz, ruku unless the user explicitly states them.
+    3. If the user provides only a surah name → pass only `surah_englishName`.
+    4. For thematic/semantic queries with no specific surah or verse → pass only `query`.
+
+
+    **Examples of Tool Calls for searchTafseer:**
+
+    - **User:** `”What is the tafseer of Surah Fatiha?”`
+    **Tool call:**
+    ```json
+    {{
+        “args”: [
+            {{
+                “surah_englishName”: “Al-Faatiha”,
+                “limit”: 7
+            }}
+        ]
+    }}
+    ```
+
+    - **User:** `”What does verse 255 of Surah Baqarah (Ayat al-Kursi) mean?”`
+    **Tool call:**
+    ```json
+    {{
+        “args”: [
+            {{
+                “surah_englishName”: “Al-Baqarah”,
+                “verse_number”: 255,
+                “limit”: 1
+            }}
+        ]
+    }}
+    ```
+
+    - **User:** `”What does the Quran say about being kind to others?”`
+    **Tool call:**
+    ```json
+    {{
+        “args”: [
+            {{
+                “query”: “kindness and being kind to others”,
+                “limit”: 2
+            }}
+        ]
+    }}
+    ```
 
 
     ## IMPORTANT DISTINCTIONS Between `Search_Quran_By_filters` and `get_verse_image`:
     Both tools can retrieve Quran verses. `get_verse_image` tool is to be called when the user wants to **recite and read** a Verse, Surah, or part of the Quran. Meanwhile, `Search_Quran_By_filters` tool is to be called when the user wants any verse, surah, or part of the Quran (through user-provided filter metadata) and **does not intend to read or recite** the Quran.
+
+    ## IMPORTANT DISTINCTIONS Between `searchTafseer` and `searchAsbabNuzul`:
+    - `searchAsbabNuzul` is for **circumstances of revelation** — *why* or *when* a verse was revealed, historical events, and context around revelation.
+    - `searchTafseer` is for **exegesis and meaning** — *what* a verse means, its interpretation and explanation by Ibn Kathir.
+    - If the user asks “why was this verse revealed?” → use `searchAsbabNuzul`.
+    - If the user asks “what does this verse mean?” or “explain this verse” → use `searchTafseer`.
 
 
     ## OUTPUT FORMATTING RULES
@@ -586,8 +653,8 @@ child_system_instructions = """
     When calling get_verse_image or get_Quran_Audio:
     1. Never display the raw links or metadata (audio links, verse images links, ruku, juz, etc.) in the response.
     2. Only respond with a simple acknowledgment, e.g.:
-    - "The verse images are ready."
-    - "The audio data is available."
+    - “The verse images are ready.”
+    - “The audio data is available.”
     3. Do not describe or expand on the tool output in any way.
     4. If the tool returns empty or null, mention that the data is not available.
 
@@ -1027,13 +1094,127 @@ standard_system_instructions = """
 
 
     **Example Queries:**
-    - "Tell me the story of Adam."
-    - "What happened to Noah's Ark?"
-    - "Explain the story of Yusuf and his brothers."
+    - “Tell me the story of Adam.”
+    - “What happened to Noah's Ark?”
+    - “Explain the story of Yusuf and his brothers.”
+
+
+    ### 6. searchTafseer
+
+    Use searchTafseer when the user asks about:
+
+    Tafseer / Exegesis / Explanation / Meaning / Interpretation of Quranic verses or surahs
+    (Ibn Kathir tafseer)
+
+    Questions mentioning:
+    1. Surah name
+    2. Surah english name or translation
+    3. Verse number
+    4. Juz, Ruku, Manzil, Hizb quarter
+    5. Meaning or explanation of a verse or surah
+    6. What Ibn Kathir says about a topic or verse
+    7. Semantic/thematic questions about Quranic interpretation
+
+    The tool supports:
+        Metadata filters (surah, verse, juz, ruku, manzil, hizbQuarter, etc.)
+        Semantic search using a natural-language query
+
+    **Example Queries:**
+    - What is the tafseer of Surah Fatiha?
+    - Explain the meaning of Surah Baqarah verse 255 (Ayat al-Kursi).
+    - What does Ibn Kathir say about the verses of Juz Amma?
+    - Give me the tafseer of verses about patience in the Quran.
+    - Explain the tafseer of Surah Kahf verses 1 to 10.
+
+
+    **Important Guidelines:**
+    1. When calling `searchTafseer`, pass **only the arguments explicitly mentioned by the user**. Leave all others as `None`.
+    2. Do **not** infer metadata such as surah_number, verse_number, juz, ruku, manzil, hizbQuarter unless the user explicitly states them.
+    3. If the user provides only a surah name → pass only `surah_englishName`, leaving others as `None`.
+    4. For semantic/thematic queries with no specific surah or verse → pass only `query`.
+
+
+    **Examples of Tool Calls for searchTafseer:**
+
+    - **User:** `”What is the tafseer of Surah Fatiha?”`
+    **Tool call:**
+    ```json
+    {{
+        “args”: [
+            {{
+                “surah_englishName”: “Al-Faatiha”,
+                “limit”: 7
+            }}
+        ]
+    }}
+    ```
+
+    - **User:** `”What is the tafseer of Surah Baqarah verse 255?”`
+    **Tool call:**
+    ```json
+    {{
+        “args”: [
+            {{
+                “surah_number”: 2,
+                “surah_englishName”: “Al-Baqarah”,
+                “verse_number”: 255,
+                “limit”: 1
+            }}
+        ]
+    }}
+    ```
+
+    - **User:** `”Give me the tafseer of Surah Kahf verses 1 to 10.”`
+    **Tool call:**
+    ```json
+    {{
+        “args”: [
+            {{
+                “surah_englishName”: “Al-Kahf”,
+                “verse_number_min”: 1,
+                “verse_number_max”: 10,
+                “limit”: 10
+            }}
+        ]
+    }}
+    ```
+
+    - **User:** `”What does Ibn Kathir say about patience and gratitude in the Quran?”`
+    **Tool call:**
+    ```json
+    {{
+        “args”: [
+            {{
+                “query”: “patience and gratitude”,
+                “limit”: 3
+            }}
+        ]
+    }}
+    ```
+
+    - **User:** `”Tafseer of verses in Juz 30 about the Day of Judgement.”`
+    **Tool call:**
+    ```json
+    {{
+        “args”: [
+            {{
+                “juz”: 30,
+                “query”: “Day of Judgement”,
+                “limit”: 3
+            }}
+        ]
+    }}
+    ```
 
 
     ## IMPORTANT DISTINCTIONS Between `Search_Quran_By_filters` and `get_verse_image`:
     Both tools can retrieve Quran verses. `get_verse_image` tool is to be called when the user wants to **recite and read** a Verse, Surah, or part of the Quran. Meanwhile, `Search_Quran_By_filters` tool is to be called when the user wants any verse, surah, or part of the Quran (through user-provided filter metadata) and **does not intend to read or recite** the Quran.
+
+    ## IMPORTANT DISTINCTIONS Between `searchTafseer` and `searchAsbabNuzul`:
+    - `searchAsbabNuzul` is for **circumstances of revelation** — *why* or *when* a verse was revealed, historical events, and context around revelation.
+    - `searchTafseer` is for **exegesis and meaning** — *what* a verse means, its interpretation and explanation by Ibn Kathir.
+    - If the user asks “why was this verse revealed?” → use `searchAsbabNuzul`.
+    - If the user asks “what does this verse mean?” or “explain this verse” → use `searchTafseer`.
 
 
     ## OUTPUT FORMATTING RULES
@@ -1055,8 +1236,8 @@ standard_system_instructions = """
     When calling get_verse_image or get_Quran_Audio:
     1. Never display the raw links or metadata (audio links, verse images links, ruku, juz, etc.) in the response.
     2. Only respond with a simple acknowledgment, e.g.:
-    - "Following are the verse images for your requested verses."
-    - "Following are the audio players for your requested verses."
+    - “Following are the verse images for your requested verses.”
+    - “Following are the audio players for your requested verses.”
     3. Do not describe or expand on the tool output in any way.
     4. If the tool returns empty or null, mention that the data is not available.
 
@@ -1089,8 +1270,7 @@ def build_agent(model_key: str = None):
     return create_agent(
         name="QuranTadabburAgent",
         model=llm,
-        tools=[Search_Quran_By_filters, searchAsbabNuzul, structured_response_tool,
-               get_Quran_Audio, get_verse_image, story_agent_tool],
+        tools=[Search_Quran_By_filters, searchAsbabNuzul, structured_response_tool, get_Quran_Audio, get_verse_image, story_agent_tool, searchTafseer],
         middleware=[personalized_system_prompt, tool_protection],
         context_schema=UserContext  
     )

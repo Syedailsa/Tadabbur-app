@@ -385,6 +385,8 @@ async def execute_write(query: str, *args):
     async with get_db_connection() as conn:
         return await conn.execute(query, *args)
 
+
+# have to make the whole delete operation atomic, have to review the logic here
 async def delete_all_user_sessions(user_id: str):
     """Delete all chat sessions and messages for a specific user using batching"""
     supabase_client = get_supabase_client()
@@ -425,6 +427,9 @@ async def delete_all_user_sessions(user_id: str):
         logger.error(f"Error in fast delete: {e}")
         return False
 
+
+
+# have to make the whole delete operation atomic, have to review the logic here
 async def delete_user_session(user_id: str, session_id: str):
     """Delete a specific chat session and its messages for a user"""
     supabase_client = get_supabase_client()

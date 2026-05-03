@@ -15,7 +15,7 @@ def insert_report_rule(supabase_client, message_id: str, feedback:str, user_id: 
             if existing_rule:
                 print("Similar in intent rule already exists, returning...")
                 response_data = {
-                    "type": "report",
+                    "type": f"report-{message_id}",
                     "message_id": message_id,
                     "status": "acknowledged"
                 }
@@ -29,7 +29,7 @@ def insert_report_rule(supabase_client, message_id: str, feedback:str, user_id: 
                     if not rule:
                         print("No rule, returning...")
                         response_data = {
-                        "type": "report",
+                        "type": f"report-{message_id}",
                         "status": "not-acknowledged"
                         }
                         return response_data
@@ -39,7 +39,7 @@ def insert_report_rule(supabase_client, message_id: str, feedback:str, user_id: 
                 else:
                     print("Report reason not valid")
                     response_data = {
-                        "type": "report",
+                        "type": f"report-{message_id}",
                         "status": "not-acknowledged"
                     }
                     return response_data
@@ -48,7 +48,7 @@ def insert_report_rule(supabase_client, message_id: str, feedback:str, user_id: 
             supabase_client.table('chat_rules').insert({"rule": rule, "hard_rule": True, "message_id": message_id, "user_id": user_id}).execute()
             print(f"Message with {message_id} is successfully reported!")
             response_data = {
-                "type": "report",
+                "type": f"report-{message_id}",
                 "status": "acknowledged",
                 "message_id": message_id
             }
