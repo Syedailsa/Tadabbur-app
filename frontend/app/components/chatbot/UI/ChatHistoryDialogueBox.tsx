@@ -18,60 +18,63 @@ const formatDateToDMY = (dateString: string | null): string => {
 const ChatHisoryDialogueBox = () => {
   const {
     wsRef,
+    requestExists,
     chatHistory,
     setChatHistory,
     setSelectedSessionID,
     openChatHistoryDialogueBox,
     setOpenChatHistoryDialogueBox,
+    setResponseBasedActions,
+    showFriendlyError,
   } = useContext(ChatContext)!;
 
   const [translatePic, setTranslatePic] = useState<boolean | null>(null);
 
   type ToastState = {
-  type: "deleting" | "deleted" | "deleting-all" | "deleted-all" | null;
-  sessionTitle?: string;
-};
+    type: "deleting" | "deleted" | "deleting-all" | "deleted-all" | null;
+    sessionTitle?: string;
+  };
   const [toast, setToast] = useState<ToastState>({ type: null });
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
 
   const dialogueRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-  const handleSessionDeleted = (e: any) => {
-    const deletedTitle = e.detail?.title; 
-    setToast({ 
-      type: "deleted", 
-      sessionTitle: deletedTitle || "Session" 
-    });
-    setDeletingSessionId(null);
-  };
-  const handleAllDeleted = () => {
-    setToast({ type: "deleted-all" });
-  };
-  window.addEventListener("tadabbur-session-deleted", handleSessionDeleted);
-  window.addEventListener("tadabbur-all-sessions-deleted", handleAllDeleted);
-  return () => {
-    window.removeEventListener("tadabbur-session-deleted", handleSessionDeleted);
-    window.removeEventListener("tadabbur-all-sessions-deleted", handleAllDeleted);
-  };
-}, []);
+    const handleSessionDeleted = (e: any) => {
+      const deletedTitle = e.detail?.title;
+      setToast({
+        type: "deleted",
+        sessionTitle: deletedTitle || "Session"
+      });
+      setDeletingSessionId(null);
+    };
+    const handleAllDeleted = () => {
+      setToast({ type: "deleted-all" });
+    };
+    window.addEventListener("tadabbur-session-deleted", handleSessionDeleted);
+    window.addEventListener("tadabbur-all-sessions-deleted", handleAllDeleted);
+    return () => {
+      window.removeEventListener("tadabbur-session-deleted", handleSessionDeleted);
+      window.removeEventListener("tadabbur-all-sessions-deleted", handleAllDeleted);
+    };
+  }, []);
 
   useEffect(() => {
-  if (toast.type === "deleted" || toast.type === "deleted-all") {
-    const timer = setTimeout(() => {
-      setToast({ type: null });
-    }, 2500);
-    return () => clearTimeout(timer);
-  }
-}, [toast.type]);
+    if (toast.type === "deleted" || toast.type === "deleted-all") {
+      const timer = setTimeout(() => {
+        setToast({ type: null });
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [toast.type]);
 
-// toast reset when dialog close 
-useEffect(() => {
-  if (!openChatHistoryDialogueBox) {
-    setToast({ type: null });
-    setDeletingSessionId(null);
-  }
-}, [openChatHistoryDialogueBox]);
+  // toast reset when dialog close 
+  useEffect(() => {
+    if (!openChatHistoryDialogueBox) {
+      setToast({ type: null });
+      setDeletingSessionId(null);
+    }
+  }, [openChatHistoryDialogueBox]);
 
   useEffect(() => {
 
@@ -93,82 +96,76 @@ useEffect(() => {
   }, [openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox]);
 
   useEffect(() => {
-    if (openChatHistoryDialogueBox) {
-      const user = localStorage.getItem('user');
-      let user_id = null;
-      if (user) {
-        try {
-          const userData = JSON.parse(user);
-          user_id = userData.id;
-        } catch (e) {
-          console.error("Error parsing user data:", e);
-        }
-      }
+    if (openChatHistoryDialogueBox && !requestExists("chat_history")) {
       wsSendAsync(wsRef.current, {
-        type: "chat_history",
-        user_id: user_id,
-      });
+        type: "chat_history"
+      }).then(() => {
+        setResponseBasedActions(prev => [...(prev || []), { action: "chat_history"}])
+      }).catch(() => { showFriendlyError("Failed to load chat history. Please try again.") });
+    } else {
+      return
     }
 
   }, [openChatHistoryDialogueBox, wsRef]);
 
-const handleDeleteSession = (e: React.MouseEvent, chat: ChatRecord) => {
-  e.stopPropagation();
-  const currentUrlSessionId = new URLSearchParams(window.location.search).get("session_id");
-  const isCurrentSession = currentUrlSessionId === chat.session_id;
-  setDeletingSessionId(chat.session_id);
-  setToast({ type: "deleting", sessionTitle: chat.title ?? undefined });
-  const user = localStorage.getItem("user");
-  let user_id = null;
-  if (user) {
-    try { const userData = JSON.parse(user); user_id = userData.id; }
-    catch (e) { console.error("Error parsing user data:", e); }
-  }
-
-  const pending = JSON.parse(localStorage.getItem("tadabbur_pending_deletes") || "[]");
-  pending.push({ type: "delete_session", session_id: chat.session_id });
-  localStorage.setItem("tadabbur_pending_deletes", JSON.stringify(pending));
-
-  const isSocketClosed = !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN;
-
-  if (isSocketClosed && isCurrentSession) {
-    setSelectedSessionID(null);
-    window.location.href = '/pages/chatbot'; 
-  }
-  
-  wsSendAsync(wsRef.current, {
-    type: "delete_session",
-    user_id,
-    session_id: chat.session_id,
-  });
-  
-};
-
-const handleDeleteAll = () => {
-  setToast({ type: "deleting-all" });
-  const user = localStorage.getItem("user");
-  let user_id = null;
-  if (user) {
-    try { const userData = JSON.parse(user); user_id = userData.id; }
-    catch (e) { console.error("Error parsing user data:", e); }
-  }
-  localStorage.setItem("tadabbur_pending_deletes", JSON.stringify([
-    { type: "delete_all_sessions",
-      user_id 
+  const handleDeleteSession = (e: React.MouseEvent, chat: ChatRecord) => {
+    e.stopPropagation();
+    const currentUrlSessionId = new URLSearchParams(window.location.search).get("session_id");
+    const isCurrentSession = currentUrlSessionId === chat.session_id;
+    setDeletingSessionId(chat.session_id);
+    setToast({ type: "deleting", sessionTitle: chat.title ?? undefined });
+    const user = localStorage.getItem("user");
+    let user_id = null;
+    if (user) {
+      try { const userData = JSON.parse(user); user_id = userData.id; }
+      catch (e) { console.error("Error parsing user data:", e); }
     }
-  ]));
-  const isSocketClosed = !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN;
-  
-  if (isSocketClosed) { 
-    
-    setOpenChatHistoryDialogueBox(false); 
-    
-    if (setChatHistory) setChatHistory([]); 
 
-    window.location.href = '/pages/chatbot';
-  }
-  wsSendAsync(wsRef.current, { type: "delete_all_sessions", user_id });
-};
+    const pending = JSON.parse(localStorage.getItem("tadabbur_pending_deletes") || "[]");
+    pending.push({ type: "delete_session", session_id: chat.session_id });
+    localStorage.setItem("tadabbur_pending_deletes", JSON.stringify(pending));
+
+    const isSocketClosed = !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN;
+
+    if (isSocketClosed && isCurrentSession) {
+      setSelectedSessionID(null);
+      window.location.href = '/pages/chatbot';
+    }
+
+    wsSendAsync(wsRef.current, {
+      type: "delete_session",
+      user_id,
+      session_id: chat.session_id,
+    });
+
+  };
+
+  const handleDeleteAll = () => {
+    setToast({ type: "deleting-all" });
+    const user = localStorage.getItem("user");
+    let user_id = null;
+    if (user) {
+      try { const userData = JSON.parse(user); user_id = userData.id; }
+      catch (e) { console.error("Error parsing user data:", e); }
+    }
+    localStorage.setItem("tadabbur_pending_deletes", JSON.stringify([
+      {
+        type: "delete_all_sessions",
+        user_id
+      }
+    ]));
+    const isSocketClosed = !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN;
+
+    if (isSocketClosed) {
+
+      setOpenChatHistoryDialogueBox(false);
+
+      if (setChatHistory) setChatHistory([]);
+
+      window.location.href = '/pages/chatbot';
+    }
+    wsSendAsync(wsRef.current, { type: "delete_all_sessions", user_id });
+  };
 
   if (!openChatHistoryDialogueBox) return null;
 
@@ -210,7 +207,7 @@ const handleDeleteAll = () => {
           </motion.div>
         )}
       </AnimatePresence>
-      <div   
+      <div
         ref={dialogueRef}
         className="w-[95%] max-w-130 h-120 p-2 bg-white border border-gray-500/5 shadow-lg rounded-md "
       >
@@ -260,18 +257,18 @@ const handleDeleteAll = () => {
                 </p>
                 {chatHistory && chatHistory.length > 0 && (
                   <button
-                  onClick={handleDeleteAll}
-                  disabled={toast.type === "deleting-all" || toast.type === "deleting"}
-                  className="flex items-center gap-x-1.5 switzer-500 text-xs text-red-500 hover:text-red-700 underline disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {toast.type === "deleting-all" ? (
-                    <Loader2 size={11} className="animate-spin" />
-                  ) : (
-                    <Trash2 size={11} />
-                  )}
-                  Delete All
-                </button>
-                
+                    onClick={handleDeleteAll}
+                    disabled={toast.type === "deleting-all" || toast.type === "deleting"}
+                    className="flex items-center gap-x-1.5 switzer-500 text-xs text-red-500 hover:text-red-700 underline disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {toast.type === "deleting-all" ? (
+                      <Loader2 size={11} className="animate-spin" />
+                    ) : (
+                      <Trash2 size={11} />
+                    )}
+                    Delete All
+                  </button>
+
                 )}
               </div>
               <motion.div className="grid grid-cols-1 gap-2 px-1 overflow-y-auto h-45">
@@ -281,11 +278,16 @@ const handleDeleteAll = () => {
                       onClick={() => {
                         setSelectedSessionID(chat.session_id);
                         setOpenChatHistoryDialogueBox(false);
-            
-                        wsSendAsync(wsRef.current, {
-                          type: "get_chat",
-                          session_id: chat.session_id,
-                        });
+                        if (!requestExists('get_chat')) {
+                          wsSendAsync(wsRef.current, {
+                            type: "get_chat",
+                            session_id: chat.session_id,
+                          }).then(() => {
+                            setResponseBasedActions(prev => [...(prev || []), { action: "get_chat"}])
+                          }).catch(() => { showFriendlyError("Failed to load chat history. Please try again.") });
+                        } else {
+                          return
+                        }
                       }}
                       whileHover={{ scale: 1.01 }}
                       transition={{ duration: 0.2 }}
@@ -309,17 +311,17 @@ const handleDeleteAll = () => {
                         {chat.description}
                       </p>
                       {deletingSessionId === chat.session_id ? (
-                    <div className="absolute top-1.5 right-1.5">
-                      <Loader2 size={14} className="animate-spin text-white/70" />
-                    </div>
-                  ) : (
-                    <button
-                      onClick={(e) => handleDeleteSession(e, chat)}
-                      className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-red-500 hover:bg-red-600 text-white rounded-full p-1"
-                    >
-                      <X size={12} />
-                    </button>
-                  )}
+                        <div className="absolute top-1.5 right-1.5">
+                          <Loader2 size={14} className="animate-spin text-white/70" />
+                        </div>
+                      ) : (
+                        <button
+                          onClick={(e) => handleDeleteSession(e, chat)}
+                          className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-red-500 hover:bg-red-600 text-white rounded-full p-1"
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
 
 
                     </motion.div>

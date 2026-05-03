@@ -11,11 +11,11 @@ const Controls: FC<ControlProps> = ({ wsRef, connectionStatus }): React.ReactEle
   const [active, setActive] = useState<boolean | null>(false);
   const controlRef = useRef<HTMLDivElement | null>(null);
   const [overlayText, setOverlayText] = useState<string | null>(null);
-  const { setOpenChatHistoryDialogueBox } = useContext(ChatContext)!;
+  const { requestExists, setResponseBasedActions, setOpenChatHistoryDialogueBox, showFriendlyError } = useContext(ChatContext)!;
   const [overlayTranslate, setOverlayTranslate] = useState<number>(0);
   const [showOfflineError, setShowOfflineError] = useState(false);
 
-  useEffect(() => { 
+  useEffect(() => {
     if (!active) return;
     const handleOutsideClick = (e: MouseEvent) => {
       if (
@@ -35,38 +35,32 @@ const Controls: FC<ControlProps> = ({ wsRef, connectionStatus }): React.ReactEle
   const validateConnection = (callback: () => void) => {
     if (connectionStatus !== "connected") {
       setShowOfflineError(true);
-      setTimeout(() => setShowOfflineError(false), 2000); 
+      setTimeout(() => setShowOfflineError(false), 2000);
       return;
     }
     callback();
   };
 
   const InitializeNewSession = () => {
-    if (!wsRef.current) return;
-
-    const user = sessionStorage.getItem('user');
-    let user_id = null;
-    if (user) {
-      try {
-        const userData = JSON.parse(user);
-        user_id = userData.id;
-      } catch (e) {
-        console.error("Error parsing user data:", e);
-      }
-    }
+    if (!wsRef.current || requestExists("session-init")) return;
     wsSendAsync(
       wsRef.current,
       {
         type: "session-init",
         session_id: "",
-        user_id: user_id,
         model: "kimi-k2-instruct-0905",
-      }).catch(() => { })
+      }).then(() => {
+        setResponseBasedActions(prev => [...(prev || []), { action: "session-init"}])
+      }).catch(() => {
+        showFriendlyError("Failed to start a new chat. Please try again.")
+      });
   };
   const fetchChatHistory = () => {
-    const user = sessionStorage.getItem('user');
-    let user_id = user ? JSON.parse(user).id : null;
-    wsSendAsync(wsRef.current, { type: "chat_history", user_id: user_id }).catch(() => { });
+    if (!requestExists('chat_history')) {
+      wsSendAsync(wsRef.current, { type: "chat_history" }).then(() => {
+        setResponseBasedActions(prev => [...(prev || []), { action: "chat_history"}])
+      }).catch(() => { showFriendlyError("Failed to load chat history. Please try again.") });
+    }
     setOpenChatHistoryDialogueBox(true);
   };
 

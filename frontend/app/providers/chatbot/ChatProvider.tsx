@@ -3,6 +3,7 @@ import { ChatContext, ChatRecord } from "@/app/context/chatbot/ChatContext";
 import { Dispatch, SetStateAction } from "react";
 import hidePromptExtraOptionsModelBoxArray from "@/app/components/chatbot/interfaces/hidePromptExtraOptionsModelBoxArray";
 import { ChatMessage, Attachment, AssistantMessage, StoryParagraph } from "@/app/components/chatbot/interfaces/ChatMessage";
+import { ActionType, ResponseBasedActions } from "@/app/utils/types";
 
 type AskFn = (
   input: string,
@@ -18,6 +19,7 @@ type AskFn = (
 interface ChatProviderProps {
   ask: AskFn;
   stopGeneration: () => void;
+  requestExists: (action: ActionType) => boolean;
   inputRef: React.RefObject<HTMLDivElement | null>;
   wsRef: React.RefObject<WebSocket | null>;
   messages: ChatMessage[];
@@ -49,7 +51,11 @@ interface ChatProviderProps {
   fileContext: string | null
   showPlaceholder: boolean | null
   isGenerating: boolean
+  responseBasedActions: ResponseBasedActions
+  setResponseBasedActions: React.Dispatch<React.SetStateAction<ResponseBasedActions>>
+  showFriendlyError: (error: string) => void
 }
+
 
 const ChatProvider: React.FC<ChatProviderProps> = ({
   children,
@@ -63,6 +69,7 @@ const ChatProvider: React.FC<ChatProviderProps> = ({
   setAttachedFile,
   audioRef,
   ask,
+  requestExists,
   stopGeneration,
   currentPlayableAudio,
   hideReportContentDialogueBox,
@@ -84,7 +91,10 @@ const ChatProvider: React.FC<ChatProviderProps> = ({
   showPlaceholder,
   inputRef,
   isGenerating,
-setOpenImageContainer
+  setOpenImageContainer,
+  responseBasedActions,
+  setResponseBasedActions,
+  showFriendlyError
 }) => {
   const [hideExtraOptions, setHideExtraOptions] = useState<boolean>(true);
   const [selectedModel, setSelectedModel] = useState<string | null>(
@@ -102,6 +112,7 @@ setOpenImageContainer
       value={{
         audioRef,
         ask,
+        requestExists,
         wsRef,
         hideExtraOptions,
         setHideExtraOptions,
@@ -141,7 +152,10 @@ setOpenImageContainer
         inputRef,
         isGenerating,
         stopGeneration,
-        setOpenImageContainer
+        setOpenImageContainer,
+        responseBasedActions,
+        setResponseBasedActions,
+        showFriendlyError
       }}
     >
       {children}

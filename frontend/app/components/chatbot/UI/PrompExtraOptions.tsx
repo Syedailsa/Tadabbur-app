@@ -31,7 +31,7 @@ const PromptExtraOptions = ({
 }: PromptExtraOptionsProps) => {
 
   const { sessionID, wsRef, messages, setMessages, hidePromptExtraOptionsModelBoxArray,
-    setHidePromptExtraOptionsModelBoxArray, currentMode
+    setHidePromptExtraOptionsModelBoxArray, currentMode, requestExists, setResponseBasedActions, showFriendlyError
   } = useContext(ChatContext)!
 
   const [overlayTranslateAmount, setOverlayTranslateAmount] = useState<
@@ -53,7 +53,7 @@ const PromptExtraOptions = ({
       ? null
       : messages.find((m: ChatMessage) => m.message_id === reply_to_message_id)?.responses.find((n) => n.message_id === message_id)?.feedback ?? null;
 
-      const hasMultipleResponses =
+  const hasMultipleResponses =
     (messages?.[parent_index]?.number_of_responses ?? 0) > 1;
 
   useEffect(() => {
@@ -83,13 +83,13 @@ const PromptExtraOptions = ({
             console.log("Copied to clipboard!");
 
           })
-          .catch((err) => console.error("Failed to copy", err));
+          .catch(() => showFriendlyError("Failed to copy to clipboard. Please try again."));
         break;
       case "liked":
         if (feedback === "liked" || inProcessLike) {
           break
         }
-        if (assistant_index != null) {
+        if (assistant_index != null && !requestExists(`feedback-${reply_to_message_id}-${message_id}-liked`)) {
           wsSendAsync(
             wsRef?.current,
             {
@@ -97,11 +97,17 @@ const PromptExtraOptions = ({
               message:
                 messages?.[parent_index]?.responses?.[assistant_index].content,
               message_id: message_id,
+              user_message_id: reply_to_message_id,
               session_id: sessionID,
-            }).catch(() => { })
-
+            }).then(() => {
+              setResponseBasedActions(prev => [...(prev || []), { action: `feedback-${reply_to_message_id}-${message_id}-liked`}])
+            }).catch(() => { showFriendlyError("Failed to submit feedback. Please try again.") });
         }
+
+        // have to review the logic below i.e why it's here
         setHidePromptExtraOptionsModelBoxArray((prev: hidePromptExtraOptionsModelBoxArray[]) => prev.map(m => m.assistant_message_id === message_id ? { ...m, hidePromptExtraOptionsModelBox: true } : m))
+
+
         if (messages && setMessages) {
           setMessages((prev: ChatMessage[]) => {
             return prev.map((m) => m.message_id === reply_to_message_id ? { ...m, responses: m.responses.map((n) => n.message_id === message_id ? { ...n, clicked_feedback: [true, n.clicked_feedback[1]] } : n) } : m)
@@ -112,7 +118,7 @@ const PromptExtraOptions = ({
         if (feedback === "disliked" || inProcessDislike) {
           break
         }
-        if (assistant_index != null) {
+        if (assistant_index != null && !requestExists(`feedback-${reply_to_message_id}-${message_id}-disliked`)) {
           wsSendAsync(
             wsRef?.current,
             {
@@ -120,9 +126,11 @@ const PromptExtraOptions = ({
               message:
                 messages?.[parent_index]?.responses?.[assistant_index]?.content,
               message_id: message_id,
+              user_message_id: reply_to_message_id,
               session_id: sessionID,
-            }).catch(() => { })
-
+            }).then(() => {
+              setResponseBasedActions(prev => [...(prev || []), { action: `feedback-${reply_to_message_id}-${message_id}-disliked`}])
+            }).catch(() => { showFriendlyError("Failed to submit feedback. Please try again.") });
         }
 
         setHidePromptExtraOptionsModelBoxArray((prev: hidePromptExtraOptionsModelBoxArray[]) => prev.map(m => m.assistant_message_id === message_id ? { ...m, hidePromptExtraOptionsModelBox: true } : m))
@@ -264,7 +272,7 @@ const PromptExtraOptions = ({
             className="p-1.5 hover:bg-black/5 rounded-md cursor-pointer"
           >{inProcessDislike ? (
             <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.2, repeat: Infinity, repeatType: "loop" }} style={{ color: currentMode === "normal" ? "#000000" : "#ffffff" }}>
-                <ProgressCircle className={`w-4.5 h-4.5 fill-current ${currentMode === "normal" ? "#000000" : "#ffffff"}`} />
+              <ProgressCircle className={`w-4.5 h-4.5 fill-current ${currentMode === "normal" ? "#000000" : "#ffffff"}`} />
             </motion.div>
           ) : (<div style={{
             color: feedback === "disliked" ? "#F87171" : currentMode === "normal" ? "#000000" : "#ffffff",

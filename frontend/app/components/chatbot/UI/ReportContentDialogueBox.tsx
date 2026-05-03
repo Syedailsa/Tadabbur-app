@@ -16,14 +16,14 @@ const ReportContentDialogueBox: React.FC<ReportContenDialogueBoxProps> = ({
   hideReportContentDialogueBox,
   setHideReportContentDialogueBox,
 }) => {
-  const { wsRef, reportedMessageID,currentMode } = useContext(ChatContext)!;
+  const { wsRef, reportedMessageID, currentMode, requestExists, setResponseBasedActions, showFriendlyError } = useContext(ChatContext)!;
   const [hidePlaceholder, setHidePlaceholder] = useState<boolean>(true);
   const [selectedReason, setSelectedReason] = useState<string | null>("");
   const [customFeedback, setCustomFeedback] = useState<string | null>("");
-  
-    const backgroundTheme = currentMode === "normal" ? "white" : "black"
-    const fontTheme = currentMode === "normal" ? "black" : "white"
-  
+
+  const backgroundTheme = currentMode === "normal" ? "white" : "black"
+  const fontTheme = currentMode === "normal" ? "black" : "white"
+
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     setSelectedReason(e.target.value);
@@ -33,21 +33,29 @@ const ReportContentDialogueBox: React.FC<ReportContenDialogueBoxProps> = ({
 
     if (selectedReason === "other") {
       if (!customFeedback) return;
-      wsSendAsync(
-        wsRef?.current, {
-        type: "report",
-        message_id: reportedMessageID,
-        feedback: customFeedback,
-      }).catch(() => { })
-
+      if (!requestExists(`report-${reportedMessageID}`)) {
+        wsSendAsync(
+          wsRef?.current, {
+          type: "report",
+          message_id: reportedMessageID,
+          feedback: customFeedback,
+        }).then(() => {
+          setResponseBasedActions(prev => [...(prev || []), { action: `report-${reportedMessageID}`}])
+        }).catch(() => {
+          showFriendlyError("Failed to submit report. Please try again.")
+        });
+      }
     } else {
-      wsSendAsync(
-        wsRef?.current, {
-        type: "report",
-        message_id: reportedMessageID,
-        feedback: selectedReason,
-      }).catch(() => { })
-
+      if (!requestExists(`report-${reportedMessageID}`)) {
+        wsSendAsync(
+          wsRef?.current, {
+          type: "report",
+          message_id: reportedMessageID,
+          feedback: selectedReason,
+        }).then(() => {
+          setResponseBasedActions(prev => [...(prev || []), { action: `report-${reportedMessageID}`}])
+        }).catch(() => { showFriendlyError("Failed to submit report. Please try again.") });
+      }
     }
     setHideReportContentDialogueBox(true);
   };
@@ -66,7 +74,7 @@ const ReportContentDialogueBox: React.FC<ReportContenDialogueBoxProps> = ({
             </p>
             <DisclaimerIcon className="w-5 h-5" />
           </div>
-          <form className={`${currentMode === "normal" ? "overflow-y-auto":"black-scrollbar"} px-2 max-h-80`}>
+          <form className={`${currentMode === "normal" ? "overflow-y-auto" : "black-scrollbar"} px-2 max-h-80`}>
             <div className="radio-group">
               {reportOptions?.map((option) => (
                 <div

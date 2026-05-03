@@ -11,10 +11,9 @@ import { dracula } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 type textContentProp = {
     textContent: string | null
-    isError?: boolean
 }
 
-const Markdown = ({ textContent, isError = false }: textContentProp) => {
+const Markdown = ({ textContent}: textContentProp) => {
     const { currentMode } = useContext(ChatContext)!
 
 
@@ -59,13 +58,10 @@ const Markdown = ({ textContent, isError = false }: textContentProp) => {
                 // PARAGRAPH
                 p: ({ node, ...props }) => (
                     <p
-                        className={`leading-7 my-2 wrap-break-word ${
-                        isError
-                        ? "text-red-600"
-                        : currentMode === "normal"
-                        ? "text-gray-700"
-                        : "text-white"
-                        }`}
+                        className={`leading-7 my-2 wrap-break-word ${currentMode === "normal"
+                                    ? "text-gray-700"
+                                    : "text-white"
+                            }`}
                         {...props}
                     />
                 ),
