@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+const imageCache = new Map<string, string>()
+
 const ProtectedImage = ({ filename, className, alt }: { filename: string, className?: string, alt?: string }) => {
     const [src, setSrc] = useState<string>("")
     const [retryCount, setRetryCount] = useState<number>(0)
@@ -9,12 +11,21 @@ const ProtectedImage = ({ filename, className, alt }: { filename: string, classN
         const token = localStorage.getItem("auth_token")
         if (!token || !filename) return
 
+        if (imageCache.has(filename)) {
+            setSrc(imageCache.get(filename)!)
+            return
+        }
+
         fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/story-image/${filename}?token=${token}`)
             .then(res => {
                 if (!res.ok) throw new Error("Unauthorized")
                 return res.blob()
             })
-            .then(blob => setSrc(URL.createObjectURL(blob)))
+            .then(blob => {
+                const url = URL.createObjectURL(blob)
+                imageCache.set(filename, url)
+                setSrc(url)
+            })
             .catch(err => {
                 console.error("Image load failed:", err)
                 if (retryCount < 3) {
@@ -28,7 +39,7 @@ const ProtectedImage = ({ filename, className, alt }: { filename: string, classN
     if (error) return (
         <div className="w-full rounded-md border border-white/10 flex flex-col items-center justify-center gap-y-2" style={{ height: "160px" }}>
             <p className="switzer-500 text-white/40 text-xs">Image could not be loaded</p>
-            <button 
+            <button
                 onClick={() => { setError(false); setRetryCount(0); }}
                 className="text-white/30 hover:text-white/60 text-xs switzer-500 border border-white/10 px-2 py-0.5 rounded-md transition-colors"
             >

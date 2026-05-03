@@ -65,17 +65,21 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    """Initialize database pool on startup"""
-    print("Instantiating db pool")
-    db_pool_instance = await init_db_pool()
-    app.state.db_pool = db_pool_instance
-    yield  # app stays active here while receiving requests
-    
-    # Shutdown
-    """Close database pool on shutdown"""
-    await close_db_pool()
+async def lifespan(app:FastAPI):                
+    for attempt in range(5):
+        try:
+            db_pool_instance = await init_db_pool()
+            app.state.db_pool = db_pool_instance
+            break
+        except Exception as e:  
+            print(f"DB pool init attempt {attempt + 1} failed: {e}")
+            if attempt < 4:     
+                await asyncio.sleep(5)
+            else:
+                # prevent server from starting if all attempts fail
+                raise  
+    yield
+    await close_db_pool() 
     
 # ------------------- APP CONFIG -------------------
 app = FastAPI(title="Tadabbur Agent API", lifespan=lifespan)
@@ -174,13 +178,14 @@ TOOL_MESSAGES = {
     }
 }
 
-async def dismiss_user_request(websocket: WebSocket, type:str, error:str, label: str,  status= "not-acknowledged") -> bool:
+async def dismiss_user_request(websocket: WebSocket, type:str, error:str, label: str, extra_payload: dict = None) -> bool:
     "Returns True if should break, False otherwise"
     try:
         await ws_send(websocket, {
             "type": type,
-            "status": status,
-            "error": error
+            "status": "not-acknowledged",
+            "error": error,
+            **(extra_payload or {})
         }, label = label)
         return False
     except WSDisconnectedError:
@@ -197,6 +202,28 @@ async def safe_close_websocket(websocket: WebSocket):
             await websocket.close(code = 1011, reason = "Internal server error")
     except Exception:
         pass
+
+async def cleanup_on_error(websocket, user_message_saved_to_db: bool, assistant_message_saved_to_db: bool, user_message_id: str, response_message_id: str) -> bool:
+    if user_message_saved_to_db:
+        logger.info("Cleaning up errorenous messages.")
+        to_be_deleted_messages_array = []
+        old_messages = await db_retry(
+            lambda: supabase_client.table('chat_messages').select('*').eq("role", "assistant").eq("reply_to_message_id", user_message_id).execute(), label = "get_saved_assistant_responses"
+        )
+        old_messages = old_messages.data if old_messages else []
+        if (len(old_messages) <= 1):
+            to_be_deleted_messages_array.append(user_message_id)
+            to_be_deleted_messages_array.append(response_message_id)
+        elif (len(old_messages) > 1) and assistant_message_saved_to_db:
+            to_be_deleted_messages_array.append(response_message_id)
+        # delete both assistant and user message
+        if to_be_deleted_messages_array:
+            await db_retry(
+            lambda: supabase_client.table('chat_messages').delete().in_("message_id", to_be_deleted_messages_array).execute(), label = "delete_user_assistant_messages"
+            )
+            return True
+    return False
+
 
 async def run_agent_with_progress(active_agent, messages, context: agent_module.UserContext, websocket) -> dict | None:
     final_messages = []
@@ -484,7 +511,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         pass # Socket might have closed just now
                 continue
 
-            if data.get("type") == "tts_request":
+            if data.get("type") == "tts_audio_url":
                 try:
                     raw_text = data.get("text")
                     message_id_ref = data.get("message_id")
@@ -495,7 +522,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             \n 2. User Message ID
                             \n 3. Text for TTS"""
                         )
-                        if await dismiss_user_request(websocket, "tts_audio_url", "not-acknowledged", "Some error occured while processing TTS Request. Please try again.", "tts_request_error"):
+                        if await dismiss_user_request(websocket, f"tts_audio_url_{user_message_id}_{message_id_ref}", "not-acknowledged", "Some error occured while processing TTS Request. Please try again.", "tts_request_error"):
                             break
                         continue
                     logger.info(f"≡ƒº╣ Cleaning text with Groq Agent...")
@@ -524,7 +551,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         logger.info(f"✅ Updated message {message_id_ref} with TTS audio URL in DB")
                     
                         await ws_send(websocket, {
-                            "type": "tts_audio_url",
+                            "type": f"tts_audio_url_{user_message_id}_{message_id_ref}",
                             "status": "acknowledged",
                             "message_id": message_id_ref,
                             "user_id": user_message_id,
@@ -532,7 +559,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         }, label="tts_audio_url")
                 except Exception as e:
                     logger.info(f"Some error occured while processing request for TTS generation: {e}")
-                    if await dismiss_user_request(websocket, "tts_request","not-acknowledged", "Some error occured while processing TTS Request. Please try again.", "tts_request_error"):
+                    if await dismiss_user_request(websocket, f"tts_audio_url_{user_message_id}_{message_id_ref}", "not-acknowledged", "Some error occured while processing TTS Request. Please try again.", "tts_request_error"):
                         break
                 continue
 
@@ -558,10 +585,10 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         label="stop_generation_save"
                     )
                     await ws_send(websocket, {
-                        "type": "stop_acknowledged",
+                        "type": "stop_generation",
                         "status": "acknowledged",
                         "message_id": message_id
-                    }, label="stop_acknowledged")
+                    }, label="stop_generation_acknowledged")
                     
                 except Exception as e:
                     logger.info(f"Some error occured while processing request for stop generation, Error: {e}")
@@ -604,7 +631,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     logger.info(f"🆕 Generated ID for new session: {session_id}")
                     try:
                         await ws_send(websocket, {
-                            "type": "session_id", "status": "acknowledged",
+                            "type": "session-init", "status": "acknowledged",
                             "session_id": session_id, "current_agent": current_agent_name,
                             "message_ids": [],
                             "mode": mode
@@ -620,7 +647,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     logger.error(f"Session Init Error: {e}")
                     # have to see how this status error reflects on frontend
                     try:
-                        await ws_send(websocket, {"type": "session_id", "status": "not_acknowledged", "error": "Session initialization failed"}, label="session_init_error")
+                        await ws_send(websocket, {"type": "session-init", "status": "not_acknowledged", "error": "Session initialization failed"}, label="session_init_error")
                     except WSDisconnectedError:
                         break
                     except:
@@ -698,11 +725,8 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     requested_session_id = data.get("session_id", "")
                     if not requested_session_id:
                         logger.info("No session id present, can't proceed")
-                        await websocket.send_json({
-                            "type": "get_chat", 
-                            "status": "not-acknowledged",
-                            "error": "No session ID present"
-                        })
+                        if await dismiss_user_request(websocket, "get_chat", "Some error occured while fetching chat session. Please try again", "get_chat_failed"):
+                            break
                         continue
                     logger.info(f"📥 get_chat request for session: {requested_session_id}")
                     # set the current session_id
@@ -761,12 +785,11 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             "chat_history": chat_history,
                             "mode": current_mode
                         })
-                    except WSDisconnectedError:
-                        break
                     except Exception as e:
-                        logger.error(f"Critical Error, can't proceed. Failed to send history {e}")
-                        await safe_close_websocket(websocket)
-                        break 
+                        logger.error(f"Some error occured while processing chat session history,please try again, Error: {e}")
+                        if await dismiss_user_request(websocket, "get_chat", "Some error occured while fetching chat session. Please try again", "get_chat_failed"):
+                            break
+                        continue
                     
                     if chat_history:
                         last_msg = chat_history[-1]
@@ -790,28 +813,19 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                     "message_id": orphan_user_message_id,
                                     "content": last_msg.get("content", ""),
                                 }, label="regenerate_required")
-                            except WSDisconnectedError:
-                                break
-                            except Exception:
-                                logger.info("Critical error, can't proceed")
-                                await safe_close_websocket(websocket)
-                                break
+                            except Exception as e:
+                                logger.info("Some error occured while sending regenerate", e)
+                                if await dismiss_user_request(websocket, "get_chat", "Some error occured while fetching chat session. Please try again", "get_chat_failed"):
+                                    break
+                                continue
                 except Exception as e:
                     logger.error(f"Some error occured while processing chat: {e}")
                     # send a not-acknowledged message to frontend
                     # error would be shown to the user
-                    try:
-                        await ws_send(websocket, {
-                            "type": "get_chat",
-                            "status": "not-acknowledged",
-                            "error": "Some error occured while loading your chat"
-                        })
-                    except WSDisconnectedError:
+                    if await dismiss_user_request(websocket, "get_chat", "Some error occured while fetching chat session. Please try again", "get_chat_failed"):
                         break
-                    except Exception:
-                        logger.info("Critical error, can't proceed")
-                        await safe_websocket_close(websocket)
-                        break
+                    continue
+                
                 continue
 
             # Handle DELETE SESSION request
@@ -820,24 +834,24 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     session_id_to_delete = data.get("session_id", "")
                     if not session_id_to_delete or not user_id:
                         logger.info("Missing required data: Session ID or User ID")
-                        if await dismiss_user_request(websocket, "delete_session", "Some error occurred while deleting session.", "session_delete_failed_response"):
+                        if await dismiss_user_request(websocket, f"delete_session_{session_id_to_delete}", "Some error occurred while deleting session.", "session_delete_failed_response"):
                             break
                         continue
 
                     success = await delete_user_session(user_id, session_id_to_delete)
                     if success:
                         await ws_send(websocket, {
-                            "type": "delete_session",
+                            "type": f"delete_session_{session_id_to_delete}",
                             "status": "acknowledged",
                             "session_id": session_id_to_delete
                         })
                     else:
-                        if await dismiss_user_request(websocket, "delete_session", "Some error occurred while deleting session.", "session_delete_failed_response"):
+                        if await dismiss_user_request(websocket, f"delete_session_{session_id_to_delete}", "Some error occurred while deleting session.", "session_delete_failed_response"):
                             break
                 
                 except Exception as e:
                     logger.error(f"Error deleting session: {e}")
-                    if await dismiss_user_request(websocket, "delete_session", "Some error occurred while deleting session.", "session_delete_failed_response"):
+                    if await dismiss_user_request(websocket, f"delete_session_{session_id_to_delete}", "Some error occurred while deleting session.", "session_delete_failed_response"):
                         break
                 continue 
 
@@ -926,7 +940,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         logger.info(""" **Can't reverse report - missing data:**
                         1. Message ID
                         """)
-                        if await dismiss_user_request(websocket, "undo-report", "Some error occured while reporting message. Please try again.", "revert_report_failed"):
+                        if await dismiss_user_request(websocket, f"undo-report-{message_id}", "Some error occured while reporting message. Please try again.", "revert_report_failed"):
                             break
                         continue
                     # delete hard rule in a different thread for optimization
@@ -936,13 +950,13 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     )
                     logger.info("✅ Reverted report successfully!")
                     await ws_send(websocket, {
-                        "type": "undo-report",
+                        "type": f"undo-report-{message_id}",
                         "status": "acknowledged",
                         "message_id": message_id,
                     }, label="undo_report_acknowledged")
                 except Exception as e:
                     logger.info(f"Some error occured while reverting report, Error: {e}")
-                    if await dismiss_user_request(websocket, "undo-report", "Some error occured while reporting message. Please try again.", "revert_report_failed"):
+                    if await dismiss_user_request(websocket, f"undo-report-{message_id}", "Some error occured while reporting message. Please try again.", "revert_report_failed"):
                         break 
                 continue
 
@@ -962,7 +976,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             2. Feedback
                             3. Assistant Message to be reported.
                         """)
-                        if await dismiss_user_request(websocket, "report", "Some error occured while reporting message. Please try again.", "report_failed"):
+                        if await dismiss_user_request(websocket, f"report-{message_id}", "Some error occured while reporting message. Please try again.", "report_failed"):
                             break
                         continue
                     # insert hard rule in a different thread for optimization
@@ -971,7 +985,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                         await ws_send(websocket, response, label="report_acknowledged")
                         continue
                     else:
-                        if await dismiss_user_request(websocket, "report", "Some error occured while reporting message. Please try again.", "report_failed"):
+                        if await dismiss_user_request(websocket, f"report-{message_id}", "Some error occured while reporting message. Please try again.", "report_failed"):
                             break
                         continue
                                 
@@ -985,30 +999,24 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                 try:
                     feedback_type  = data.get("type")
                     message_id = data.get('message_id')
+                    user_message_id = data.get("user_message_id")
                     message = data.get("message")
-                    if not session_id or not message_id or not message or not user_id:
+                    if not message_id or not message or not user_id or not user_message_id:
                         logger.info("""
                         **Can't proceed - missing required data:
                         1. Message ID
-                        2. User ID
+                        2. User Message ID
+                        3. User ID
+                        4. Message
                         **
                         """)
-                        if await dismiss_user_request(websocket, "feedback", "Some error ocurred while submitting feedback. Please try again.", "feedback_submission_failed"):
+                        if await dismiss_user_request(websocket, f"feedback-{user_message_id}-{message_id}-{feedback_type}", "Some error ocurred while submitting feedback. Please try again.", "feedback_submission_failed"):
                             break
                         continue
                     await asyncio.to_thread(handle_feedback, feedback_type , message, message_id, user_id)
                     
-                    user_message = await db_retry(
-                        lambda: supabase_client.table('chat_messages').select('reply_to_message_id').eq("message_id", message_id).limit(1).maybe_single().execute(), label="fetch_user_message_id_of_assistant_message" 
-                    )
-                    user_message_id = user_message.data.get("reply_to_message_id") if user_message else ""
-                    if not user_message_id:
-                        logger.info(f"No user message exists for {feedback_type} message, can't proceed")
-                        if await dismiss_user_request(websocket, "feedback", "Some error ocurred while submitting feedback. Please try again.", "feedback_submission_failed"):
-                            break
-                        continue
                     await ws_send(websocket, {
-                        "type": "feedback",
+                        "type": f"feedback-{user_message_id}-{message_id}-{feedback_type}",
                         "status": "acknowledged",
                         "message_id": message_id,
                         "reply_to_message_id": user_message_id,
@@ -1017,13 +1025,14 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     continue
                 except Exception as e:
                     logger.info(f"Some error occured while submitting feedback, Error: {e}")
-                    if await dismiss_user_request(websocket, "feedback", "Some error ocurred while submitting feedback. Please try again.", "feedback_submission_failed"):
+                    if await dismiss_user_request(websocket, f"feedback-{user_message_id}-{message_id}-{feedback_type}", "Some error ocurred while submitting feedback. Please try again.", "feedback_submission_failed"):
                         break
                     continue
                 
             # === MAIN CHAT MESSAGE ===
             if data.get("type") == "user_message":
                 try:
+                    
                     user_message_id = data.get("message_id")
                     role = data.get("role", "user")
                     additional_instructions = data.get("system_instructions")
@@ -1032,6 +1041,9 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     resend_message_id = data.get("resend_message_id")
                     new_file_text = data.get("new_file_context")
 
+                    # initialize a flag to deterime whether user message has been saved or not
+                    user_message_saved_to_db = False
+                    assistant_message_saved_to_db = False
                     # have to handle unsaved_file_context for a scenario where user refreshes, goes to a new chat, or navigates to an older session. In that case unsaved_file_context gets lost.
 
                     # Remove the unused file context - if any, before proceeding
@@ -1103,7 +1115,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                             "audio_data": existing_msg.get('audio_data') or [],
                                             "verse_images": existing_msg.get('verse_images') or [],
                                             "story_segments": existing_msg.get('story_data') or [],
-                                            "is_error": cached.get('is_error') or False
+                                            "is_error": existing_msg.get('is_error') or False
                                         },
                                         "reply_to_message_id": user_message_id,
                                         "resend_flag": False,
@@ -1139,13 +1151,15 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                 label="insert_user_message"
                             )
                             logger.info("✅ User message saved successfully!")
+                            user_message_saved_to_db = True
                         except (DBRetryError, Exception) as e:
                             logger.error(f"❌ Failed to save user message: {e}")
                             # don't delete session even if new, just add a check and fetch only those sessions with a title and description while fetching sessions
                             if await dismiss_user_request(websocket, "assistance_response", "Some error occured while generating response. Please try again.", "assistance_response_failed"):
                                 break
                             continue
-                            
+
+                    # raise Exception("Some error occured while processing assistant message!")
                     if not resend_flag:
                         file_name = data.get("file_name")
                         file_type = data.get("file_type")
@@ -1229,7 +1243,6 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                     # append user message to conversation history
                     conversation_history.append({"role": "user", "content": message_string, "id": user_message_id})
 
-                    print("conversation_history", conversation_history)
                     messages = base_messages + conversation_history     
                     agent_response = None
                     session_agent_running[session_id] = True
@@ -1366,6 +1379,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                 label="insert_assistant_message"
                             )
                             print("✅ Assistant message saved successfully!")
+                            assistant_message_saved_to_db = True
                         except (DBRetryError, Exception) as e:
                             logger.error(f"❌ Some error occured while saving assistant message: {e}")
                             raise
@@ -1419,6 +1433,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                                 label="insert_assistant_message"
                             )
                             print("✅ Assistant message saved successfully!")
+                            assistant_message_saved_to_db = True
                         except (DBRetryError, Exception) as e:
                             logger.error(f"❌ Some error occured while saving assistant message: {e}")
                             raise                  
@@ -1503,9 +1518,13 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
                             break
                         except Exception as e:
                             logger.info(f"Some error occured while sending saved assistant response, Error: {e}")
-                            if await dismiss_user_request(websocket, "assistance_response", "Some error occured while generating response. Please try again.", "assistance_response_failed"):
+                            logger.info(f"User message saved to db: {user_message_saved_to_db}")
+                            await cleanup_on_error(websocket, user_message_saved_to_db, assistant_message_saved_to_db, user_message_id, response_message_id)
+                            if await dismiss_user_request(websocket, "assistance_response", "Some error occured while generating response. Please try again.", "assistance_response_failed", {"is_error": True}):
                                 break
-                            continue
+                            continue    
+                    logger.info(f"User message saved to db: {user_message_saved_to_db}")
+                    await cleanup_on_error(websocket, user_message_saved_to_db, assistant_message_saved_to_db, user_message_id, response_message_id)
                     if await dismiss_user_request(websocket, "assistance_response", "Some error occured while generating response. Please try again.", "assistance_response_failed"):
                         break
                     continue

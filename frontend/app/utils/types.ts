@@ -208,7 +208,7 @@ export interface BaseOutgoingMessage {
 export interface SessionInitMessage extends BaseOutgoingMessage {
   type: "session-init";
   session_id: string;
-  mode:string | null;
+  mode: string | null;
 }
 
 // User message
@@ -630,7 +630,6 @@ export function isChatHistory(
   return msg.type === "chat_history";
 }
 
-
 // Personalization types
 export interface PersonalizationRequest {
   username: string;
@@ -645,9 +644,10 @@ export interface PersonalizationResponse {
   timestamp: string;
 }
 
-interface Action{
-  action: "assistance_response" | "get_chat" | "chat_history" | "voice_message_upload" | "attach_files" | "session-init" | "delete-session" | "delete-all-sessions" | "get-images"
+export type ActionType = "assistance_response" | "get_chat" | "chat_history" | "session-init" | `delete_session_${string}` | "get_images" | `undo-report-${string}` | `tts_audio_url_${string}_${string}` | "model-selection" | "delete_all_sessions" | "stop_generation" | `feedback-${string}-${string}-${string}` | `report-${string}`
+
+interface Action {
+  action: ActionType
 }
-export interface ResponseBasedActions {
-  
-}
+
+export interface ResponseBasedActions extends Array<Action> { }

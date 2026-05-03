@@ -85,4 +85,4 @@ async def Quran_Search_By_Semantics(query:str, limit = 1) -> str:
         else:
             return ""
     except Exception as e:
-        print("Some error occured while semantic search", e)
+        print("Some error occured while performing semantic search", e)

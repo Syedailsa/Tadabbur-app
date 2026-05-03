@@ -20,7 +20,7 @@ const ChatHistoryCupboard = () => {
         localStorage.clear();
         router.push('/pages/auth');
     };
-    const { wsRef, openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox, setSelectedSessionID, chatHistory, currentMode, sessionID } = useContext(ChatContext)!
+    const { wsRef, openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox, setSelectedSessionID, chatHistory, currentMode, sessionID, responseBasedActions, setResponseBasedActions, requestExists, showFriendlyError } = useContext(ChatContext)!
     const cupBoardRef = useRef<HTMLDivElement>(null)
 
     const [toasts, setToasts] = useState<{ id: number; message: string }[]>([])
@@ -56,57 +56,35 @@ const ChatHistoryCupboard = () => {
 
     const getAllImages = () => {
         if (!wsRef.current) return
-        const user = sessionStorage.getItem('user');
-        let user_id = null
-        if (user) {
-            try {
-                const userData = JSON.parse(user)
-                user_id = userData.id;
-            } catch (e) {
-                console.error("Error parsing data:", e)
-                return
-            }
+
+        if (!requestExists("get_images")) {
+            wsSendAsync(wsRef.current, {
+                type: "get_images"
+            }).then(() => {
+                setResponseBasedActions(prev => [...(prev || []), { action: "get_images"}])
+            }).catch((err) => {
+                showFriendlyError("Failed to load images. Please try again.")
+            });
         }
-        wsSendAsync(wsRef.current, {
-            type: "get_images",
-            user_id: user_id
-        }).catch((error) => {
-            console.error('Failed to send get_images request:', error);
-        })
         setOpenChatHistoryDialogueBox(false)
     }
 
     const InitializeNewSession = () => {
-        if (!wsRef.current) return;
-
-        const user = sessionStorage.getItem('user');
-        let user_id = null;
-        if (user) {
-            try {
-                const userData = JSON.parse(user);
-                user_id = userData.id;
-            } catch (e) {
-                console.error("Error parsing user data:", e);
-                return
-            }
-        }
+        if (!wsRef.current || requestExists('session-init')) return;
         wsSendAsync(
             wsRef.current,
             {
                 type: "session-init",
                 session_id: "",
-                user_id: user_id,
                 mode: currentMode
-            }).catch((error) => {
-                console.error('Failed to send session-init request:', error);
-
-            })
+            }).then(() => {
+                setResponseBasedActions(prev => [...(prev || []), { action: "session-init"}])
+            }).catch(() => { showFriendlyError("Failed to start a new chat. Please try again.") });
         setOpenChatHistoryDialogueBox(false)
     };
 
     return (
         <>
-
             <motion.div ref={cupBoardRef} transition={{ duration: 0.3, ease: "linear" }} initial={{ x: "-100%" }}
                 animate={{ x: "0%" }}
                 exit={{ x: "-100%" }} className={`h-svh p-2 absolute left-0 z-30 border-r bg-${backgroundTheme} border-${fontTheme}/10 min-w-60 w-max max-w-60 md:w-70 flex flex-col`}>
@@ -135,13 +113,18 @@ const ChatHistoryCupboard = () => {
                             <motion.div
                                 onClick={() => {
                                     setSelectedSessionID(chat.session_id);
-                                    setOpenChatHistoryDialogueBox(false);
+                                    setOpenChatHistoryDialogueBox(false)
                                     // only send get_chat request if current session is different from required session
-                                    if (chat.session_id != sessionID) {
+                                    const requestExists = responseBasedActions.some(m => m.action === "get_chat")
+                                    if (!requestExists && chat.session_id != sessionID) {
                                         wsSendAsync(wsRef.current, {
                                             type: "get_chat",
                                             session_id: chat.session_id,
-                                        });
+                                        }).then(() => {
+                                            setResponseBasedActions((prev) => [...(prev || []), { action: 'get_chat'}])
+                                        }).catch(() => { showFriendlyError("Failed to load conversation. Please try again.") });
+                                    } else {
+                                        return
                                     }
                                 }}
                                 whileHover={{ backgroundColor: "#ffffff0d" }}
@@ -193,10 +176,13 @@ const ChatHistoryCupboard = () => {
                                             <span className="switzer-500 text-[11px] text-red-300 flex-1">Delete {confirmState.title}?</span>
                                             <button onClick={() => {
                                                 if (!wsRef.current) { showToast("Connection lost. Please refresh."); setConfirmState(null); return; }
-                                                wsSendAsync(wsRef.current, {
-                                                    type: "delete_session",
-                                                    session_id: confirmState.sessionId,
-                                                }).catch(() => showToast(`Error deleting "${confirmState.title}". Please try again.`));
+                                                if (!requestExists(`delete_session_${confirmState.sessionId}`))
+                                                    wsSendAsync(wsRef.current, {
+                                                        type: "delete_session",
+                                                        session_id: confirmState.sessionId,
+                                                    }).then(() => {
+                                                        setResponseBasedActions(prev => [...(prev || []), { action: `delete_session_${confirmState.sessionId}`}])
+                                                    }).catch(() => showFriendlyError(`Error deleting "${confirmState.title}". Please try again.`));
                                                 setConfirmState(null);
                                             }} className="text-[11px] switzer-600 text-red-400 hover:text-red-300 px-1">Yes</button>
                                             <button onClick={e => { e.stopPropagation(); setConfirmState(null); }}

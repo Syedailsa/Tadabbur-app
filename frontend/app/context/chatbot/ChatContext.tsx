@@ -1,6 +1,7 @@
 import React, { createContext, useContext, Dispatch, SetStateAction } from "react";
 import { ChatMessage, AssistantMessage, Attachment, StoryParagraph } from "@/app/components/chatbot/interfaces/ChatMessage";
 import hidePromptExtraOptionsModelBoxArray from "@/app/components/chatbot/interfaces/hidePromptExtraOptionsModelBoxArray";
+import { ActionType, ResponseBasedActions } from "@/app/utils/types";
 
 
 export interface ChatRecord {
@@ -24,6 +25,7 @@ type AskFn = (
 
 export interface ChatContextType {
   ask: AskFn;
+  requestExists: (action: ActionType) => boolean
   stopGeneration: () => void;
   wsRef: React.RefObject<WebSocket | null>;
   inputRef: React.RefObject<HTMLDivElement | null>
@@ -65,5 +67,8 @@ export interface ChatContextType {
   showPlaceholder: boolean | null
   isGenerating: boolean
   setOpenImageContainer: React.Dispatch<React.SetStateAction<boolean>>
+  responseBasedActions: ResponseBasedActions
+  setResponseBasedActions: React.Dispatch<React.SetStateAction<ResponseBasedActions>>
+  showFriendlyError: (error: string) => void
 }
 export const ChatContext = createContext<ChatContextType | null>(null);

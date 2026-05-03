@@ -1,14 +1,10 @@
 import { motion } from "framer-motion"
 import { wsSendAsync } from "@/app/utils/retryOpernation"
+import { useContext } from "react";
+import { ChatContext } from "@/app/context/chatbot/ChatContext";
 
-type HamBurgerProps = {
-    wsRef: React.RefObject<WebSocket | null>;
-    openChatHistoryDialogueBox: boolean;
-    setOpenChatHistoryDialogueBox: React.Dispatch<React.SetStateAction<boolean>>;
-    currentMode: "normal" | "story" | null;
-}
-
-const HamBurger = ({ wsRef, openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox, currentMode }: HamBurgerProps) => {
+const HamBurger = () => {
+    const { wsRef, openChatHistoryDialogueBox, setOpenChatHistoryDialogueBox, currentMode, responseBasedActions, requestExists, setResponseBasedActions, showFriendlyError } = useContext(ChatContext)!
     const fontTheme = currentMode === "normal" ? "black" : "white"
     return (
         <motion.div
@@ -21,21 +17,18 @@ const HamBurger = ({ wsRef, openChatHistoryDialogueBox, setOpenChatHistoryDialog
             onClick={() => {
                 if (openChatHistoryDialogueBox) {
                     setOpenChatHistoryDialogueBox(false)
+                    return
                 }
                 else {
-                    const user = sessionStorage.getItem('user');
-                    let user_id = null;
-                    if (user) {
-                        try {
-                            const userData = JSON.parse(user);
-                            user_id = userData.id;
-                        } catch (e) {
-                            console.error("Error parsing user data:", e);
-                        }
-                    }
-                    wsSendAsync
-                        (wsRef.current, { type: "chat_history", user_id: user_id }).catch(() => { });
                     setOpenChatHistoryDialogueBox(true);
+                    if (!requestExists("chat_history")) {
+                        wsSendAsync
+                            (wsRef.current, { type: "chat_history" }).then(() => {
+                                setResponseBasedActions(prev => [...(prev || []), { action: "chat_history"}])
+                            }).catch(() => { showFriendlyError("Failed to load chat history. Please try again.") });
+                    } else {
+                        return
+                    }
                 }
 
             }} id="ham-burger" className="flex flex-col gap-y-1 cursor-pointer z-40">

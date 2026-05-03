@@ -23,7 +23,7 @@ const PromptExtraOptionsModelBox = ({
   assistant_index,
 }: PromptExtraOptionsModelBoxProps) => {
 
-  const { wsRef, sessionID, messages, setMessages, setReportedMessageID, audioRef, currentPlayableAudio, setHidePromptExtraOptionsModelBoxArray, setHideReportContentDialogueBox, currentMode } = useContext(ChatContext)!
+  const { wsRef, sessionID, messages, setMessages, setReportedMessageID, audioRef, currentPlayableAudio, setHidePromptExtraOptionsModelBoxArray, setHideReportContentDialogueBox, currentMode, requestExists, setResponseBasedActions, showFriendlyError } = useContext(ChatContext)!
   const overlayRef = useRef<HTMLDivElement | null>(null);
 
   const audio_state = messages?.find((m: ChatMessage) => m.message_id === reply_to_message_id)?.responses.find((r: AssistantMessage) => r.message_id === message_id)?.audio_state
@@ -65,15 +65,20 @@ const PromptExtraOptionsModelBox = ({
             audioRef.current.play()
             break
           }
-          wsSendAsync(wsRef.current, {
-            type: "tts_request",
-            text:
-              messages?.[parent_index]?.responses?.[assistant_index]
-                ?.content || "",
-            message_id: message_id,
-            reply_to_message_id: reply_to_message_id,
-          });
-
+          if (!requestExists(`tts_audio_url_${reply_to_message_id}_${message_id}`)) {
+            wsSendAsync(wsRef.current, {
+              type: "tts_audio_url",
+              text:
+                messages?.[parent_index]?.responses?.[assistant_index]
+                  ?.content || "",
+              message_id: message_id,
+              reply_to_message_id: reply_to_message_id,
+            }).then(() => {
+              setResponseBasedActions(prev => [...(prev || []), { action: `tts_audio_url_${reply_to_message_id}_${message_id}`}])
+            }).catch(() => {
+              showFriendlyError("Failed to generate audio. Please try again.")
+            });
+          }
           setMessages((prev: ChatMessage[]) =>
             prev.map((m) =>
               m.message_id === reply_to_message_id

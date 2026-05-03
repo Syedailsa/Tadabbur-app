@@ -6,7 +6,7 @@ import { SessionInitMessage } from "@/app/utils/types"
 import { wsSendAsync } from "@/app/utils/retryOpernation"
 
 const StoryModeExtraOptions = () => {
-    const { setOpenStoryModeExtraOptions, wsRef } = useContext(ChatContext)!
+    const { setOpenStoryModeExtraOptions, wsRef, requestExists, setResponseBasedActions, showFriendlyError } = useContext(ChatContext)!
     const overlayRef = useRef<HTMLDivElement | null>(null)
 
     useEffect(() => {
@@ -20,23 +20,12 @@ const StoryModeExtraOptions = () => {
         };
         document.addEventListener("click", handleOutsideClick);
         return () => {
-            document.removeEventListener("click", handleOutsideClick);
+            document.removeEventListener("click",handleOutsideClick);
         };
     }, [setOpenStoryModeExtraOptions]);
 
     const initializeTadabburMode = async () => {
-        if (!wsRef.current) return
-
-        const user = localStorage.getItem("user");
-        let user_id = null;
-        if (user) {
-            try {
-                const userData = JSON.parse(user);
-                user_id = userData.id;
-            } catch (e) {
-                console.error("Error parsing user data:", e);
-            }
-        }
+        if (!wsRef.current || requestExists("session-init")) return
         const sessionInit: SessionInitMessage = {
             type: "session-init",
             session_id: "",
@@ -44,15 +33,17 @@ const StoryModeExtraOptions = () => {
         };
 
         try {
-            await wsSendAsync(
+            wsSendAsync(
                 wsRef.current,
                 sessionInit,
                 8,
                 500
-            );
+            ).then(() => {
+                setResponseBasedActions(prev => [...(prev || []), { action: "session-init" }])
+            }).catch(() => { showFriendlyError("Failed to switch mode. Please try again.") });
         }
         catch (error) {
-            console.error("❌ Failed to initialize WebSocket session:", error);
+            showFriendlyError("Failed to switch mode. Please try again.")
         }
     }
 

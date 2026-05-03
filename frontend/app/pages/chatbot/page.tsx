@@ -42,10 +42,11 @@ import groupChatMessages from "@/app/utils/groupChatMessages";
 import WaveForm from "../../components/chatbot/UI/WaveForm";
 import hidePromptExtraOptionsModelBoxArray from "@/app/components/chatbot/interfaces/hidePromptExtraOptionsModelBoxArray";
 import { useRouter, useSearchParams } from "next/navigation";
-import Cookies from "js-cookie";
 import {
   SessionInitMessage,
   ChatRecordType,
+  ResponseBasedActions,
+  ActionType,
 } from "../../utils/types";
 import { retryOperation, wsSendAsync } from "@/app/utils/retryOpernation";
 import HamBurger from "@/app/components/chatbot/UI/HamBurger";
@@ -94,8 +95,9 @@ function ChatContent() {
   const [chatHistory, setChatHistory] = useState<ChatRecordType[] | null>(null);
   const messageScrollFlag = useRef<boolean | null>(false);
   const [active, setActive] = useState<boolean[]>([false, false, false]);
-  const committedTextRef = useRef<string>("");
-  const tempSpeechRef = useRef<string>("");
+  const [currentMode, setCurrentMode] = useState<"normal" | "story" | null>("normal");
+  const currentModeRef = useRef<"normal" | "story" | null>(currentMode);
+  const modeAtMicStartRef = useRef<"normal" | "story" | null>(null);
   const [showPersonalizationForm, setShowPersonalizationForm] = useState<boolean>(false)
   const [isCheckingPersonalization, setIsCheckingPersonalization] = useState<boolean>(true)
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -111,7 +113,7 @@ function ChatContent() {
   const constraintRefNormalMode = useRef(null)
   const constraintRefStoryMode = useRef(null)
   const [openImageContainer, setOpenImageContainer] = useState<boolean>(false)
-  const [currentMode, setCurrentMode] = useState<"normal" | "story" | null>("normal");
+
   const [isGenerating, setIsGenerating] = useState(false);
   const [openStoryModeExtraOptions, setOpenStoryModeExtraOptions] = useState<boolean>(false)
   const currentStreamingMsgRef = useRef<{
@@ -128,6 +130,8 @@ function ChatContent() {
     useState<hidePromptExtraOptionsModelBoxArray[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected">("connected");
   const streamingMessageIndexRef = useRef<number | null>(null);
+
+
   const setStreamingMessageIndexSynced = (val: number | null) => {
     streamingMessageIndexRef.current = val;
     setStreamingMessageIndex(val);
@@ -160,6 +164,9 @@ function ChatContent() {
     boolean
   >(false);
 
+  const actionTimeoutMapRef = useRef<Map<ActionType, NodeJS.Timeout>>(new Map())
+
+  const [responseBasedActions, setResponseBasedActions] = useState<ResponseBasedActions>([])
   const x = useMotionValue(0)
   const animationRef = useRef<ReturnType<typeof animate> | null>(null)
 
@@ -338,7 +345,7 @@ function ChatContent() {
     const handleMicStart = () => {
       setIsRecording(true);
       setIsTranscribing(false);
-      tempSpeechRef.current = "";
+      modeAtMicStartRef.current = currentModeRef.current;
     };
 
     const handleMicStop = () => {
@@ -355,6 +362,7 @@ function ChatContent() {
 
     const handleSTTResult = (e: Event) => {
       setIsTranscribing(false);
+      if (currentModeRef.current !== modeAtMicStartRef.current) return;
       const customEvent = e as CustomEvent;
       const text = customEvent.detail;
 
@@ -363,9 +371,7 @@ function ChatContent() {
         const newText = currentText ? `${currentText} ${text}` : text;
 
         inputRef.current.innerText = newText;
-        committedTextRef.current = newText;
-
-
+        inputRef.current.dispatchEvent(new Event("input", { bubbles: true }))
         const range = document.createRange();
         const sel = window.getSelection();
         if (inputRef.current.lastChild) {
@@ -382,7 +388,8 @@ function ChatContent() {
     window.addEventListener("tadabbur-mic-start", handleMicStart);
     window.addEventListener("tadabbur-mic-stop", handleMicStop);
     window.addEventListener("tadabbur-transcription-start", handleTranscriptionStart);
-    window.addEventListener("tadabbur-transcription-error", handleTranscriptionEnd);
+    window.addEventListener("tadabbur-transcription-end", handleTranscriptionEnd);
+
     window.addEventListener("tadabbur-stt-result", handleSTTResult);
 
 
@@ -390,12 +397,13 @@ function ChatContent() {
       window.removeEventListener("tadabbur-mic-start", handleMicStart);
       window.removeEventListener("tadabbur-mic-stop", handleMicStop);
       window.removeEventListener("tadabbur-transcription-start", handleTranscriptionStart);
-      window.removeEventListener("tadabbur-transcription-error", handleTranscriptionEnd);
+      window.removeEventListener("tadabbur-transcription-end", handleTranscriptionEnd);
       window.removeEventListener("tadabbur-stt-result", handleSTTResult);
     };
   }, []);
 
   useEffect(() => {
+    currentModeRef.current = currentMode
     if (inputRef.current) {
       inputRef.current.textContent = ""
       setShowPlaceholder(true)
@@ -403,6 +411,8 @@ function ChatContent() {
     setIsInputBoxAdaptable(false)
     setIsRecording(false)
     setIsTranscribing(false)
+    setIsUploading(false)
+    setAttachedFile(null)
   }, [currentMode])
 
   useEffect(() => {
@@ -465,6 +475,38 @@ function ChatContent() {
     checkPersonalization();
   }, []);
 
+
+
+  const showFriendlyError = (error: string) => {
+    setServerErrorToast(error ?? "Something went wrong on our end. Please try again in a moment.");
+    setTimeout(() => setServerErrorToast(null), 4000);
+  };
+
+  const handleTaskCompletion = (timeOutOccured: boolean = false, action: ActionType) => {
+    if (!action) return
+    // alert handling here
+    if (timeOutOccured) {
+      showFriendlyError("Server didn't respond in time. Please try again.")
+      handleResponseFailure(action)
+    }
+
+    // remove the action from the response based actions
+    setResponseBasedActions((prev) => prev.filter(m => m.action != action))
+    // clear interval upon timeout completion
+    const id = actionTimeoutMapRef.current.get(action)
+
+    if (id) {
+      clearTimeout(id)
+      actionTimeoutMapRef.current.delete(action)
+    }
+  }
+
+  const requestExists = (action: ActionType): boolean => {
+    if (!action) {
+      return false
+    }
+    return responseBasedActions.some(m => m.action === action)
+  }
   useEffect(() => {
     let reconnectTimeout: NodeJS.Timeout;
     const connect = () => {
@@ -479,7 +521,6 @@ function ChatContent() {
         console.error("No authentication token found. Cannot connect to chat.");
         return;
       }
-
       const websocket = new WebSocket(`${process.env.NEXT_PUBLIC_WEBSOCKET_URL}/ws/chat?token=${token}`);
       wsRef.current = websocket;
       websocket.onopen = async () => {
@@ -489,30 +530,36 @@ function ChatContent() {
 
         try {
           if (typeof urlSessionId === 'string' && urlSessionId.length > 0) {
-            console.log("Sending get_chat")
-            await wsSendAsync(
-              websocket, {
-              type: "get_chat",
-              session_id: urlSessionId,
-            }, 8, 500)
+            if (!requestExists("get_chat")) {
+              console.log("Sending get_chat");
+              await wsSendAsync(websocket, {
+                type: "get_chat",
+                session_id: urlSessionId,
+              }, 8, 500).then(() => {
+                setResponseBasedActions(prev => [...(prev || []), { action: "get_chat" }])
+              }).catch(() => { showFriendlyError("Failed to load conversation. Please try again.") });
+            } else {
+              return;
+            }
           } else {
-            const sessionID = generateSessionId()
-            const sessionInit: SessionInitMessage = {
-              type: "session-init",
-              session_id: sessionID,
-              mode: currentMode
-            };
-            console.log("Sending session init")
-            await wsSendAsync(
-              websocket,
-              sessionInit,
-              8,
-              500
-            );
+            if (!requestExists("session-init")) {
+              const sessionID = generateSessionId();
+              const sessionInit: SessionInitMessage = {
+                type: "session-init",
+                session_id: sessionID,
+                mode: currentMode
+              };
+              console.log("Sending session init");
+              await wsSendAsync(websocket, sessionInit, 8, 500).then(() => {
+                setResponseBasedActions(prev => [...(prev || []), { action: "session-init" }])
+              }).catch(() => { showFriendlyError("Failed to start a new session. Please refresh and try again.") });
+            } else {
+              return;
+            }
           }
 
         } catch (error) {
-          console.error("❌ Failed to initialize WebSocket session:", error);
+          showFriendlyError("Connection failed. Please refresh and try again.");
           setConnectionStatus("disconnected");
         }
         setReportedMessageIDs([]);
@@ -541,94 +588,152 @@ function ChatContent() {
         websocket.close();
       };
 
-
       wsRef.current.onmessage = (event) => {
         const data = JSON.parse(event.data);
         console.log("Data from websocket", event.data);
 
         const type = data.type;
+        const status = data.status
 
-        const FAILED_STATUSES = new Set([
-          "not-acknowledged",
-          "not_acknowledged",
-          "Not_acknowledged",
-          "Not_acknowledeged",
-          "error",
-        ]);
-
-        const SKIP_TYPES = new Set(["tts_audio_url", "get_images", "chat_history"]);
-
-        if (data.status && FAILED_STATUSES.has(data.status) && !SKIP_TYPES.has(type)) {
-          showFriendlyError(type);
-          return;
+        // only handle those tasks with a status field
+        if (status && typeof (status) === "string") {
+          handleTaskCompletion(false, type)
+          if (status != "acknowledged") {
+            if (type === "assistance_response") {
+              setMessages((prev: ChatMessage[]) => {
+                if (!prev || prev.length === 0) return prev
+                const lastUserMessageIndex = prev.findLastIndex((m) => m.role === "user")
+                return prev.map((m, i) => {
+                  if (i !== lastUserMessageIndex) return m
+                  const lastAssistantMessageIndex = m.responses.findLastIndex((r) => r.role === "assistant")
+                  return { ...m, responses: m.responses.map((n, j) => j !== lastAssistantMessageIndex ? n : { ...n, is_error: true }) }
+                })
+              })
+            }
+            const error = data.error ?? "Something went wrong on our end. Please try again in a moment."
+            showFriendlyError(error)
+            handleResponseFailure(type)
+            return
+          }
         }
 
-        switch (type) {
-          case "pong":
-            console.log("Pong received - connection alive");
-            lastPongRef.current = Date.now();
-            break;
-          case "undo-report":
-            const id = data.message_id;
-            if (id) {
-              setReportedMessageIDs((prev) => {
-                if (!prev) return prev;
-                return prev.filter((i) => i !== id);
-              });
-            }
-            break;
-
-          case "tts_audio_url":
-            const tts_audio_status = data.status
-            if (tts_audio_status === "acknowledged") {
-              const audio_url = data.audio_url;
-              const tts_message_id = data.message_id;
-              const user_message_id = data.user_id
-              if (audio_url && tts_message_id && user_message_id) {
-                // logic here
-                try {
-                  // store the audio_url for next playback
-                  setMessages(prev => prev.map(m => m.message_id === user_message_id ? { ...m, responses: m.responses.map(r => r.message_id === tts_message_id ? { ...r, audio_link: audio_url } : r) } : m))
-
-                  // only play if current playable audio is the one that matches response ID
-                  if (audioRef.current && currentPlayableAudio.current?.response_message_id == tts_message_id) {
-                    audioRef.current.src = ""
-                    audioRef.current.src = audio_url
-                    audioRef.current.play()
-                  }
-                } catch (err) {
-                  console.log("Some error occured while assigning audio url", err)
-                }
+        if (type.startsWith("tts_audio_url_")) {
+          const audio_url = data.audio_url;
+          const tts_message_id = data.message_id;
+          const user_message_id = data.user_id;
+          if (audio_url && tts_message_id && user_message_id) {
+            try {
+              setMessages(prev => prev.map(m => m.message_id === user_message_id ? { ...m, responses: m.responses.map(r => r.message_id === tts_message_id ? { ...r, audio_link: audio_url } : r) } : m))
+              if (audioRef.current && currentPlayableAudio.current?.response_message_id == tts_message_id) {
+                audioRef.current.src = ""
+                audioRef.current.src = audio_url
+                audioRef.current.play()
               }
+            } catch (err) {
+              console.log("Some error occured while assigning audio url", err)
             }
-
-            break;
-
-          case "session_id":
-            // reset everything  
-            audioRef?.current?.pause()
-            setCurrentMode(null)
-            setError(null)
-            setMessages(prev =>
-              prev.map(m =>
-                m.message_id === currentPlayableAudio.current?.user_message_id
+          }
+        } else if (type.startsWith("undo-report-")) {
+          const id = data.message_id;
+          if (id) {
+            setReportedMessageIDs((prev) => {
+              if (!prev) return prev;
+              return prev.filter((i) => i !== id);
+            });
+          }
+        } else if (type.startsWith("feedback-")) {
+          const message_id = data.message_id
+          const feedback_type = data.feedback_type
+          const reply_to_message_id = data.reply_to_message_id
+          if (message_id && ["liked", "disliked"].includes(feedback_type) && reply_to_message_id) {
+            setMessages((prev: ChatMessage[]) => {
+              return prev.map((m) =>
+                m.message_id === reply_to_message_id
                   ? {
                     ...m,
-                    responses: m.responses.map(n =>
-                      n.message_id === currentPlayableAudio.current?.response_message_id
-                        ? { ...n, audio_state: "ended" }
-                        // nullify the rest
-                        : { ...n, audio_state: null }
-                    ),
+                    responses: m.responses.map((r) =>
+                      r.message_id === message_id
+                        ? { ...r, feedback: feedback_type, clicked_feedback: feedback_type === "liked" ? [false, r.clicked_feedback[1]] : [r.clicked_feedback[0], false] }
+                        : r
+                    )
                   }
-                  : { ...m, responses: m.responses.map(b => ({ ...b, audio_state: null })) }
+                  : m
               )
-            );
-            const session_id = data.session_id;
-            const session_status = data.status;
-            const message_ids = data.message_ids;
-            const session_mode: "story" | "normal" = data.mode || "normal"
-            if (session_status === "acknowledged") {
+            });
+          }
+        } else if (type.startsWith("delete_session_")) {
+          window.dispatchEvent(new CustomEvent("tadabbur-session-deleted", {
+            detail: { session_id: data.session_id }
+          }));
+          const currentUrlSessionId = new URLSearchParams(window.location.search).get("session_id");
+          let skipChatHistory = false;
+          if (currentUrlSessionId === data.session_id) {
+            setMessages([]);
+            setSessionID(null);
+            setMessageIDs([]);
+            setHidePromptExtraOptionsModelBoxArray([]);
+            setLoading(false);
+            setIsGenerating(false);
+            setShowDeleteSuccess(true);
+            setTimeout(() => setShowDeleteSuccess(false), 3000);
+            const pending: { type: string; user_id: string | null; session_id?: string }[] = JSON.parse(localStorage.getItem("tadabbur_pending_deletes") || "[]");
+            const updated = pending.filter((op) => op.session_id !== data.session_id);
+            localStorage.setItem("tadabbur_pending_deletes", JSON.stringify(updated));
+            const sessionID = generateSessionId()
+            if (!requestExists("session-init")) {
+              wsSendAsync(wsRef.current, {
+                type: "session-init",
+                session_id: sessionID,
+              }).then(() => {
+                setResponseBasedActions(prev => [...(prev || []), { action: "session-init" }])
+              }).catch(() => { showFriendlyError("Failed to start a new session. Please try again.") });
+            } else {
+              skipChatHistory = true;
+            }
+          }
+          if (!skipChatHistory && !requestExists('chat_history')) {
+            wsSendAsync(wsRef.current, {
+              type: "chat_history"
+            }).then(() => {
+              setResponseBasedActions(prev => [...(prev || []), { action: "chat_history" }])
+            }).catch(() => { showFriendlyError("Failed to load chat history. Please try again.") });
+          }
+        } else if (type.startsWith("report-")) {
+          const reported_message_id = data.message_id;
+          if (reported_message_id) {
+            setReportedMessageIDs((prev) => [
+              ...(prev ?? []),
+              reported_message_id,
+            ]);
+          }
+        } else {
+          switch (type) {
+            case "pong":
+              console.log("Pong received - connection alive");
+              lastPongRef.current = Date.now();
+              break;
+
+            case "session-init": {
+              audioRef?.current?.pause()
+              setCurrentMode(null)
+              setError(null)
+              setMessages(prev =>
+                prev.map(m =>
+                  m.message_id === currentPlayableAudio.current?.user_message_id
+                    ? {
+                      ...m,
+                      responses: m.responses.map(n =>
+                        n.message_id === currentPlayableAudio.current?.response_message_id
+                          ? { ...n, audio_state: "ended" }
+                          : { ...n, audio_state: null }
+                      ),
+                    }
+                    : { ...m, responses: m.responses.map(b => ({ ...b, audio_state: null })) }
+                )
+              );
+              const session_id = data.session_id;
+              const message_ids = data.message_ids;
+              const session_mode: "story" | "normal" = data.mode || "normal"
               setSessionID(session_id);
               const currentUrlId = searchParams.get("session_id");
               if (!currentUrlId || currentUrlId === "" || currentMode != session_mode) {
@@ -641,133 +746,52 @@ function ChatContent() {
               setCurrentMode(session_mode)
               setHidePromptExtraOptionsModelBoxArray([])
               setMessageIDs(message_ids);
-
+              break;
             }
-            break;
 
-          case "model-selection":
-            const model_status = data.status;
-            const model_name = data.display_name;
-            if (model_status === "acknowledged") {
+            case "model-selection": {
+              const model_name = data.display_name;
               alert(`Model is changed to ${model_name}`);
+              break;
             }
 
-            break;
-
-          case "error":
-            setMessages(prev => {
-              const updated = [...prev];
-              const lastMsg = updated[updated.length - 1];
-              if (lastMsg && lastMsg.responses) {
-                lastMsg.responses = lastMsg.responses.filter(r => r.content !== "");
-              }
-              return updated;
-            });
-            setLoading(false);
-            setLoadingMessage(null);
-            setIsGenerating(false);
-            setError(data.message);
-            break;
-
-          case "chat_history":
-            const chat_history = data.chat_history;
-            const history_status = data.status;
-            // handle chat history
-            if (history_status === "acknowledged") {
+            case "chat_history": {
+              const chat_history = data.chat_history;
               setChatHistory(chat_history);
-            } else if (history_status === "error") {
-              showFriendlyError("chat_history");
+              break;
             }
-            break;
 
-          case "delete_session":
-            const delete_status = data.status;
-            if (delete_status === "acknowledged") {
-              window.dispatchEvent(new CustomEvent("tadabbur-session-deleted", {
-                detail: { session_id: data.session_id }
-              }));
-
-              const currentUrlSessionId = new URLSearchParams(window.location.search).get("session_id");
-              if (currentUrlSessionId === data.session_id) {
-                setMessages([]);
-                setSessionID(null);
-                setMessageIDs([]);
-                setHidePromptExtraOptionsModelBoxArray([]);
-                setLoading(false);
-                setIsGenerating(false);
-
-                const u = localStorage.getItem("user");
-                let uid = null;
-                try { uid = u ? JSON.parse(u).id : null; } catch { }
-                const sessionID = generateSessionId()
-                wsSendAsync(wsRef.current, {
-                  type: "session-init",
-                  session_id: sessionID,
-                });
-              }
-
-
-              const user = localStorage.getItem("user");
-              let user_id: string = "";
-
-              try {
-                const userData = JSON.parse(user || "{}");
-                user_id = userData.id;
-              } catch (e) {
-                console.error("Error parsing user data:", e);
-              }
-
-              if (user_id) {
-                wsSendAsync(wsRef.current, {
-                  type: "chat_history",
-                  user_id: user_id,
-                });
-              }
-              setShowDeleteSuccess(true);
-              setTimeout(() => setShowDeleteSuccess(false), 3000);
-              type PendingDelete = { type: string; user_id: string | null; session_id?: string };
-              const pending: PendingDelete[] = JSON.parse(localStorage.getItem("tadabbur_pending_deletes") || "[]");
-              const updated = pending.filter((op) => op.session_id !== data.session_id);
-              localStorage.setItem("tadabbur_pending_deletes", JSON.stringify(updated));
-
-            }
-            break;
-
-          case "delete_all_sessions":
-            const delete_all_status = data.status;
-            if (delete_all_status === "success") {
+            case "delete_all_sessions": {
               if (setOpenChatHistoryDialogueBox) setOpenChatHistoryDialogueBox(false);
               setChatHistory([]);
               window.dispatchEvent(new CustomEvent("tadabbur-all-sessions-deleted"));
               localStorage.removeItem("tadabbur_pending_deletes");
-
               setMessages([]);
               setSessionID(null);
               setMessageIDs([]);
               setHidePromptExtraOptionsModelBoxArray([]);
               router.push('/pages/chatbot', { scroll: false });
-
-              wsSendAsync(wsRef.current, {
-                type: "session-init",
-                session_id: "",
-              });
+              if (!requestExists("session-init")) {
+                wsSendAsync(wsRef.current, {
+                  type: "session-init",
+                  session_id: "",
+                }).then(() => {
+                  setResponseBasedActions(prev => [...(prev || []), { action: "session-init" }])
+                }).catch(() => { showFriendlyError("Failed to start a new session. Please try again.") });
+              }
+              break;
             }
-            break;
-          case "get_images":
-            const get_image_status = data.status
-            const images = data.images || []
-            if (get_image_status != "acknowledged" || images.length <= 0) {
-              break
-            }
-            setUserImages(images)
-            setOpenImageContainer(true)
-            break
 
-          case "get_chat":
-            setError(null)
-            const status = data.status;
-            if (status === "acknowledged") {
-              // reset audio
+            case "get_images": {
+              const images = data.images || []
+              if (images.length <= 0) break;
+              setUserImages(images)
+              setOpenImageContainer(true)
+              break;
+            }
+
+            case "get_chat": {
+              setError(null)
               audioRef?.current?.pause()
               setMessages(prev =>
                 prev.map(m =>
@@ -777,7 +801,6 @@ function ChatContent() {
                       responses: m.responses.map(n =>
                         n.message_id === currentPlayableAudio.current?.response_message_id
                           ? { ...n, audio_state: "ended" }
-                          // nullify the rest
                           : { ...n, audio_state: null }
                       ),
                     }
@@ -786,11 +809,11 @@ function ChatContent() {
               );
               const mode: "story" | "normal" = data.mode;
               const messageIDs = data.unique_message_ids;
-              const session_id = data.session_id
+              const get_chat_session_id = data.session_id
               const chat_history = groupChatMessages(data.chat_history);
               setMessages(chat_history);
               setMessageIDs(messageIDs);
-              setSessionID(session_id)
+              setSessionID(get_chat_session_id)
               setConnectionStatus("connected")
               setCurrentMode(mode)
               setLoading(false);
@@ -799,9 +822,7 @@ function ChatContent() {
               if (saved) {
                 try {
                   const pendingData = JSON.parse(saved);
-                  // Only auto-send if it belongs to this session or session is new
-                  const isCorrectSession = !pendingData.target_session_id || pendingData.target_session_id === session_id;
-
+                  const isCorrectSession = !pendingData.target_session_id || pendingData.target_session_id === get_chat_session_id;
                   if (isCorrectSession && pendingData.input) {
                     console.log("🚀 Connection restored. Sending pending prompt from localStorage...");
                     ask(
@@ -813,7 +834,6 @@ function ChatContent() {
                       true,
                       null
                     );
-
                     localStorage.removeItem("tadabbur_pending_prompt");
                     pendingPromptRef.current = null;
                   }
@@ -823,7 +843,6 @@ function ChatContent() {
                 }
               }
 
-              // initialize an emtpy array for hidePromptExtraOptionsModelBoxArray
               const array: hidePromptExtraOptionsModelBoxArray[] = [];
               if (data.chat_history.length > 0) {
                 for (const record of data.chat_history) {
@@ -833,13 +852,11 @@ function ChatContent() {
                 }
               }
               setHidePromptExtraOptionsModelBoxArray(array)
-              router.push(`/pages/chatbot?session_id=${session_id}`);
+              router.push(`/pages/chatbot?session_id=${get_chat_session_id}`);
+              break;
             }
-            break;
 
-          case "assistance_response":
-            const assistant_response_status = data.status
-            if (assistant_response_status === "acknowledged") {
+            case "assistance_response": {
               const reply: string = data.content.response ?? "No reply from server";
               const has_verse_audio: boolean = data.content.has_verse_audio || false
               const has_verse_image: boolean = data.content.has_verse_image || false
@@ -852,13 +869,8 @@ function ChatContent() {
               const audio_data: SurahForAudios[] = data.content.audio_data || []
               const verse_images: SurahForVerseImages[] = data.content.verse_images || []
               const story_data: StoryParagraph[] = data.content.story_segments ?? []
-              // check if oldMessages is present with resend flag
               if (resend_flag) {
-                if (
-                  !oldMessagesRef.current ||
-                  oldMessagesRef.current.length === 0
-                ) {
-                  // console.log("No old messages so returning...");
+                if (!oldMessagesRef.current || oldMessagesRef.current.length === 0) {
                   break;
                 }
               }
@@ -873,7 +885,6 @@ function ChatContent() {
                 ];
               });
 
-              // Add a new assistant message
               setMessages((prev) => {
                 if (!prev || prev.length == 0) {
                   return prev;
@@ -884,7 +895,6 @@ function ChatContent() {
                   ? updated.findIndex((m) => m.message_id === reply_to_message_id)
                   : updated.length - 1;
 
-                // If not found, return unchanged
                 if (targetIndex === -1) {
                   console.warn("⚠️ Could not find target message for assistance_response, skipping");
                   return prev;
@@ -894,7 +904,6 @@ function ChatContent() {
 
                 const targetMessage = updated[targetIndex];
 
-                // Check if already rendered with content
                 const alreadyRendered = targetMessage.responses?.some(
                   (r) => r.message_id === message_id && r.content !== ""
                 );
@@ -912,7 +921,6 @@ function ChatContent() {
                 return updated;
               });
 
-
               setLoading(false);
               setLoadingMessage(null);
               setIsGenerating(true);
@@ -929,26 +937,19 @@ function ChatContent() {
               (async () => {
                 for (let i = 0; i < tokens.length; i += 4) {
                   if (stopFlag) break;
-
                   const chunk = tokens.slice(i, i + 4).join("");
                   await new Promise((resolve) => setTimeout(resolve, 2));
-
                   if (stopFlag) break;
-
                   setMessages((prev) => {
                     if (!prev || prev.length === 0) return prev;
                     const updated = [...prev];
-
                     const streamIndex = streamingMessageIndex ?? updated.length - 1;
                     if (streamIndex >= 0 && streamIndex < updated.length) {
                       const lastMsg = updated[streamIndex];
-                      // console.log("Last User Message", lastMsg)
                       if (!lastMsg.responses || lastMsg.responses.length === 0) return prev;
                       const lastResIdx = (lastMsg.number_of_responses || 1) - 1;
-
                       updated[streamIndex].responses[lastResIdx].content =
-                        (updated[streamIndex].responses[lastResIdx]?.content || "") +
-                        chunk;
+                        (updated[streamIndex].responses[lastResIdx]?.content || "") + chunk;
                       streamingContentRef.current = updated[streamIndex].responses[lastResIdx].content;
                     }
                     return updated;
@@ -961,13 +962,10 @@ function ChatContent() {
                 currentStreamingMsgRef.current = null;
                 streamingContentRef.current = "";
               });
+              break;
             }
-            break;
 
-          case "stop_acknowledged":
-            const stop_generation_status = data.status
-            if (stop_generation_status === "acknowledged") {
-              // reset states related to streaming
+            case "stop_generation": {
               setIsGenerating(false);
               setStreamingMessageIndexSynced(null);
               setLoading(false);
@@ -976,97 +974,34 @@ function ChatContent() {
               break;
             }
 
-          case "feedback":
-            const feedback_status = data.status
-            if (feedback_status === "acknowledged") {
-              const message_id = data.message_id
-              const feedback_type = data.feedback_type
-              const reply_to_message_id = data.reply_to_message_id
-              // add extra protection checks - even though not needed
-              if (message_id && ["liked", "disliked"].includes(feedback_type) && reply_to_message_id) {
-                setMessages((prev: ChatMessage[]) => {
-                  return prev.map((m) =>
-                    m.message_id === reply_to_message_id
-                      ? {
-                        ...m,
-                        responses: m.responses.map((r) =>
-                          r.message_id === message_id
-                            ? { ...r, feedback: feedback_type, clicked_feedback: feedback_type === "liked" ? [false, r.clicked_feedback[1]] : [r.clicked_feedback[0], false] }
-                            : r
-                        )
-                      }
-                      : m
-                  )
-                }
-                );
-              }
-            }
-            break
-          case "agent":
-            const agent_type = data.agent;
-            switch (agent_type) {
-              case "story-telling":
-                setPlaceholder("Generate an Islamic story");
-                setMessages([]);
-                setGreeting(
-                  "Generate any Islamic story with the finest AI Models."
-                );
-                break;
-              case "tafseer":
-                setPlaceholder("Let's lean about the Quran");
-                setMessages([]);
-                setGreeting(
-                  "Assalam O Alaykum, I am Tadabbur, how may I help you today?"
-                );
-                break;
-            }
-            break;
-          case "loading_message":
-            const message = data.content ?? "Thinking to enhance response";
-            setLoading(false)
-            setLoadingMessage(message);
-            setParagraphCount(data.paragraph_count ?? 3);
-            break;
-          case "regenerate_required":
-            const orphanMsgId = data.message_id;
-            const orphanContent = data.content;
-
-            if (orphanMsgId && orphanContent) {
-              console.log("🔄 Regenerating orphaned message:", orphanMsgId);
-              setTimeout(() => {
-                streamingMessageIndexRef.current = null;
-                setStreamingMessageIndex(null);
-                setIsGenerating(false);
-                setLoading(false);
-                setMessages(prev => prev.filter(m => m.message_id !== orphanMsgId));
-
-                ask(
-                  orphanContent,
-                  null,
-                  false,
-                  null,
-                  null,
-                  true,
-                  orphanMsgId
-                );
-              }, 500);
-            }
-            break;
-          case "report":
-            const report_status = data.status;
-            if (report_status !== "acknowledged") {
+            case "loading_message": {
+              const message = data.content ?? "Thinking to enhance response";
+              setLoading(false)
+              setLoadingMessage(message);
+              setParagraphCount(data.paragraph_count ?? 3);
               break;
             }
-            const reported_message_id = data.message_id;
-            if (reported_message_id) {
-              setReportedMessageIDs((prev) => [
-                ...(prev ?? []),
-                reported_message_id,
-              ]);
+
+            case "regenerate_required": {
+              const orphanMsgId = data.message_id;
+              const orphanContent = data.content;
+              if (orphanMsgId && orphanContent) {
+                console.log("🔄 Regenerating orphaned message:", orphanMsgId);
+                setTimeout(() => {
+                  streamingMessageIndexRef.current = null;
+                  setStreamingMessageIndex(null);
+                  setIsGenerating(false);
+                  setLoading(false);
+                  setMessages(prev => prev.filter(m => m.message_id !== orphanMsgId));
+                  ask(orphanContent, null, false, null, null, true, orphanMsgId);
+                }, 500);
+              }
+              break;
             }
-            break;
-          default:
-            break;
+
+            default:
+              break;
+          }
         }
       }
     };
@@ -1085,10 +1020,130 @@ function ChatContent() {
 
   }, [reconnectTrigger]);
 
+  // resets states
+  const handleResponseFailure = (action: ActionType) => {
+    // logic when a particular response based action has failed and reset states if any
+    if (!action) {
+      return
+    }
+    if (action.startsWith("feedback-")) {
+      // handling for feedback related failures
+      const parts = action.split("-")
+      const reply_to_message_id = parts[1]
+      const message_id = parts[2]
+      const feedback_type = parts[3]
+
+      if (reply_to_message_id && message_id && feedback_type) {
+        setMessages((prev: ChatMessage[]) => prev.map((m) => m.message_id === reply_to_message_id ? { ...m, responses: m.responses.map((r) => r.message_id === message_id ? { ...r, clicked_feedback: feedback_type === "liked" ? [false, r.clicked_feedback?.[1] ?? false] : [r.clicked_feedback?.[0] ?? false, false] } : r) } : m))
+      }
+      return
+    }
+
+    if (action.startsWith("delete_session_")) {
+      const session_id = action.split("_").pop()
+      if (session_id) {
+        // remove the session ID from local storage if present
+        type PendingDelete = { type: string; user_id: string | null; session_id?: string };
+        const pending: PendingDelete[] = JSON.parse(localStorage.getItem("tadabbur_pending_deletes") || "[]");
+        const updated = pending.filter((op) => op.session_id !== session_id);
+        localStorage.setItem("tadabbur_pending_deletes", JSON.stringify(updated));
+      }
+      return
+    }
+    if (action.startsWith("tts_audio_url_")) {
+      const parts = action.split("_")
+      const reply_to_message_id = parts[3]
+      const message_id = parts[4]
+
+      // reset state to null
+      setMessages(prev =>
+        prev.map(m =>
+          m.message_id === reply_to_message_id
+            ? {
+              ...m,
+              responses: m.responses.map(n =>
+                n.message_id === message_id
+                  ? { ...n, audio_state: null }
+                  : n
+              ),
+            }
+            : m
+        )
+      );
+    }
+    switch (action) {
+      case "session-init": {
+        // no reset needed
+        break
+      }
+      case "get_chat": {
+        // no reset needed
+        break
+      }
+      case "chat_history": {
+        setOpenChatHistoryDialogueBox(false)
+        break
+      }
+
+      case "assistance_response": {
+        // ```resetting states for assistant responses, have to review it further```
+        setLoading(false)
+        setLoadingMessage(null)
+        setStreamingMessageIndexSynced(null);
+        break
+      }
+
+      case "delete_all_sessions": {
+        // remove tadabbur_pending_deletes array from local storage
+        localStorage.removeItem("tadabbur_pending_deletes");
+        break
+      }
+
+      case "stop_generation": {
+        // no need to reset states
+        break
+      }
+
+      case "get_images": {
+        // no need to reset state
+        break
+      }
+
+      // no reset needed for report case
+      // case "report": {
+      //   break
+      // }
+
+      // no reset needed for undo-report case
+      // case "undo-report": {
+      //   break
+      // }
+
+    }
+    return
+
+  }
+
+  const startTimeoutResponse = (action: ActionType) => {
+    const id = setTimeout(() => {
+      handleTaskCompletion(true, action)
+    }, 8000);
+    actionTimeoutMapRef.current.set(action, id)
+  }
+
+  useEffect(() => {
+    responseBasedActions.forEach(m => {
+      if (!actionTimeoutMapRef.current.has(m.action)) {
+        startTimeoutResponse(m.action)
+      }
+    })
+  }, [responseBasedActions])
+
   useEffect(() => {
     let isCancelled = false;
 
     const processFile = async () => {
+      // Only one file can be processed at a time
       if (attachedFile && !fileContext && !isUploading) {
         setIsUploading(true);
         const formData = new FormData();
@@ -1100,8 +1155,10 @@ function ChatContent() {
             const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/upload`, {
               method: "POST",
               body: formData,
-            });
-            if (!response.ok) throw new Error("Upload failed");
+            })
+            if (!response.ok) {
+              throw new Error("Upload failed");
+            }
             return await response.json();
           }, 8, 1000)
 
@@ -1109,10 +1166,15 @@ function ChatContent() {
             setFileContext(data.extracted_text);
             // console.log("File parsed. Text ready to send on Enter.");
           }
+
         } catch (error) {
           if (!isCancelled) {
-            console.error("Upload error:", error);
-            alert("Failed to process file.");
+            // logic to notify the user - alert, dialogue box, etc
+            // as for now, show a simple alert
+
+            // also reset states, if any
+            showFriendlyError("Failed to upload file. Please try again.");
+            console.log("Upload error:", error);
             setAttachedFile(null);
           }
         } finally {
@@ -1131,6 +1193,8 @@ function ChatContent() {
   }, [attachedFile, sessionID]);
 
 
+
+  // have to review logic here, when server acknowledges only then streaming should be stopped
   const stopGeneration = () => {
     if (!currentStreamingMsgRef.current || !wsRef.current) return;
 
@@ -1146,33 +1210,20 @@ function ChatContent() {
     setStreamingMessageIndexSynced(null);
     setLoading(false);
 
-    wsSendAsync(wsRef.current, {
-      type: "stop_generation",
-      message_id: msgId,
-      partial_content: partialContent,
-    });
+    if (!requestExists("stop_generation")) {
+      wsSendAsync(wsRef.current, {
+        type: "stop_generation",
+        message_id: msgId,
+        partial_content: partialContent,
+      }).then(() => {
+        setResponseBasedActions(prev => [...(prev || []), { action: "stop_generation" }])
+      }).catch(() => {
+        showFriendlyError("Failed to stop generation. Please try again.")
+      });
+    }
 
     currentStreamingMsgRef.current = null;
     streamingContentRef.current = "";
-  };
-
-  const showFriendlyError = (type: string) => {
-    const messages: Record<string, string> = {
-      session_id: "Couldn't load your session. Please refresh the page.",
-      delete_session: "Session couldn't be deleted right now. Please try again.",
-      delete_all_sessions: "Couldn't delete all sessions. Please try again.",
-      "model-selection": "Model switch failed. Your previous model is still active.",
-      report: "Report couldn't be submitted. Please try again.",
-      "undo-report": "Couldn't undo the report. Please try again.",
-      tts_audio_url: "Audio generation failed. The text response is still available.",
-      get_images: "Couldn't load your images. Please try again later.",
-      chat_history: "Couldn't load chat history. Please try again.",
-      "session-init": "Couldn't switch to Story Mode. Please try again.",
-      default: "Something went wrong on our end. Please try again in a moment.",
-    };
-
-    setServerErrorToast(messages[type] ?? messages.default);
-    setTimeout(() => setServerErrorToast(null), 4000);
   };
 
   const ask = async (
@@ -1200,6 +1251,7 @@ function ChatContent() {
         );
       }
     }
+
     setError(null);
     messageScrollFlag.current = false;
     setLoading(true);
@@ -1268,6 +1320,7 @@ function ChatContent() {
         {
           role: "assistant",
           message_id: "",
+          is_error: false,
           reply_to_message_id: null,
           content: "",
           feedback: null,
@@ -1310,6 +1363,10 @@ function ChatContent() {
         new_file_context: fileContext ?? "",
         file_name: attachedFile?.name ?? null,
         file_type: attachedFile?.type ?? null,
+      }).then(() => {
+        setResponseBasedActions(prev => [...(prev || []), { action: "assistance_response" }])
+      }).catch(() => {
+        showFriendlyError("Failed to send your message. Please try again.")
       });
       localStorage.removeItem("tadabbur_pending_prompt");
       setFileContext(null);
@@ -1318,7 +1375,7 @@ function ChatContent() {
         setShowPlaceholder(true);
       }
     } catch (err) {
-      console.error("Failed to send message:", err);
+      showFriendlyError("Failed to send your message. Please try again.");
       setConnectionStatus("disconnected");
       // Also save to pending if the actual send fails
       const pendingData = {
@@ -1354,7 +1411,6 @@ function ChatContent() {
 
     if (boxHeight > 24 && !isInputBoxAdaptable) {
       setIsInputBoxAdaptable(true)
-
     }
     else if (inputText === "" && isInputBoxAdaptable) {
 
@@ -1484,8 +1540,9 @@ function ChatContent() {
               )}
             </AnimatePresence>
           </div>
-
           <ChatProvider
+            ask={ask}
+            requestExists={requestExists}
             chatHistory={chatHistory}
             setChatHistory={setChatHistory}
             wsRef={wsRef}
@@ -1496,7 +1553,6 @@ function ChatContent() {
             messages={messages}
             setMessages={setMessages}
             audioRef={audioRef}
-            ask={ask}
             currentPlayableAudio={currentPlayableAudio}
             hideReportContentDialogueBox={hideReportContentDialogueBox}
             openChatHistoryDialogueBox={openChatHistoryDialogueBox}
@@ -1518,8 +1574,10 @@ function ChatContent() {
             showPlaceholder={showPlaceholder}
             isGenerating={isGenerating}
             setOpenImageContainer={setOpenImageContainer}
+            responseBasedActions={responseBasedActions}
+            setResponseBasedActions={setResponseBasedActions}
+            showFriendlyError={showFriendlyError}
           >
-
             <AnimatePresence>
               {openChatHistoryDialogueBox && (
                 <ChatHistoryCupboard />
@@ -1537,7 +1595,7 @@ function ChatContent() {
               {/* navbar for top options background */}
               <div id="navbar" style={{ backgroundColor: currentMode === "normal" ? "#F9FAFB99" : "#00000099" }} className={`fixed top-0 w-[98%] z-20 h-14 flex items-center shrink-0 backdrop-blur-md border-b ${currentMode === "normal" ? "border-black/5" : "border-white/10"} ${messages.length > 0 ? "pr-2 pl-4" : "px-2"}`}>
                 <div className="mr-4 z-40">
-                  <HamBurger wsRef={wsRef} openChatHistoryDialogueBox={openChatHistoryDialogueBox} setOpenChatHistoryDialogueBox={setOpenChatHistoryDialogueBox} currentMode={currentMode} />
+                  <HamBurger />
                 </div>
                 <div className="ml-auto">
                   {currentMode === "story" ? (
@@ -1737,9 +1795,9 @@ function ChatContent() {
                           </div>
                           {record?.responses?.map((ai_msg, ai_msg_idx) => {
                             // loading circle logic here
-                            return loading &&
+                            return streamingMessageIndex === record_index &&
                               !loadingMessage &&
-                              !ai_msg.content ? (
+                              !ai_msg.content && !ai_msg.is_error ? (
                               <div key={ai_msg_idx}
                                 className="px-3">
                                 <motion.div
@@ -1753,7 +1811,7 @@ function ChatContent() {
                                   className={`w-3 h-3 rounded-full ${currentMode === "normal" ? "bg-black" : "bg-white"}`}
                                 ></motion.div>
                               </div>
-                            ) : loadingMessage && !ai_msg.content ? (
+                            ) : loadingMessage && !ai_msg.content && !ai_msg.is_error ? (
                               <div key={ai_msg_idx} className="flex flex-col gap-y-2 mt-2 px-1">
                                 <div className={`flex items-center animate-pulse ${currentMode === "normal" ? "text-black/40" : "text-white/60"} sm:scale-105 md:scale-110`}>
                                   <p className={`switzer-500 text-sm `}>{loadingMessage}</p>
@@ -1775,20 +1833,36 @@ function ChatContent() {
                                   ))
                                 )}
                               </div>
+                            ) : !ai_msg.content && ai_msg.is_error ? (
+                              <div key={ai_msg_idx} className="w-max min-w-40 max-w-full switzer-500 mt-2 rounded-md px-3 py-2 bg-red-50 border border-red-200 flex items-center gap-x-2">
+                                <p className="switzer-500 text-red-400">Some error occured, please try again.</p>
+                                <button onClick={() => {
+                                  console.log("User message", record)
+                                  const filteredResponses = record.responses.filter((r) => !r.is_error)
+                                  console.log("Filtered responses", filteredResponses)
+                                  const resend = filteredResponses.length > 0
+                                  console.log("resend flag", resend)
+
+                                  const record_dict = { content: record.content, responses: filteredResponses, attachments: record.attachments }
+                                  setMessages((prev) => prev.filter((m) => m.message_id != record.message_id))
+
+                                  ask(record_dict.content, null, resend, resend ? record.message_id : null, resend ? { responses: record_dict.responses, attachments: record_dict.attachments } : null)
+                                }} className="cursor-pointer">
+                                  <UndoArrow className="w-3.5 h-3.5 fill-current text-red-400 hover:text-red-600" />
+                                </button>
+                              </div>
                             ) : reportedMessageIDs &&
                               !reportedMessageIDs.includes(ai_msg?.message_id) &&
-                              ai_msg_idx === record.active_message_index ? (
+                              ai_msg_idx === record.active_message_index && ai_msg.content && !ai_msg.is_error ? (
                               <div key={ai_msg_idx}>
-                                <div className={`w-max min-w-40 max-w-full switzer-500 mt-2 rounded-md px-3 ${ai_msg.is_error
-                                  ? "bg-red-50 border border-red-200 py-2"
-                                  : currentMode === "normal"
-                                    ? "bg-white shadow-md py-2"
-                                    : ""
+                                <div className={`w-max min-w-40 max-w-full switzer-500 mt-2 rounded-md px-3 ${currentMode === "normal"
+                                  ? "bg-white shadow-md py-2"
+                                  : ""
                                   }`}>
-                                  <Markdown textContent={ai_msg.content} isError={ai_msg.is_error} />
+                                  <Markdown textContent={ai_msg.content} />
                                 </div>
 
-                                {ai_msg.has_verse_audio && ai_msg.verse_audio_data.length > 0 && streamingMessageIndex != record_index && (
+                                {ai_msg.has_verse_audio && ai_msg.verse_audio_data.length > 0 && streamingMessageIndex != record_index && !ai_msg.is_error && (
                                   <>
                                     <br />
                                     <QuranDialogBox
@@ -1798,7 +1872,7 @@ function ChatContent() {
                                   </>
                                 )}
 
-                                {ai_msg.has_verse_image && ai_msg.verse_images.length > 0 && streamingMessageIndex != record_index && (
+                                {ai_msg.has_verse_image && ai_msg.verse_images.length > 0 && streamingMessageIndex != record_index && !ai_msg.is_error && (
                                   <>
                                     <br />
                                     <QuranDialogBox
@@ -1807,14 +1881,14 @@ function ChatContent() {
                                     />
                                   </>
                                 )}
-                                {ai_msg.story_data?.length > 0 && streamingMessageIndex != record_index && (
+                                {ai_msg.story_data?.length > 0 && streamingMessageIndex != record_index && !ai_msg.is_error && (
                                   <StoryContainer story_data={ai_msg.story_data} />
                                 )}
                                 {streamingMessageIndex != record_index &&
                                   reportedMessageIDs &&
                                   !reportedMessageIDs.includes(
                                     ai_msg?.message_id
-                                  ) && (
+                                  ) && !ai_msg.is_error && (
                                     <div>
                                       <PromptExtraOptions
                                         message_id={ai_msg?.message_id}
@@ -1830,7 +1904,7 @@ function ChatContent() {
 
                               </div>
                             ) : reportedMessageIDs &&
-                              reportedMessageIDs.includes(ai_msg?.message_id) ? (
+                              reportedMessageIDs.includes(ai_msg?.message_id) && !ai_msg.is_error ? (
                               // reportedmessage component here
                               <div
                                 key={ai_msg_idx}
@@ -1864,10 +1938,15 @@ function ChatContent() {
                                   <div className="ml-1 w-[0.5px] h-3.5 bg-black/40"></div>
                                   <div
                                     onClick={() => {
-                                      wsSendAsync(wsRef.current, {
-                                        type: "undo-report",
-                                        message_id: ai_msg.message_id,
-                                      });
+                                      if (!requestExists(`undo-report-${ai_msg.message_id}`))
+                                        wsSendAsync(wsRef.current, {
+                                          type: "undo-report",
+                                          message_id: ai_msg.message_id,
+                                        }).then(() => {
+                                          setResponseBasedActions(prev => [...(prev || []), { action: `undo-report-${ai_msg.message_id}` }])
+                                        }).catch(() => {
+                                          showFriendlyError("Failed to undo report. Please try again.")
+                                        });
                                     }}
                                     id="undo-report-box"
                                     className="undo-report-box flex justify-center items-center gap-x-2 flex-row-reverse px-2 py-1 hover:bg-black/5 rounded-md cursor-pointer"

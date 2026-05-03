@@ -13,6 +13,8 @@ import generateSessionId from "@/app/utils/generateSessionID";
 
 const BottomOptions = () => {
   const {
+    ask,
+    requestExists,
     wsRef,
     hideExtraOptions,
     setHideExtraOptions,
@@ -23,12 +25,12 @@ const BottomOptions = () => {
     isUploading,
     fileContext,
     showPlaceholder,
-    ask,
     inputRef,
+    currentMode,
     isGenerating,
     stopGeneration,
-    currentMode
-
+    setResponseBasedActions,
+    showFriendlyError,
   } = useContext(ChatContext)!;
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -36,7 +38,22 @@ const BottomOptions = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const micActive = useRef<boolean>(false);
   const skipMicProcess = useRef<boolean>(false)
+
+  // ref to skip transcription when stop recording fails
+  const skipTranscription = useRef<boolean>(false)
   const isMicActive = active[2];
+
+
+  const resetAudioStates = () => {
+    micActive.current = false
+    setActive((prev: boolean[]) => {
+      const c = [...prev];
+      c[2] = false;
+      return c;
+    });
+    window.dispatchEvent(new Event("tadabbur-mic-stop"))
+    window.dispatchEvent(new Event("tadabbur-transcription-end"))
+  }
 
   const startRecording = useCallback(async () => {
     try {
@@ -49,8 +66,8 @@ const BottomOptions = () => {
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
 
+      mediaRecorderRef.current = mediaRecorder;
       // Collect Data
       mediaRecorderRef.current.ondataavailable = (event) => {
         if (!skipMicProcess.current && event.data.size > 0) {
@@ -75,34 +92,46 @@ const BottomOptions = () => {
 
     } catch (micErr) {
       console.error("❌ Mic denied:", micErr);
-      setActive((prev: boolean[]) => {
-        const c = [...prev];
-        c[2] = false;
-        return c;
-      });
+      resetAudioStates();
+      // user observability here - alert, dialogue box
+      showFriendlyError("Some error occured while sending voice message, Please try again.")
     }
   }, [setActive]);
 
   const stopRecording = useCallback(() => {
-    if (
-      mediaRecorderRef.current &&
-      mediaRecorderRef.current.state !== "inactive"
-    ) {
-      mediaRecorderRef.current.stop();
-    }
+    try {
 
-    // Signal UI to stop WaveForm
-    window.dispatchEvent(new Event("tadabbur-mic-stop"));
+      if (
+        mediaRecorderRef.current &&
+        mediaRecorderRef.current.state !== "inactive"
+      ) {
+        mediaRecorderRef.current.stop();
+        skipTranscription.current = false
+        console.log("media recorder stopped!")
+      }
+
+      // Signal UI to stop WaveForm
+      window.dispatchEvent(new Event("tadabbur-mic-stop"));
+    } catch (micStopErr) {
+      skipTranscription.current = true
+      resetAudioStates();
+      // user observability here - alert, dialogue box
+      showFriendlyError("Some error occured while sending voice message, Please try again.")
+
+    }
   }, []);
 
   const uploadAudioForTranscription = async (audioBlob: Blob) => {
+    if (skipTranscription.current) {
+      console.log("Some error occured, skipping transcription.")
+      return
+    }
     const formData = new FormData();
     formData.append("file", audioBlob, "voice_note.webm");
 
     try {
       console.log("📤 Uploading audio for transcription...");
 
-      // 1. Dispatch event to tell ChatPage to show loading state
       window.dispatchEvent(new Event("tadabbur-transcription-start"));
       const data = await retryOperation(async () => {
         const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/transcribe`, {
@@ -114,7 +143,6 @@ const BottomOptions = () => {
 
         return await response.json();
       }, 8, 1000)
-
       const text = data.text;
 
       if (text) {
@@ -125,13 +153,12 @@ const BottomOptions = () => {
       }
 
     } catch (error) {
-      console.error("Transcription Error:", error);
+      console.log("Transcription Error:", error);
       // 2. Dispatch error event so ChatPage stops loading
-      window.dispatchEvent(new Event("tadabbur-transcription-error"));
-      alert("Failed to transcribe audio.");
+      resetAudioStates()
+      showFriendlyError("Failed to transcribe audio.");
     }
   };
-
 
   const initializeStoryMode = async () => {
     if (!wsRef.current) return
@@ -143,15 +170,21 @@ const BottomOptions = () => {
     };
 
     try {
-      await wsSendAsync(
-        wsRef.current,
-        sessionInit,
-        8,
-        500
-      );
+      if (!requestExists("session-init")) {
+        await wsSendAsync(
+          wsRef.current,
+          sessionInit,
+          8,
+          500
+        ).then(() => {
+          setResponseBasedActions(prev => [...(prev || []), { action: "session-init"}])
+        }).catch(() => { showFriendlyError("Failed to switch to story mode. Please try again.") });
+      } else {
+        return
+      }
     }
     catch (error) {
-      console.error("❌ Failed to initialize a new WebSocket session:", error);
+      showFriendlyError("Failed to switch to story mode. Please try again.")
     }
   }
 

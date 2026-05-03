@@ -122,12 +122,12 @@ def searchAsbabNuzul(
 
         
         if not any(verse_tool_args.values()) and not query:
-            
-            return {
-                "success": False,
-                "results": [],
-                "error": "Your query needs more information to return results."
-            }
+            continue
+            # return {
+            #     "success": False,
+            #     "results": [],
+            #     "error": "Your query needs more information to return results."
+            # }
 
         
         clean_arguments = {k:v for k,v in verse_tool_args.items() if v is not None}
@@ -186,7 +186,9 @@ def searchAsbabNuzul(
             query = query_embeddings,
             limit = row.limit,
             using = "verse-dense-vector",
-            query_filter = models.Filter(must=must) if must else None
+            query_filter = models.Filter(must=must) if must else None,
+            with_vectors = False,
+            score_threshold = 0.5
         )
         results_array.append(similar_points)
     if results_array and any(
