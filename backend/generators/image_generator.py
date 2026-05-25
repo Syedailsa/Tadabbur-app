@@ -34,7 +34,7 @@ def pil_to_img_url(image: Image.Image) -> str:
 
 
 client = InferenceClient(
-    provider="fal-ai",
+    provider="nscale",
     api_key=os.getenv("HUGGING_FACE_API"),
 )
 
@@ -42,6 +42,13 @@ client = InferenceClient(
 def generate_image(prompt: str) -> Image.Image:
     image = client.text_to_image(
         prompt,
-        model="black-forest-labs/FLUX.1-dev",
+        model="black-forest-labs/FLUX.1-schnell",
     )
     return image
+
+
+try:
+    image = generate_image("A cat and his kitten.")
+    print("Image", image)
+except Exception as e:
+    print(f"Some error occured while generating image: {e}")
