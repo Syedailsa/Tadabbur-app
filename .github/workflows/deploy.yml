@@ -129,6 +129,8 @@ jobs:
 
   # ══════════════════════════════════════════
   # JOB 4 — Deploy to VPS
+  # Docker backend → port 8080 (Gunicorn stays on 8000)
+  # Nginx already updated to proxy 8080
   # ══════════════════════════════════════════
   deploy:
     name: Deploy to VPS
@@ -147,44 +149,25 @@ jobs:
             set -e
             cd /opt/tadabbur
 
-            # ── Step 1: Kill old Gunicorn if running ───────
-            # (only needed if someone manually started it)
-            pkill -9 -f "Tadabbur-app/backend/venv/bin/gunicorn" || true
-            pm2 stop frontend 2>/dev/null || true
-            pm2 delete frontend 2>/dev/null || true
-            sleep 3
-            
-            # Port 8000 free hone ka wait karo
-            for i in $(seq 1 10); do
-            if ! lsof -ti :8000 > /dev/null 2>&1; then
-            echo "✅ Port 8000 free!"
-             break
-             fi
-             echo "Waiting for port 8000... attempt $i"
-             kill -9 $(lsof -ti :8000) 2>/dev/null || true
-             sleep 2
-              done
-           
-          
-
-            # ── Step 2: Login to GHCR ──────────────────────
+            # ── Login to GHCR ──────────────────────────────
             echo "${{ secrets.GITHUB_TOKEN }}" | \
               docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-            # ── Step 3: Pull new images ────────────────────
+            # ── Pull new images ────────────────────────────
             export IMAGE_TAG=${{ github.sha }}
             export REPO_OWNER=syedailsa
             docker compose pull backend frontend
 
-            # ── Step 4: Rolling restart ────────────────────
-             docker compose down
-             docker compose up -d --remove-orphans --no-build
+            # ── Restart containers ─────────────────────────
+            docker compose down
+            docker compose up -d --remove-orphans --no-build
 
-            # ── Step 5: Health checks ──────────────────────
+            # ── Wait for startup ───────────────────────────
             echo "Waiting for services..."
             sleep 15
 
-            curl -sf http://localhost:8000/ \
+            # ── Health checks ──────────────────────────────
+            curl -sf http://localhost:8080/ \
               && echo "✅ Backend healthy" \
               || { echo "❌ Backend FAILED"; docker compose logs backend --tail=30; exit 1; }
 
@@ -192,7 +175,7 @@ jobs:
               && echo "✅ Frontend healthy" \
               || { echo "❌ Frontend FAILED"; docker compose logs frontend --tail=30; exit 1; }
 
-            # ── Step 6: Cleanup ────────────────────────────
+            # ── Cleanup ────────────────────────────────────
             docker image prune -f
 
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
