@@ -149,19 +149,23 @@ jobs:
 
             # ── Step 1: Kill old Gunicorn if running ───────
             # (only needed if someone manually started it)
-            OLD_PIDS=$(lsof -ti :8000 2>/dev/null) || true
-            if [ -n "$OLD_PIDS" ]; then
-              echo "Killing old process on port 8000: $OLD_PIDS"
-              kill -9 $OLD_PIDS 2>/dev/null || true
-              sleep 2
-            fi
-
-            OLD_PIDS_3000=$(lsof -ti :3000 2>/dev/null) || true
-            if [ -n "$OLD_PIDS_3000" ]; then
-              echo "Killing old process on port 3000: $OLD_PIDS_3000"
-              kill -9 $OLD_PIDS_3000 2>/dev/null || true
-              sleep 2
-            fi
+            pkill -9 -f "Tadabbur-app/backend/venv/bin/gunicorn" || true
+            pm2 stop frontend 2>/dev/null || true
+            pm2 delete frontend 2>/dev/null || true
+            sleep 3
+            
+            # Port 8000 free hone ka wait karo
+            for i in $(seq 1 10); do
+            if ! lsof -ti :8000 > /dev/null 2>&1; then
+            echo "✅ Port 8000 free!"
+             break
+             fi
+             echo "Waiting for port 8000... attempt $i"
+             kill -9 $(lsof -ti :8000) 2>/dev/null || true
+             sleep 2
+              done
+           
+          
 
             # ── Step 2: Login to GHCR ──────────────────────
             echo "${{ secrets.GITHUB_TOKEN }}" | \
