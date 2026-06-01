@@ -2,6 +2,8 @@ import sys
 import os
 import json
 import asyncio
+from datetime import datetime, timezone
+import os
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketDisconnect
@@ -1546,6 +1548,13 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
         await safe_close_websocket(websocket)
         
 
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "environment": os.getenv("APP_ENV", "production"),
+    }
 
 
 # ------------------- APP RUNNER -------------------

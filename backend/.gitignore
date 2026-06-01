@@ -11,3 +11,16 @@ uv.lock
 # Virtual environments
 .venv
 .env
+
+
+# Environment files
+.env*
+.env.production
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store

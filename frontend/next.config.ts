@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+   output: "standalone",
   // keep Turbopack enabled
   turbopack: {},
 
@@ -17,7 +18,7 @@ const nextConfig: NextConfig = {
   },
 
   // Webpack override for SVGR
-  webpack(config, { isServer }) {
+  webpack(config, { isServer } )  {
     // Only modify webpack if Turbopack is not in use
     config.module.rules.push({
       test: /\.svg$/i,

@@ -40,3 +40,6 @@ page2.tsx
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+
+.env.production
