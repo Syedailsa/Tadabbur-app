@@ -173,7 +173,8 @@ jobs:
             docker compose pull backend frontend
 
             # ── Step 4: Rolling restart ────────────────────
-            docker compose up -d --remove-orphans --no-build
+             docker compose down
+             docker compose up -d --remove-orphans --no-build
 
             # ── Step 5: Health checks ──────────────────────
             echo "Waiting for services..."
